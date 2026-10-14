@@ -1,0 +1,48 @@
+# AWS integration
+
+## Authorization and credentials
+
+Every process starts with AWS disabled. Development and unpackaged applications reject attempts to enable it. A packaged application can enable access deliberately in **Workspace settings → Connections**. That authorization is process-local and ends when the application exits. Keep every build used for development or verification offline.
+
+Only the Electron main process imports the official AWS SDK, constructs clients, resolves credentials and sends requests. A gate is checked before provider/client construction and before dispatch; metadata cache hits also require authorization. The renderer receives serializable log data through a narrow, validated preload bridge. Workspaces contain profile names and regions, never keys, SSO tokens or event payloads.
+
+Connections use the SDK `fromIni` provider for an existing named profile, including supported role-assumption and IAM Identity Center/SSO profiles. Establish and refresh your SSO session outside this application. There is no embedded SSO login, MFA prompt or credential editor. Provider failures surface as authentication errors. No configured profiles, sessions or credentials were inspected during implementation or verification.
+
+## Operations
+
+| User operation                      | AWS API                                      | Behavior                                                                 |
+| ----------------------------------- | -------------------------------------------- | ------------------------------------------------------------------------ |
+| Browse log groups                   | `DescribeLogGroups`                          | Prefix search, lazy pages and bounded metadata cache                     |
+| Browse streams                      | `DescribeLogStreams`                         | Lazy pages; loaded-name filtering in the explorer                        |
+| Fetch events or surrounding context | `FilterLogEvents`                            | Exact stream selection, event-time bounds and server filter pattern      |
+| Analyze logs                        | `StartQuery`, `GetQueryResults`, `StopQuery` | CWLI only; partial snapshots, polling, scan statistics and cancellation  |
+| Monitor new events                  | `StartLiveTail`                              | Consume the actual SDK event stream; report sampling and stream failures |
+
+Historical event continuation keeps independent tokens for selected groups, including empty pages. Repeated/cyclic tokens terminate visibly. Continuations are process-local, expire after 15 minutes and cannot be reused with a different query. Fetches are bounded to 10,000 events per page. Views combine up to 50 distinct log groups within one connection and region; use separate panes for different connections.
+
+Insights returns at most the requested limit, capped at 10,000 rows. Aggregations remain structured result rows, including field names and values. Polling is bounded to approximately one hour; the client attempts `StopQuery` on cancellation or polling failure. Further Insights result pagination is not exposed. Truncation is shown; narrow the query or time range when necessary. A failed stop is surfaced because the server query might still be running.
+
+Live Tail accepts up to 10 Standard-class groups. Stream selection is allowed only with a single group. The SDK supplies its service endpoint; the application does not replace streaming with repeated event polling. Sampling, service timeouts and stream errors are visible. Cancelling closes the stream. CloudWatch may sample high-volume sessions, so Live Tail is not a complete event archive. [AWS Live Tail documentation](https://docs.aws.amazon.com/AmazonCloudWatch/latest/logs/CloudWatchLogs_LiveTail.html).
+
+The adapter limits concurrent requests and retries throttling/transient failures with bounded backoff. Ambiguous `StartQuery` failures are not automatically retried as a new query. Local buffers are bounded by preferences and report event eviction.
+
+## Permissions
+
+These are the CloudWatch Logs IAM actions used by the implemented operations:
+
+| Capability                              | Actions                                                     |
+| --------------------------------------- | ----------------------------------------------------------- |
+| Resource navigation                     | `logs:DescribeLogGroups`, `logs:DescribeLogStreams`         |
+| Event selection and context             | `logs:FilterLogEvents`                                      |
+| Insights execution/results/cancellation | `logs:StartQuery`, `logs:GetQueryResults`, `logs:StopQuery` |
+| Live monitoring                         | `logs:StartLiveTail`                                        |
+
+Scope policies to the intended existing log groups where supported. Group discovery and query stopping use actions whose resource scope may require `*`; consult the current [CloudWatch Logs service authorization reference](https://docs.aws.amazon.com/service-authorization/latest/reference/list_logs.html) and [permissions reference](https://docs.aws.amazon.com/AmazonCloudWatch/latest/logs/permissions-reference-cwl.html). Profile authentication may require the existing role/SSO permissions configured for that profile.
+
+The application does not provision infrastructure, ingest logs, change retention, create export tasks or modify IAM policies. Export writes the loaded selection to a local file. Unmasking protected log data is not implemented. Stream cancellation closes the client stream; no separate AWS resource-management operation is used.
+
+Insights scan costs and Live Tail session charges apply when using AWS. Review time ranges and automatic refresh before running queries. [AWS Insights guidance](https://docs.aws.amazon.com/AmazonCloudWatch/latest/logs/AnalyzingLogData.html), [AWS Live Tail guidance](https://docs.aws.amazon.com/AmazonCloudWatch/latest/logs/CloudWatchLogs_LiveTail.html).
+
+## Verification boundary
+
+All AWS adapter tests use injected command transports and fixture responses under network isolation. No real AWS request was executed. Actual profile/SSO interoperability, IAM policies, network/proxy environments, service endpoint behavior and account-specific quotas remain unverified against AWS.

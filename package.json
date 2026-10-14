@@ -1,0 +1,56 @@
+{
+  "name": "aws-log-explorer",
+  "version": "0.1.1",
+  "description": "A structured CloudWatch Logs desktop workspace",
+  "main": "out/main/index.js",
+  "author": "AWS Log Explorer contributors",
+  "license": "MIT",
+  "overrides": {
+    "global-agent": "^4.1.3"
+  },
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "npm run typecheck && electron-vite build",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:desktop": "playwright test",
+    "package": "npm run build && electron-builder --dir",
+    "dist": "npm run build && electron-builder",
+    "format": "prettier --write src tests docs *.json *.ts *.yml"
+  },
+  "dependencies": {
+    "@aws-sdk/client-cloudwatch-logs": "^3.1150.0",
+    "@aws-sdk/credential-providers": "^3.1150.0",
+    "@dnd-kit/core": "^6.3.1",
+    "@dnd-kit/sortable": "^10.0.0",
+    "@dnd-kit/utilities": "^3.2.2",
+    "@mantine/core": "^9.7.2",
+    "@mantine/hooks": "^9.7.2",
+    "@mantine/notifications": "^9.7.2",
+    "@smithy/shared-ini-file-loader": "^4.7.2",
+    "@tabler/icons-react": "^3.49.0",
+    "@tanstack/react-table": "^8.21.3",
+    "@tanstack/react-virtual": "^3.14.18",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.64.0",
+    "@types/node": "^26.6.5",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@types/react-test-renderer": "^19.3.0",
+    "@vitejs/plugin-react": "^5.2.0",
+    "electron": "^44.7.0",
+    "electron-builder": "^26.5.0",
+    "electron-vite": "^5.0.0",
+    "prettier": "^3.9.10",
+    "react-test-renderer": "^19.3.0",
+    "typescript": "^7.0.2",
+    "undici": "^8.11.2",
+    "vite": "^7.3.7",
+    "vitest": "^5.0.4"
+  }
+}
