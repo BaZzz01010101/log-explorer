@@ -270,30 +270,6 @@ input:focus-visible {
   flex-direction: column;
   overflow: hidden;
 }
-.pane-grid {
-  position: relative;
-  flex: 1;
-  min-height: 0;
-  display: grid;
-  gap: 1px;
-  background: var(--line);
-}
-.panes-1 {
-  grid-template-columns: minmax(0, 1fr);
-  grid-template-rows: minmax(0, 1fr);
-}
-.panes-2 {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  grid-template-rows: minmax(0, 1fr);
-}
-.panes-3,
-.panes-4 {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  grid-template-rows: repeat(2, minmax(0, 1fr));
-}
-.panes-3 > .pane-drop-target:first-child {
-  grid-row: span 2;
-}
 .workspace-pane {
   flex: 1;
   background: var(--surface);
@@ -302,28 +278,6 @@ input:focus-visible {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-}
-.pane-divider {
-  position: absolute;
-  z-index: 15;
-  touch-action: none;
-}
-.divider-horizontal {
-  width: 7px;
-  top: 0;
-  bottom: 0;
-  transform: translateX(-3px);
-  cursor: col-resize;
-}
-.divider-vertical {
-  height: 7px;
-  right: 0;
-  transform: translateY(-3px);
-  cursor: row-resize;
-}
-.pane-divider:hover,
-.pane-divider:focus-visible {
-  background: var(--mantine-color-indigo-5);
 }
 .active-pane .pane-heading {
   border-top-color: #7186eb;

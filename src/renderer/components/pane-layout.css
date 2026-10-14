@@ -1,0 +1,51 @@
+.pane-layout-root,
+.pane-layout-split,
+.pane-layout-child,
+.pane-layout-leaf {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+.pane-layout-root {
+  height: 100%;
+  width: 100%;
+}
+.pane-layout-horizontal {
+  flex-direction: row;
+}
+.pane-layout-vertical {
+  flex-direction: column;
+}
+.pane-layout-divider {
+  flex: 0 0 6px;
+  position: relative;
+  z-index: 16;
+  background: var(--mantine-color-body);
+  touch-action: none;
+  user-select: none;
+  -webkit-user-drag: none;
+  outline: none;
+}
+.pane-layout-horizontal > .pane-layout-divider {
+  cursor: col-resize;
+}
+.pane-layout-vertical > .pane-layout-divider {
+  cursor: row-resize;
+}
+.pane-layout-divider::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: transparent;
+}
+.pane-layout-divider:hover::after,
+html[data-input-modality="keyboard"] .pane-layout-divider:focus-visible::after,
+.pane-layout-split.is-resizing > .pane-layout-divider::after {
+  background: var(--mantine-color-blue-5);
+}
+.pane-layout-split.is-resizing,
+.pane-layout-split.is-resizing * {
+  user-select: none !important;
+}

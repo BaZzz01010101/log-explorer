@@ -35,6 +35,55 @@ export function mergeEvents(
   return { events: evicted ? events.slice(evicted) : events, evicted };
 }
 
+function parseRangeTime(value: string | undefined): number {
+  const match = value?.match(
+    /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2})(?:\.(\d{1,3}))?)?(Z|[+-]\d{2}:\d{2})?$/,
+  );
+  if (!match) return NaN;
+  const [, year, month, day, hour, minute, second = "0", fraction = "", zone] =
+    match;
+  const fields = [
+    Number(year),
+    Number(month) - 1,
+    Number(day),
+    Number(hour),
+    Number(minute),
+    Number(second),
+    Number(fraction.padEnd(3, "0")),
+  ];
+  const timestamp = Date.parse(value!);
+  if (!Number.isFinite(timestamp)) return NaN;
+  // Date.parse silently rolls invalid dates and nonexistent DST wall times forward.
+  // Local inputs must name an actual local instant; explicit offsets retain their meaning.
+  const calendar = zone
+    ? new Date(
+        `${year}-${month}-${day}T${hour}:${minute}:${second.padStart(2, "0")}.${fraction.padEnd(3, "0")}Z`,
+      )
+    : new Date(timestamp);
+  const actual = zone
+    ? [
+        calendar.getUTCFullYear(),
+        calendar.getUTCMonth(),
+        calendar.getUTCDate(),
+        calendar.getUTCHours(),
+        calendar.getUTCMinutes(),
+        calendar.getUTCSeconds(),
+        calendar.getUTCMilliseconds(),
+      ]
+    : [
+        calendar.getFullYear(),
+        calendar.getMonth(),
+        calendar.getDate(),
+        calendar.getHours(),
+        calendar.getMinutes(),
+        calendar.getSeconds(),
+        calendar.getMilliseconds(),
+      ];
+  return fields.every((field, index) => field === actual[index])
+    ? timestamp
+    : NaN;
+}
+
 export function resolveTimeRange(
   preset: string,
   start?: string,
@@ -42,8 +91,8 @@ export function resolveTimeRange(
   now = Date.now(),
 ): { startTime: number; endTime: number } {
   if (preset === "custom") {
-    const startTime = Date.parse(start ?? "");
-    const endTime = Date.parse(end ?? "");
+    const startTime = parseRangeTime(start);
+    const endTime = parseRangeTime(end);
     if (
       !Number.isFinite(startTime) ||
       !Number.isFinite(endTime) ||
@@ -58,8 +107,11 @@ export function resolveTimeRange(
     {
       "5m": 300000,
       "15m": 900000,
+      "30m": 1800000,
       "1h": 3600000,
+      "3h": 10800000,
       "6h": 21600000,
+      "12h": 43200000,
       "24h": 86400000,
       "7d": 604800000,
     } as Record<string, number>

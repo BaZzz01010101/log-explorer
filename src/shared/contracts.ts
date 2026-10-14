@@ -80,6 +80,7 @@ export interface ViewConfig {
 }
 export interface LogTab {
   id: string;
+  preview?: boolean;
   title: string;
   connectionId: string;
   sources: LogSource[];
@@ -102,6 +103,17 @@ export interface Pane {
   id: string;
   tabId: string | null;
 }
+export type SplitAxis = "horizontal" | "vertical";
+export type SplitEdge = "left" | "right" | "top" | "bottom";
+export type PaneLayout =
+  | { type: "leaf"; paneId: string }
+  | {
+      type: "split";
+      axis: SplitAxis;
+      ratio: number;
+      first: PaneLayout;
+      second: PaneLayout;
+    };
 export interface SavedQuery {
   id: string;
   name: string;
@@ -137,6 +149,7 @@ export interface Workspace {
   closedTabs: LogTab[];
   groups: TabGroup[];
   panes: Pane[];
+  layout?: PaneLayout;
   activePaneId: string;
   sidebarWidth: number;
   sidebarVisible: boolean;
@@ -163,8 +176,17 @@ export interface ExplorerApi {
   environment(): Promise<EnvironmentInfo>;
   enableAws(enabled: boolean): Promise<EnvironmentInfo>;
   profiles(): Promise<string[]>;
-  listGroups(connection: Connection, prefix: string, cursor?: string): Promise<Page<LogGroup>>;
-  listStreams(connection: Connection, logGroup: string, prefix: string, cursor?: string): Promise<Page<LogStream>>;
+  listGroups(
+    connection: Connection,
+    prefix: string,
+    cursor?: string,
+  ): Promise<Page<LogGroup>>;
+  listStreams(
+    connection: Connection,
+    logGroup: string,
+    prefix: string,
+    cursor?: string,
+  ): Promise<Page<LogStream>>;
   query(request: QueryRequest): Promise<void>;
   live(request: QueryRequest): Promise<void>;
   cancel(requestId: string): Promise<void>;
@@ -172,7 +194,10 @@ export interface ExplorerApi {
   onBeforeClose(listener: () => Promise<void>): () => void;
   loadWorkspace(): Promise<WorkspaceLoad>;
   saveWorkspace(workspace: Workspace): Promise<void>;
-  exportData(content: string, extension: "json" | "csv" | "jsonl"): Promise<boolean>;
+  exportData(
+    content: string,
+    extension: "json" | "csv" | "jsonl",
+  ): Promise<boolean>;
   copy(text: string): Promise<void>;
 }
 declare global {

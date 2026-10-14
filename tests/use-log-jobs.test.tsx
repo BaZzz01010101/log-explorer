@@ -567,3 +567,172 @@ describe("retired request cleanup failures", () => {
     },
   );
 });
+
+describe("automatic date range updates", () => {
+  it("lets the newest date preset overtake a cancellation-delayed date request", async () => {
+    await mount();
+    const pending = deferred();
+    cancelHandler = () => pending.promise;
+    await replaceWorkspace({
+      ...workspace,
+      tabs: [{ ...workspace.tabs[0]!, timePreset: "30m" }],
+    });
+    await replaceWorkspace({
+      ...workspace,
+      tabs: [{ ...workspace.tabs[0]!, timePreset: "12h" }],
+    });
+    expect(requests).toHaveLength(2);
+    await act(async () => {
+      pending.resolve();
+    });
+    expect(requests).toHaveLength(2);
+    expect(requests[1]!.endTime - requests[1]!.startTime).toBe(12 * 3600000);
+    await emit({
+      requestId: requests[0]!.requestId,
+      state: "complete",
+      events: [logEvent],
+    });
+    expect(jobs.runtimes[workspace.tabs[0]!.id]!.events).toEqual([]);
+  });
+  it("keeps a pending valid custom edit through an unrelated local-view update", async () => {
+    vi.useFakeTimers();
+    await mount();
+    await replaceWorkspace({
+      ...workspace,
+      tabs: [
+        {
+          ...workspace.tabs[0]!,
+          timePreset: "custom",
+          customStart: "2026-10-14T10:00",
+          customEnd: "2026-10-14T11:00",
+        },
+      ],
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(250);
+    });
+    await replaceWorkspace({
+      ...workspace,
+      tabs: [
+        {
+          ...workspace.tabs[0]!,
+          view: {
+            ...workspace.tabs[0]!.view,
+            localSearch: "uncharged-local-filter",
+          },
+        },
+      ],
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(150);
+    });
+    expect(requests).toHaveLength(2);
+  });
+  it("runs once for a changed preset and does not run for unrelated edits or pane changes", async () => {
+    await mount();
+    const first = requests[0]!;
+    await replaceWorkspace({
+      ...workspace,
+      tabs: [{ ...workspace.tabs[0]!, timePreset: "30m" }],
+    });
+    expect(requests).toHaveLength(2);
+    expect(cancellations).toContain(first.requestId);
+    expect(requests[1]!.endTime - requests[1]!.startTime).toBe(30 * 60000);
+    await replaceWorkspace({
+      ...workspace,
+      tabs: [
+        {
+          ...workspace.tabs[0]!,
+          filterPattern: "error",
+          view: { ...workspace.tabs[0]!.view, localSearch: "local" },
+        },
+      ],
+      panes: [...workspace.panes],
+    });
+    expect(requests).toHaveLength(2);
+  });
+  it("debounces valid custom edits, ignores invalid drafts, and uses the latest range", async () => {
+    vi.useFakeTimers();
+    await mount();
+    const tab = workspace.tabs[0]!;
+    await replaceWorkspace({
+      ...workspace,
+      tabs: [{ ...tab, timePreset: "custom", customStart: "", customEnd: "" }],
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+    expect(requests).toHaveLength(1);
+    await replaceWorkspace({
+      ...workspace,
+      tabs: [
+        {
+          ...workspace.tabs[0]!,
+          customStart: "2026-10-14T10:00",
+          customEnd: "2026-10-14T11:00",
+        },
+      ],
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(200);
+    });
+    await replaceWorkspace({
+      ...workspace,
+      tabs: [{ ...workspace.tabs[0]!, customEnd: "2026-10-14T12:00" }],
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(399);
+    });
+    expect(requests).toHaveLength(1);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1);
+    });
+    expect(requests).toHaveLength(2);
+    expect(requests[1]!.endTime - requests[1]!.startTime).toBe(2 * 3600000);
+  });
+  it("cancels pending custom refresh when a manual run, tab close, or source change supersedes it", async () => {
+    vi.useFakeTimers();
+    await mount();
+    await replaceWorkspace({
+      ...workspace,
+      tabs: [
+        {
+          ...workspace.tabs[0]!,
+          timePreset: "custom",
+          customStart: "2026-10-14T10:00",
+          customEnd: "2026-10-14T11:00",
+        },
+      ],
+    });
+    await act(async () => {
+      await jobs.run(workspace.tabs[0]!);
+      await vi.advanceTimersByTimeAsync(500);
+    });
+    expect(requests).toHaveLength(2);
+    await replaceWorkspace({
+      ...workspace,
+      tabs: [{ ...workspace.tabs[0]!, customEnd: "2026-10-14T12:00" }],
+    });
+    await replaceWorkspace({
+      ...workspace,
+      tabs: [{ ...workspace.tabs[0]!, sources: [{ logGroup: "/different" }] }],
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(500);
+    });
+    expect(requests).toHaveLength(2);
+    await replaceWorkspace({
+      ...workspace,
+      tabs: [{ ...workspace.tabs[0]!, customEnd: "2026-10-14T13:00" }],
+    });
+    await replaceWorkspace({
+      ...workspace,
+      tabs: [],
+      panes: workspace.panes.map((pane) => ({ ...pane, tabId: null })),
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(500);
+    });
+    expect(requests).toHaveLength(2);
+  });
+});

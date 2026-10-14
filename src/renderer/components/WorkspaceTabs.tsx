@@ -2,6 +2,7 @@ import {
   useState,
   createContext,
   useContext,
+  useRef,
   type CSSProperties,
   type Dispatch,
   type KeyboardEvent,
@@ -49,13 +50,22 @@ import {
   IconDots,
   IconGripVertical,
   IconLayoutColumns,
+  IconLayoutRows,
   IconPlus,
   IconRestore,
   IconTerminal2,
   IconTrash,
   IconX,
 } from "@tabler/icons-react";
-import type { LogTab, Pane, TabGroup, Workspace } from "../../shared/contracts";
+import type {
+  LogTab,
+  Pane,
+  SplitEdge,
+  TabGroup,
+  Workspace,
+} from "../../shared/contracts";
+import { legacyLayout, nextSplitAxis } from "../../shared/pane-layout";
+import { projectPaneDrop, type LayoutRect } from "../../shared/layout-geometry";
 import { createTab, type WorkspaceAction } from "../workspace";
 import "./workspace-tabs.css";
 
@@ -94,6 +104,9 @@ function SortableTab({
   onSelect: (event: React.MouseEvent) => void;
   onKeyDown: (event: KeyboardEvent<HTMLButtonElement>) => void;
 }) {
+  const { selected: selection, setSelected } = useContext(WorkspaceSelection);
+  const { mode } = useContext(WorkspaceDragMode);
+  const [menuOpen, setMenuOpen] = useState(false);
   const {
     setNodeRef,
     attributes,
@@ -106,160 +119,213 @@ function SortableTab({
     data: { kind: "tab", tabId: tab.id },
   });
   const index = workspace.tabs.findIndex((item) => item.id === tab.id);
+  const chosen = selection.includes(tab.id)
+    ? selection.filter((id) => workspace.tabs.some((item) => item.id === id))
+    : [tab.id];
+  const axis = nextSplitAxis(
+    workspace.layout ?? legacyLayout(workspace.panes.map((p) => p.id)),
+    workspace.activePaneId,
+  );
+  const SplitIcon = axis === "horizontal" ? IconLayoutColumns : IconLayoutRows;
   const duplicate = () => {
     const copy = createTab(tab.connectionId, tab.sources);
     dispatch({
       type: "tab/open",
-      tab: { ...structuredClone(tab), id: copy.id, title: tab.title + " copy" },
+      tab: {
+        ...structuredClone(tab),
+        id: copy.id,
+        title: tab.title + " copy",
+        preview: false,
+      },
     });
   };
   return (
-    <div
-      ref={setNodeRef}
-      role="presentation"
-      className={`workspace-tab ${active ? "is-active" : ""} ${selected ? "is-selected" : ""} ${group ? "is-grouped" : ""} ${isDragging ? "is-dragging" : ""}`}
-      style={{
-        ...colorStyle(group?.color),
-        transform: CSS.Transform.toString(transform),
-        transition,
+    <Menu
+      opened={menuOpen}
+      onChange={(open) => {
+        if (!open) setMenuOpen(false);
       }}
+      position="bottom-start"
+      width={230}
     >
-      <button
-        className="tab-grip"
-        aria-label={`Drag ${tab.title} to reorder or move to a pane`}
-        {...attributes}
-        {...listeners}
-      >
-        <IconGripVertical size={12} />
-      </button>
-      <button
-        type="button"
-        className="workspace-tab-label"
-        role="tab"
-        aria-selected={active}
-        id={`tab-${tab.id}`}
-        aria-controls={`view-${tab.id}`}
-        tabIndex={active ? 0 : -1}
-        onClick={onSelect}
-        onKeyDown={onKeyDown}
-        onAuxClick={(event) => {
-          if (event.button === 1)
-            dispatch({ type: "tab/close", tabId: tab.id });
-        }}
-        title={`${group ? group.name + " · " : ""}${tab.title}\n${tab.sources.map((source) => source.logGroup).join("\n")}`}
-      >
-        <IconTerminal2 size={14} className="tab-source-icon" />
-        <span>{tab.title}</span>
-        {tab.kind === "insights" && <span className="tab-kind">SQL</span>}
-      </button>
-      <Menu position="bottom-start" width={230}>
-        <Menu.Target>
+      <Menu.Target>
+        <div
+          ref={setNodeRef}
+          role="presentation"
+          data-tab-id={tab.id}
+          className={`workspace-tab ${active ? "is-active" : ""} ${selected ? "is-selected" : ""} ${group ? "is-grouped" : ""} ${isDragging ? "is-dragging" : ""} ${tab.preview ? "is-preview" : ""}`}
+          style={{
+            ...colorStyle(group?.color),
+            transform: CSS.Transform.toString(
+              isDragging
+                ? mode === "reorder" && transform
+                  ? { ...transform, y: 0 }
+                  : null
+                : transform,
+            ),
+            transition,
+          }}
+          onPointerDown={(event) => {
+            if (
+              event.button === 0 &&
+              !(event.target as HTMLElement).closest("[data-tab-control]")
+            )
+              listeners?.onPointerDown?.(event);
+          }}
+          onDragStart={(event) => event.preventDefault()}
+          onContextMenu={(event) => {
+            event.preventDefault();
+            if ((event.target as HTMLElement).closest("[data-tab-control]"))
+              return;
+            if (!selected) setSelected([tab.id]);
+            setMenuOpen(true);
+          }}
+        >
           <button
             type="button"
-            className="tab-menu-button"
-            aria-label={`Actions for ${tab.title}`}
+            className="workspace-tab-label"
+            role="tab"
+            aria-selected={active}
+            id={`tab-${tab.id}`}
+            aria-controls={`view-${tab.id}`}
+            aria-describedby={attributes["aria-describedby"]}
+            tabIndex={active ? 0 : -1}
+            onClick={onSelect}
+            onDoubleClick={() =>
+              dispatch({ type: "tab/promote", tabId: tab.id })
+            }
+            onKeyDown={(event) => {
+              if (
+                (event.shiftKey && event.key === "F10") ||
+                event.key === "ContextMenu"
+              ) {
+                event.preventDefault();
+                if (!selected) setSelected([tab.id]);
+                setMenuOpen(true);
+              } else {
+                listeners?.onKeyDown?.(event);
+                if (!event.defaultPrevented) onKeyDown(event);
+              }
+            }}
+            onAuxClick={(event) => {
+              if (event.button === 1)
+                dispatch({ type: "tab/close", tabId: tab.id });
+            }}
+            title={`${group ? group.name + " · " : ""}${tab.title}\n${tab.sources.map((source) => source.logGroup).join("\n")}`}
           >
-            <IconDots size={13} />
+            <IconTerminal2 size={14} className="tab-source-icon" />
+            <span>{tab.title}</span>
+            {tab.kind === "insights" && <span className="tab-kind">SQL</span>}
           </button>
-        </Menu.Target>
-        <Menu.Dropdown>
-          <Menu.Label>View</Menu.Label>
-          <Menu.Item leftSection={<IconCopy size={14} />} onClick={duplicate}>
-            Duplicate independent view
-          </Menu.Item>
-          <Menu.Item
-            leftSection={<IconLayoutColumns size={14} />}
-            disabled={workspace.panes.length >= 4}
-            onClick={() => dispatch({ type: "pane/split", tabId: tab.id })}
-          >
-            Move to a new split
-          </Menu.Item>
-          {workspace.panes.map((pane, paneIndex) => (
-            <Menu.Item
-              key={pane.id}
-              onClick={() =>
-                dispatch({
-                  type: "pane/assign",
-                  paneId: pane.id,
-                  tabId: tab.id,
-                })
-              }
-            >
-              Move to pane {paneIndex + 1}
-            </Menu.Item>
-          ))}
-          <Menu.Divider />
-          <Menu.Label>Tab order</Menu.Label>
-          <Menu.Item
-            leftSection={<IconChevronLeft size={14} />}
-            disabled={index === 0}
-            onClick={() =>
-              dispatch({
-                type: "tab/reorder",
-                tabId: tab.id,
-                beforeTabId: workspace.tabs[index - 1]?.id ?? null,
-              })
-            }
-          >
-            Move left
-          </Menu.Item>
-          <Menu.Item
-            leftSection={<IconChevronRight size={14} />}
-            disabled={index === workspace.tabs.length - 1}
-            onClick={() =>
-              dispatch({
-                type: "tab/reorder",
-                tabId: tab.id,
-                beforeTabId: workspace.tabs[index + 2]?.id ?? null,
-              })
-            }
-          >
-            Move right
-          </Menu.Item>
-          <Menu.Divider />
-          <Menu.Label>Group</Menu.Label>
-          {workspace.groups.map((group) => (
-            <Menu.Item
-              key={group.id}
-              leftSection={
-                <span className="group-dot" style={colorStyle(group.color)} />
-              }
-              onClick={() =>
-                dispatch({
-                  type: "tab/group",
-                  tabIds: [tab.id],
-                  groupId: group.id,
-                })
-              }
-            >
-              {group.name}
-            </Menu.Item>
-          ))}
-          <Menu.Item
-            disabled={!tab.groupId}
-            onClick={() => dispatch({ type: "tab/group", tabIds: [tab.id] })}
-          >
-            Remove from group
-          </Menu.Item>
-          <Menu.Divider />
-          <Menu.Item
-            color="red"
-            leftSection={<IconX size={14} />}
+          <button
+            type="button"
+            data-tab-control
+            className="tab-close"
+            aria-label={`Close ${tab.title}`}
             onClick={() => dispatch({ type: "tab/close", tabId: tab.id })}
           >
-            Close tab
+            <IconX size={13} />
+          </button>
+        </div>
+      </Menu.Target>
+      <Menu.Dropdown>
+        <Menu.Label>View</Menu.Label>
+        {tab.preview && (
+          <Menu.Item
+            onClick={() => dispatch({ type: "tab/promote", tabId: tab.id })}
+          >
+            Keep tab open
           </Menu.Item>
-        </Menu.Dropdown>
-      </Menu>
-      <button
-        type="button"
-        className="tab-close"
-        aria-label={`Close ${tab.title}`}
-        onClick={() => dispatch({ type: "tab/close", tabId: tab.id })}
-      >
-        <IconX size={13} />
-      </button>
-    </div>
+        )}
+        <Menu.Item leftSection={<IconCopy size={14} />} onClick={duplicate}>
+          Duplicate independent view
+        </Menu.Item>
+        <Menu.Item
+          leftSection={<SplitIcon size={14} />}
+          disabled={chosen.length < 2 || chosen.length > 4}
+          onClick={() => {
+            dispatch({ type: "pane/show-tabs", tabIds: chosen });
+            setSelected([]);
+          }}
+        >
+          Show in split mode
+        </Menu.Item>
+        <Menu.Item
+          leftSection={<SplitIcon size={14} />}
+          disabled={workspace.panes.length >= 4}
+          onClick={() => dispatch({ type: "pane/split", tabId: tab.id })}
+        >
+          Move to a new split
+        </Menu.Item>
+        {workspace.panes.map((pane, paneIndex) => (
+          <Menu.Item
+            key={pane.id}
+            onClick={() =>
+              dispatch({ type: "pane/assign", paneId: pane.id, tabId: tab.id })
+            }
+          >
+            Move to pane {paneIndex + 1}
+          </Menu.Item>
+        ))}
+        <Menu.Divider />
+        <Menu.Label>Tab order</Menu.Label>
+        <Menu.Item
+          leftSection={<IconChevronLeft size={14} />}
+          disabled={index === 0}
+          onClick={() =>
+            dispatch({
+              type: "tab/reorder",
+              tabId: tab.id,
+              beforeTabId: workspace.tabs[index - 1]?.id ?? null,
+            })
+          }
+        >
+          Move left
+        </Menu.Item>
+        <Menu.Item
+          leftSection={<IconChevronRight size={14} />}
+          disabled={index === workspace.tabs.length - 1}
+          onClick={() =>
+            dispatch({
+              type: "tab/reorder",
+              tabId: tab.id,
+              beforeTabId: workspace.tabs[index + 2]?.id ?? null,
+            })
+          }
+        >
+          Move right
+        </Menu.Item>
+        <Menu.Divider />
+        <Menu.Label>Group</Menu.Label>
+        {workspace.groups.map((item) => (
+          <Menu.Item
+            key={item.id}
+            leftSection={
+              <span className="group-dot" style={colorStyle(item.color)} />
+            }
+            onClick={() =>
+              dispatch({ type: "tab/group", tabIds: chosen, groupId: item.id })
+            }
+          >
+            {item.name}
+          </Menu.Item>
+        ))}
+        <Menu.Item
+          disabled={!tab.groupId}
+          onClick={() => dispatch({ type: "tab/group", tabIds: chosen })}
+        >
+          Remove from group
+        </Menu.Item>
+        <Menu.Divider />
+        <Menu.Item
+          color="red"
+          leftSection={<IconX size={14} />}
+          onClick={() => dispatch({ type: "tab/close", tabId: tab.id })}
+        >
+          Close tab
+        </Menu.Item>
+      </Menu.Dropdown>
+    </Menu>
   );
 }
 
@@ -404,6 +470,78 @@ const WorkspaceSelection = createContext<{
   setSelected: () => {},
 });
 
+type DragPlacement = {
+  paneId: string;
+  edge: SplitEdge | null;
+  rect: LayoutRect;
+};
+const WorkspaceDragMode = createContext<{
+  mode: "reorder" | "placement";
+  placement: DragPlacement | null;
+}>({ mode: "reorder", placement: null });
+
+function dragDestination(
+  workspace: Workspace,
+  tabId: string,
+  point: { x: number; y: number },
+) {
+  const strip = document
+    .querySelector(".workspace-tab-list")
+    ?.getBoundingClientRect();
+  const distance = strip
+    ? Math.hypot(
+        Math.max(strip.left - point.x, 0, point.x - strip.right),
+        Math.max(strip.top - point.y, 0, point.y - strip.bottom),
+      )
+    : Infinity;
+  const mode = distance <= 28 ? "reorder" : "placement";
+  let placement: DragPlacement | null = null;
+  if (mode === "placement") {
+    for (const element of document.querySelectorAll<HTMLElement>(
+      "[data-pane-drop-target]",
+    )) {
+      const rect = element.getBoundingClientRect();
+      if (
+        point.x < rect.left ||
+        point.x > rect.right ||
+        point.y < rect.top ||
+        point.y > rect.bottom
+      )
+        continue;
+      const paneId = element.dataset.paneDropTarget!;
+      const source = workspace.panes.find((pane) => pane.tabId === tabId);
+      const canSplit =
+        (workspace.panes.length < 4 || (!!source && source.id !== paneId)) &&
+        (source?.id !== paneId || workspace.tabs.length < 100);
+      const distances: [SplitEdge, number][] = [
+        ["left", (point.x - rect.left) / rect.width],
+        ["right", (rect.right - point.x) / rect.width],
+        ["top", (point.y - rect.top) / rect.height],
+        ["bottom", (rect.bottom - point.y) / rect.height],
+      ];
+      distances.sort((a, b) => a[1] - b[1]);
+      const edge = canSplit && distances[0][1] <= 0.25 ? distances[0][0] : null;
+      const root = document
+        .querySelector(".pane-layout-root")
+        ?.getBoundingClientRect();
+      const projected =
+        root && projectPaneDrop(workspace, tabId, paneId, edge, root);
+      placement = projected
+        ? {
+            paneId,
+            edge: projected.kind === "split" ? edge : null,
+            rect: projected.rect,
+          }
+        : null;
+      break;
+    }
+  }
+  return { mode, placement } as {
+    mode: "reorder" | "placement";
+    placement: DragPlacement | null;
+  };
+}
+
 /** A shared drag surface for the tab bar, group chips and actual pane panels. */
 export function WorkspaceDragSurface({
   workspace,
@@ -412,6 +550,11 @@ export function WorkspaceDragSurface({
 }: Props & { children: ReactNode }) {
   const [selected, setSelected] = useState<string[]>([]);
   const [draggedTabId, setDraggedTabId] = useState<string | null>(null);
+  const [dragMode, setDragMode] = useState<{
+    mode: "reorder" | "placement";
+    placement: DragPlacement | null;
+  }>({ mode: "reorder", placement: null });
+  const destinationRef = useRef(dragMode);
   const draggedTab = workspace.tabs.find((tab) => tab.id === draggedTabId);
   const selectedIds = selected.filter((id) =>
     workspace.tabs.some((tab) => tab.id === id),
@@ -424,11 +567,25 @@ export function WorkspaceDragSurface({
   );
   const handleDragEnd = ({ active, over }: DragEndEvent) => {
     setDraggedTabId(null);
+    const destination = destinationRef.current;
+    setDragMode({ mode: "reorder", placement: null });
     if (!over || active.id === over.id) return;
     const source = active.data.current;
     const target = over.data.current;
     if (source?.kind === "tab") {
-      if (target?.kind === "pane")
+      if (
+        target?.kind === "pane" &&
+        destination.placement &&
+        destination.placement.paneId === target.paneId &&
+        destination.placement.edge
+      )
+        dispatch({
+          type: "pane/drop-tab",
+          tabId: source.tabId,
+          paneId: target.paneId,
+          edge: destination.placement.edge,
+        });
+      else if (target?.kind === "pane")
         dispatch({
           type: "pane/assign",
           paneId: target.paneId,
@@ -493,41 +650,91 @@ export function WorkspaceDragSurface({
 
   return (
     <WorkspaceSelection.Provider value={{ selected, setSelected }}>
-      <DndContext
-        sensors={sensors}
-        collisionDetection={(args) => {
-          const kind = args.active.data.current?.kind;
-          const eligible = args.droppableContainers.filter(
-            (container) =>
-              kind === "tab" || container.data.current?.kind === kind,
-          );
-          const targetArgs = { ...args, droppableContainers: eligible };
-          const hits = pointerWithin(targetArgs);
-          return args.pointerCoordinates ? hits : closestCenter(targetArgs);
-        }}
-        onDragEnd={handleDragEnd}
-        onDragStart={({ active }) =>
-          setDraggedTabId(
-            active.data.current?.kind === "tab"
-              ? active.data.current.tabId
-              : null,
-          )
-        }
-        onDragCancel={() => setDraggedTabId(null)}
-      >
-        {children}
-        {createPortal(
-          <DragOverlay dropAnimation={null}>
-            {draggedTab && (
-              <div className="workspace-drag-preview">
-                <IconTerminal2 size={15} />
-                <span>{draggedTab.title}</span>
-              </div>
-            )}
-          </DragOverlay>,
-          document.body,
-        )}
-      </DndContext>
+      <WorkspaceDragMode.Provider value={dragMode}>
+        <DndContext
+          sensors={sensors}
+          collisionDetection={(args) => {
+            const kind = args.active.data.current?.kind;
+            const mode =
+              kind === "tab" && args.pointerCoordinates
+                ? dragDestination(
+                    workspace,
+                    args.active.data.current!.tabId,
+                    args.pointerCoordinates,
+                  ).mode
+                : "reorder";
+            const eligible = args.droppableContainers.filter((container) =>
+              kind === "tab"
+                ? mode === "reorder"
+                  ? container.data.current?.kind === "tab"
+                  : ["pane", "group"].includes(container.data.current?.kind)
+                : container.data.current?.kind === kind,
+            );
+            const targetArgs = { ...args, droppableContainers: eligible };
+            const hits = pointerWithin(targetArgs);
+            return args.pointerCoordinates ? hits : closestCenter(targetArgs);
+          }}
+          onDragEnd={handleDragEnd}
+          onDragMove={({ active, activatorEvent, delta }) => {
+            if (
+              active.data.current?.kind !== "tab" ||
+              !("clientX" in activatorEvent)
+            )
+              return;
+            const point = {
+              x: (activatorEvent as MouseEvent).clientX + delta.x,
+              y: (activatorEvent as MouseEvent).clientY + delta.y,
+            };
+            const destination = dragDestination(
+              workspace,
+              active.data.current.tabId,
+              point,
+            );
+            destinationRef.current = destination;
+            setDragMode((previous) =>
+              previous.mode === destination.mode &&
+              previous.placement?.paneId === destination.placement?.paneId &&
+              previous.placement?.edge === destination.placement?.edge &&
+              previous.placement?.rect.left ===
+                destination.placement?.rect.left &&
+              previous.placement?.rect.top ===
+                destination.placement?.rect.top &&
+              previous.placement?.rect.width ===
+                destination.placement?.rect.width &&
+              previous.placement?.rect.height ===
+                destination.placement?.rect.height
+                ? previous
+                : destination,
+            );
+          }}
+          onDragStart={({ active }) => {
+            destinationRef.current = { mode: "reorder", placement: null };
+            setDragMode(destinationRef.current);
+            setDraggedTabId(
+              active.data.current?.kind === "tab"
+                ? active.data.current.tabId
+                : null,
+            );
+          }}
+          onDragCancel={() => {
+            setDraggedTabId(null);
+            setDragMode({ mode: "reorder", placement: null });
+          }}
+        >
+          {children}
+          {createPortal(
+            <DragOverlay dropAnimation={null}>
+              {draggedTab && dragMode.mode === "placement" && (
+                <div className="workspace-drag-preview">
+                  <IconTerminal2 size={15} />
+                  <span>{draggedTab.title}</span>
+                </div>
+              )}
+            </DragOverlay>,
+            document.body,
+          )}
+        </DndContext>
+      </WorkspaceDragMode.Provider>
     </WorkspaceSelection.Provider>
   );
 }
@@ -541,23 +748,43 @@ export function PaneDropTarget({
   children: ReactNode;
 }) {
   const { active } = useDndContext();
+  const { mode, placement } = useContext(WorkspaceDragMode);
   const { setNodeRef, isOver } = useDroppable({
     id: "pane-panel:" + paneId,
     data: { kind: "pane", paneId },
-    disabled: active?.data.current?.kind !== "tab",
+    disabled: active?.data.current?.kind !== "tab" || mode !== "placement",
   });
   return (
     <div
       ref={setNodeRef}
-      className={"pane-drop-target" + (isOver ? " is-over" : "")}
+      className={
+        "pane-drop-target" + (isOver && !placement?.edge ? " is-over" : "")
+      }
       data-pane-drop-target={paneId}
     >
       {children}
-      {isOver && (
-        <div className="pane-drop-overlay" aria-hidden="true">
-          Move view to this pane
-        </div>
-      )}
+      {isOver &&
+        placement?.paneId === paneId &&
+        createPortal(
+          <div
+            className="pane-drop-overlay"
+            style={{
+              position: "fixed",
+              inset: "auto",
+              left: placement.rect.left,
+              top: placement.rect.top,
+              width: placement.rect.width,
+              height: placement.rect.height,
+            }}
+            data-split-preview={placement.edge ?? "center"}
+            aria-hidden="true"
+          >
+            {placement.edge
+              ? `Split ${placement.edge}`
+              : "Move view to this pane"}
+          </div>,
+          document.body,
+        )}
     </div>
   );
 }
@@ -570,6 +797,12 @@ export function WorkspaceTabs({ workspace, dispatch }: Props) {
   const activeTabId = workspace.panes.find(
     (pane) => pane.id === workspace.activePaneId,
   )?.tabId;
+  const splitAxis = nextSplitAxis(
+    workspace.layout ?? legacyLayout(workspace.panes.map((pane) => pane.id)),
+    workspace.activePaneId,
+  );
+  const SplitIcon =
+    splitAxis === "horizontal" ? IconLayoutColumns : IconLayoutRows;
   const selectedIds = selected.filter((id) =>
     workspace.tabs.some((tab) => tab.id === id),
   );
@@ -670,14 +903,26 @@ export function WorkspaceTabs({ workspace, dispatch }: Props) {
               <IconPlus size={16} />
             </ActionIcon>
           </Tooltip>
-          <Tooltip label="Add split pane">
+          <Tooltip
+            label={
+              splitAxis === "horizontal"
+                ? "Split side by side"
+                : "Split above and below"
+            }
+          >
             <ActionIcon
               variant="subtle"
               aria-label="Add split pane"
+              aria-description={
+                splitAxis === "horizontal"
+                  ? "Split side by side"
+                  : "Split above and below"
+              }
+              data-split-axis={splitAxis}
               disabled={workspace.panes.length >= 4}
               onClick={() => dispatch({ type: "pane/split" })}
             >
-              <IconLayoutColumns size={16} />
+              <SplitIcon size={16} />
             </ActionIcon>
           </Tooltip>
           <Menu width={235} position="bottom-end">

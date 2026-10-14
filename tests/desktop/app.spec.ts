@@ -154,7 +154,7 @@ test("desktop vertical slice stays isolated and supports investigation", async (
   expect(info.awsEnabled).toBe(false);
   expect(info.canEnableAws).toBe(false);
   expect(info.packaged).toBe(false);
-  expect(info.version).toBe("0.1.1");
+  expect(info.version).toBe("0.1.2");
   await expect(
     page.evaluate(() => window.explorer.enableAws(true)),
   ).rejects.toThrow(/development/);

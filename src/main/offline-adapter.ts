@@ -278,10 +278,10 @@ export function createOfflineAdapter(): LogAdapter {
       .sort((a, b) => a.timestamp - b.timestamp || a.id.localeCompare(b.id));
   }
   return {
-    async listGroups(prefix, cursor, signal) {
+    async listGroups(search, cursor, signal) {
       throwIfAborted(signal);
       const groups: LogGroup[] = GROUP_NAMES.filter((name) =>
-        name.startsWith(prefix),
+        name.includes(search),
       ).map((name) => ({
         name,
         arn: `arn:aws:logs:eu-west-1:000000000000:log-group:${name}`,
@@ -289,7 +289,7 @@ export function createOfflineAdapter(): LogAdapter {
         retentionDays: 30,
         logClass: "STANDARD",
       }));
-      return page(groups, cursor, `groups:${prefix}`);
+      return page(groups, cursor, `groups:${search}`);
     },
     async listStreams(group, prefix, cursor, signal) {
       throwIfAborted(signal);

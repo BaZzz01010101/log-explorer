@@ -368,7 +368,7 @@ describe("AWS adapter with isolated command transport", () => {
     ).rejects.toThrow(/repeated.*continuation/i);
   });
 
-  it("retains continuation for empty pages and terminates repeated tokens visibly", async () => {
+  it("terminates repeated tokens while scanning empty pages visibly", async () => {
     const commands: CloudWatchCommand[] = [];
     const adapter = createAwsAdapter(aws, {
       allowAws: () => true,
@@ -380,13 +380,9 @@ describe("AWS adapter with isolated command transport", () => {
     });
     const input = request({ connection: aws });
     const first = await adapter.events(input, new AbortController().signal);
-    expect(first.cursor).toBeTruthy();
-    const second = await adapter.events(
-      { ...input, cursor: first.cursor },
-      new AbortController().signal,
-    );
-    expect(second.cursor).toBeUndefined();
-    expect(second.truncated).toBe(true);
+    expect(first.cursor).toBeUndefined();
+    expect(first.truncated).toBe(true);
+    expect(commands).toHaveLength(2);
     expect((commands[1].input as { nextToken?: string }).nextToken).toBe(
       "same",
     );

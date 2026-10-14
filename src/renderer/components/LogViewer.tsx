@@ -320,6 +320,16 @@ function pinStyle(column: Column<EventRow>): CSSProperties {
   };
 }
 
+interface ColumnResizeSession {
+  pointerId: number;
+  element: HTMLDivElement;
+  path: string;
+  id: string;
+  startX: number;
+  startWidth: number;
+  width: number;
+}
+
 export function LogViewer({
   events,
   view,
@@ -339,6 +349,10 @@ export function LogViewer({
   const [notice, setNotice] = useState("");
   const [exporting, setExporting] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [draftSizing, setDraftSizing] = useState<Record<string, number> | null>(
+    null,
+  );
+  const resizeSession = useRef<ColumnResizeSession | null>(null);
   const localSearch = useDeferredValue(view.localSearch);
   const filtering = localSearch !== view.localSearch;
   const allRows = useMemo(() => events.map(prepare), [events]);
@@ -357,6 +371,58 @@ export function LogViewer({
       })),
     [view.columns],
   );
+  const configuredSizing = useMemo(
+    () =>
+      Object.fromEntries(
+        config.map((column) => [columnId(column.path), column.width]),
+      ),
+    [config],
+  );
+  const currentView = useRef({ view, config, onViewChange });
+  currentView.current = { view, config, onViewChange };
+  const finishColumnResize = (commit: boolean) => {
+    const session = resizeSession.current;
+    if (!session) return;
+    resizeSession.current = null;
+    document.body.classList.remove("resizing-columns");
+    if (session.element.hasPointerCapture(session.pointerId))
+      session.element.releasePointerCapture(session.pointerId);
+    if (commit && session.width !== session.startWidth) {
+      const current = currentView.current;
+      current.onViewChange({
+        ...current.view,
+        columns: current.config.map((column) =>
+          column.path === session.path
+            ? { ...column, width: session.width }
+            : column,
+        ),
+      });
+    }
+    setDraftSizing(null);
+  };
+  useEffect(() => {
+    const cancel = () => finishColumnResize(false);
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && resizeSession.current) {
+        event.preventDefault();
+        event.stopPropagation();
+        cancel();
+      }
+    };
+    window.addEventListener("blur", cancel);
+    window.addEventListener("keydown", escape, true);
+    return () => {
+      window.removeEventListener("blur", cancel);
+      window.removeEventListener("keydown", escape, true);
+      const session = resizeSession.current;
+      if (session) {
+        resizeSession.current = null;
+        document.body.classList.remove("resizing-columns");
+        if (session.element.hasPointerCapture(session.pointerId))
+          session.element.releasePointerCapture(session.pointerId);
+      }
+    };
+  }, []);
   const paths = useMemo(() => {
     const discovered = new Set<string>(META_COLUMNS);
     let limited = false;
@@ -484,16 +550,14 @@ export function LogViewer({
     // This view virtualizes rows; it has no client pagination to reset.
     autoResetPageIndex: false,
     enableMultiSort: false,
-    columnResizeMode: "onEnd",
+    columnResizeMode: "onChange",
     state: {
       sorting,
       columnOrder: config.map((column) => columnId(column.path)),
       columnVisibility: Object.fromEntries(
         config.map((column) => [columnId(column.path), !column.hidden]),
       ),
-      columnSizing: Object.fromEntries(
-        config.map((column) => [columnId(column.path), column.width]),
-      ),
+      columnSizing: draftSizing ?? configuredSizing,
       columnPinning: {
         left: config
           .filter((column) => column.pinned && !column.hidden)
@@ -511,13 +575,7 @@ export function LogViewer({
       });
     },
     onColumnSizingChange: (updater) => {
-      const sizes = resolve(updater, table.getState().columnSizing);
-      applyColumns(
-        config.map((column) => ({
-          ...column,
-          width: sizes[columnId(column.path)] ?? column.width,
-        })),
-      );
+      setDraftSizing(resolve(updater, table.getState().columnSizing));
     },
     onColumnVisibilityChange: (updater) => {
       const visible = resolve(updater, table.getState().columnVisibility);
@@ -675,6 +733,7 @@ export function LogViewer({
         </Tooltip>
         <span className="toolbar-spacer" />
         <SegmentedControl
+          className="viewer-mode-control"
           aria-label="Event view mode"
           size="xs"
           value={view.mode}
@@ -685,28 +744,28 @@ export function LogViewer({
             {
               value: "json",
               label: (
-                <Group gap={4}>
+                <span className="viewer-mode-label">
                   <IconBraces size={13} />
-                  JSON
-                </Group>
+                  <span>JSON</span>
+                </span>
               ),
             },
             {
               value: "table",
               label: (
-                <Group gap={4}>
+                <span className="viewer-mode-label">
                   <IconTable size={13} />
-                  Table
-                </Group>
+                  <span>Table</span>
+                </span>
               ),
             },
             {
               value: "hybrid",
               label: (
-                <Group gap={4}>
+                <span className="viewer-mode-label">
                   <IconColumns3 size={13} />
-                  Hybrid
-                </Group>
+                  <span>Hybrid</span>
+                </span>
               ),
             },
           ]}
@@ -860,11 +919,100 @@ export function LogViewer({
                       ) : null}
                     </button>
                     <div
-                      className={`column-resizer ${header.column.getIsResizing() ? "resizing" : ""}`}
+                      className={`column-resizer ${resizeSession.current?.id === header.id ? "resizing" : ""}`}
                       role="separator"
                       aria-label={`Resize ${titleFor(columnPath(header.id))}`}
-                      onMouseDown={header.getResizeHandler()}
-                      onTouchStart={header.getResizeHandler()}
+                      aria-orientation="vertical"
+                      aria-valuemin={70}
+                      aria-valuemax={1400}
+                      aria-valuenow={Math.round(header.getSize())}
+                      tabIndex={0}
+                      draggable={false}
+                      onDragStart={(event) => event.preventDefault()}
+                      onPointerDown={(event) => {
+                        if (!event.isPrimary || event.button !== 0) return;
+                        event.preventDefault();
+                        event.stopPropagation();
+                        finishColumnResize(true);
+                        window.getSelection()?.removeAllRanges();
+                        const element = event.currentTarget;
+                        element.setPointerCapture(event.pointerId);
+                        resizeSession.current = {
+                          pointerId: event.pointerId,
+                          element,
+                          path: columnPath(header.id),
+                          id: header.id,
+                          startX: event.clientX,
+                          startWidth: header.getSize(),
+                          width: header.getSize(),
+                        };
+                        document.body.classList.add("resizing-columns");
+                        setDraftSizing({ ...configuredSizing });
+                      }}
+                      onPointerMove={(event) => {
+                        const session = resizeSession.current;
+                        if (!session || event.pointerId !== session.pointerId)
+                          return;
+                        event.preventDefault();
+                        const width = Math.round(
+                          Math.min(
+                            1400,
+                            Math.max(
+                              70,
+                              session.startWidth +
+                                event.clientX -
+                                session.startX,
+                            ),
+                          ),
+                        );
+                        if (width === session.width) return;
+                        session.width = width;
+                        setDraftSizing({
+                          ...configuredSizing,
+                          [session.id]: width,
+                        });
+                      }}
+                      onPointerUp={(event) => {
+                        if (
+                          event.pointerId === resizeSession.current?.pointerId
+                        )
+                          finishColumnResize(true);
+                      }}
+                      onPointerCancel={(event) => {
+                        if (
+                          event.pointerId === resizeSession.current?.pointerId
+                        )
+                          finishColumnResize(false);
+                      }}
+                      onLostPointerCapture={(event) => {
+                        if (
+                          event.pointerId === resizeSession.current?.pointerId
+                        )
+                          finishColumnResize(true);
+                      }}
+                      onKeyDown={(event) => {
+                        if (
+                          event.key !== "ArrowLeft" &&
+                          event.key !== "ArrowRight"
+                        )
+                          return;
+                        event.preventDefault();
+                        const width = Math.min(
+                          1400,
+                          Math.max(
+                            70,
+                            header.getSize() +
+                              (event.key === "ArrowRight" ? 10 : -10),
+                          ),
+                        );
+                        applyColumns(
+                          config.map((column) =>
+                            column.path === columnPath(header.id)
+                              ? { ...column, width }
+                              : column,
+                          ),
+                        );
+                      }}
                       onDoubleClick={() =>
                         applyColumns(
                           config.map((column) =>

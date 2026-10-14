@@ -1,0 +1,8 @@
+/* Chromium can promote mouse-focused controls to :focus-visible on Shift alone.
+   Only hide focus outlines while the last meaningful input was a pointer. */
+html[data-input-modality="pointer"] :focus-visible,
+html[data-input-modality="pointer"] :focus-visible + *,
+html[data-input-modality="pointer"] :focus-visible * {
+  outline: none !important;
+  --segmented-control-outline: none !important;
+}

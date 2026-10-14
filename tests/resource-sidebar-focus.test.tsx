@@ -124,3 +124,164 @@ it("advances the active row when ArrowDown transfers focus from a child control"
   });
   expect(tree.props["aria-activedescendant"]).toBe(secondRow.props.id);
 });
+
+it("previews resource clicks and Enter, while double click opens permanently", async () => {
+  const connection = createWorkspace().connections[0];
+  const onOpen = vi.fn();
+  await act(async () => {
+    renderer = create(
+      <ResourceSidebar
+        connections={[connection]}
+        activeConnectionId={connection.id}
+        favorites={[]}
+        recents={[]}
+        onOpen={onOpen}
+        onFavorite={() => {}}
+        onManage={() => {}}
+      />,
+      {
+        createNodeMock: ({ props }) =>
+          (props as { role?: string }).role === "tree" ? treeNode : null,
+      },
+    );
+  });
+  const label = renderer!.root.findAllByProps({
+    className: "resource-label",
+  })[0];
+  await act(async () => label.props.onClick());
+  expect(onOpen).toHaveBeenLastCalledWith(
+    connection.id,
+    [{ logGroup: "/one" }],
+    "preview",
+  );
+  await act(async () => label.props.onDoubleClick());
+  expect(onOpen).toHaveBeenLastCalledWith(
+    connection.id,
+    [{ logGroup: "/one" }],
+    "permanent",
+  );
+  await act(async () =>
+    renderer!.root.findByProps({ role: "tree" }).props.onKeyDown({
+      target: treeNode,
+      currentTarget: treeNode,
+      key: "Enter",
+      preventDefault() {},
+    }),
+  );
+  expect(onOpen).toHaveBeenLastCalledWith(
+    connection.id,
+    [{ logGroup: "/one" }],
+    "preview",
+  );
+});
+
+it("uses the same preview and double-click behavior for favorites and recent sources", async () => {
+  const connection = createWorkspace().connections[0];
+  const favorite = {
+    connectionId: connection.id,
+    logGroup: "/favorite",
+    logStream: "stream",
+  };
+  const recent = { connectionId: connection.id, logGroup: "/recent" };
+  const onOpen = vi.fn();
+  await act(async () => {
+    renderer = create(
+      <ResourceSidebar
+        connections={[connection]}
+        activeConnectionId={connection.id}
+        favorites={[favorite]}
+        recents={[recent]}
+        onOpen={onOpen}
+        onFavorite={() => {}}
+        onManage={() => {}}
+      />,
+    );
+  });
+  const buttons = renderer!.root.findAllByProps({
+    className: "quick-resource",
+  });
+  await act(async () => buttons[0].props.onClick());
+  expect(onOpen).toHaveBeenLastCalledWith(
+    connection.id,
+    [{ logGroup: "/favorite", logStreams: ["stream"] }],
+    "preview",
+  );
+  await act(async () => buttons[0].props.onDoubleClick());
+  expect(onOpen).toHaveBeenLastCalledWith(
+    connection.id,
+    [{ logGroup: "/favorite", logStreams: ["stream"] }],
+    "permanent",
+  );
+  await act(async () => buttons[1].props.onClick());
+  expect(onOpen).toHaveBeenLastCalledWith(
+    connection.id,
+    [{ logGroup: "/recent", logStreams: undefined }],
+    "preview",
+  );
+  await act(async () => buttons[1].props.onDoubleClick());
+  expect(onOpen).toHaveBeenLastCalledWith(
+    connection.id,
+    [{ logGroup: "/recent", logStreams: undefined }],
+    "permanent",
+  );
+});
+
+it("debounces substring searches through the server API and retains matching-page pagination", async () => {
+  vi.useFakeTimers();
+  try {
+    const connection = createWorkspace().connections[0];
+    const listGroups = vi.fn(
+      async (_connection: unknown, search: string, cursor?: string) => ({
+        items: [
+          {
+            name: search
+              ? `/aws/lambda/${search}-${cursor ? "two" : "one"}`
+              : "/initial",
+          },
+        ],
+        cursor: cursor ? undefined : "next",
+      }),
+    );
+    vi.stubGlobal("window", { explorer: { listGroups } });
+    await act(async () => {
+      renderer = create(
+        <ResourceSidebar
+          connections={[connection]}
+          activeConnectionId={connection.id}
+          favorites={[]}
+          recents={[]}
+          onOpen={() => {}}
+          onFavorite={() => {}}
+          onManage={() => {}}
+        />,
+      );
+    });
+    const input = renderer!.root
+      .findAllByProps({ "aria-label": "Search log groups" })
+      .at(-1)!;
+    await act(async () =>
+      input.props.onChange({ currentTarget: { value: "orders" } }),
+    );
+    expect(listGroups).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(220);
+    });
+    expect(listGroups).toHaveBeenLastCalledWith(
+      connection,
+      "orders",
+      undefined,
+    );
+    const more = renderer!.root
+      .findAll((item) => item.props.children === "Load more groups")
+      .at(-1)!;
+    await act(async () => more.props.onClick());
+    expect(listGroups).toHaveBeenLastCalledWith(connection, "orders", "next");
+    expect(
+      renderer!.root
+        .findAllByProps({ role: "treeitem" })
+        .map((row) => row.props["aria-label"]),
+    ).toEqual(["/aws/lambda/orders-one", "/aws/lambda/orders-two"]);
+  } finally {
+    vi.useRealTimers();
+  }
+});

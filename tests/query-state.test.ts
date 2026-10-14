@@ -1,4 +1,4 @@
-import { expect, it } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 import {
   mergeEvents,
   resolveTimeRange,
@@ -12,6 +12,7 @@ const event = (id: string, timestamp = 0) => ({
   logGroup: "/a",
   logStream: "s",
 });
+afterEach(() => vi.unstubAllEnvs());
 it("bounds raw text memory even when event count is below its limit", () => {
   const events = ["1", "2", "3"].map((id) => ({
     ...event(id),
@@ -38,6 +39,45 @@ it("derives relative ranges at execution time", () => {
     startTime: 1_100_000,
     endTime: 2_000_000,
   });
+});
+it.each([
+  ["30m", 30 * 60000],
+  ["3h", 3 * 3600000],
+  ["12h", 12 * 3600000],
+])("resolves the restored %s preset", (preset, duration) => {
+  const now = 2_000_000_000_000;
+  expect(resolveTimeRange(String(preset), undefined, undefined, now)).toEqual({
+    startTime: now - Number(duration),
+    endTime: now,
+  });
+});
+it("uses the actual local timezone for custom inputs and preserves explicit offsets", () => {
+  vi.stubEnv("TZ", "Europe/Madrid");
+  expect(
+    resolveTimeRange("custom", "2026-10-14T10:00", "2026-10-14T11:00"),
+  ).toEqual({
+    startTime: Date.parse("2026-10-14T08:00:00Z"),
+    endTime: Date.parse("2026-10-14T09:00:00Z"),
+  });
+  expect(
+    resolveTimeRange(
+      "custom",
+      "2026-10-14T10:00-04:00",
+      "2026-10-14T11:00-04:00",
+    ),
+  ).toEqual({
+    startTime: Date.parse("2026-10-14T14:00:00Z"),
+    endTime: Date.parse("2026-10-14T15:00:00Z"),
+  });
+});
+it("rejects calendar dates and local daylight-saving times that JavaScript normalizes silently", () => {
+  vi.stubEnv("TZ", "Europe/Madrid");
+  expect(() =>
+    resolveTimeRange("custom", "2026-02-30T10:00", "2026-03-03T10:00"),
+  ).toThrow(/valid/);
+  expect(() =>
+    resolveTimeRange("custom", "2026-03-29T02:30", "2026-03-29T04:00"),
+  ).toThrow(/valid/);
 });
 it("marks changed server filters and time ranges stale without including local view settings", () => {
   const workspace = createWorkspace();

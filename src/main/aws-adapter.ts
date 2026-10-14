@@ -450,31 +450,70 @@ export function createAwsAdapter(
     );
   }
   return {
-    async listGroups(prefix, cursor, signal) {
+    async listGroups(search, cursor, signal) {
       const response = await send<DescribeLogGroupsCommandOutput>(
         new DescribeLogGroupsCommand({
-          logGroupNamePrefix: prefix || undefined,
+          logGroupNamePattern: search || undefined,
           nextToken: cursor,
           limit: 50,
         }),
         signal,
       );
       throwIfAborted(signal);
+      let groups = (response.logGroups ?? []).filter(
+        (group) => !!group.logGroupName,
+      );
+      if (search && groups.length) {
+        // Pattern searches omit class, retention and byte counts. Fetch the same
+        // page by exact names so search results retain complete group metadata.
+        const names = groups.map((group) => group.logGroupName!);
+        const details = new Map<string, (typeof groups)[number]>();
+        const seen = new Set<string>();
+        let token: string | undefined;
+        for (let page = 0; page < 100; page++) {
+          const metadata = await send<DescribeLogGroupsCommandOutput>(
+            new DescribeLogGroupsCommand({
+              logGroupIdentifiers: names,
+              limit: 50,
+              nextToken: token,
+            }),
+            signal,
+          );
+          throwIfAborted(signal);
+          for (const group of metadata.logGroups ?? [])
+            if (group.logGroupName) details.set(group.logGroupName, group);
+          token = metadata.nextToken;
+          if (!token) break;
+          if (seen.has(token))
+            throw new Error(
+              "CloudWatch returned a repeated resource continuation",
+            );
+          seen.add(token);
+          if (page === 99)
+            throw new Error(
+              "CloudWatch returned too many metadata pages; narrow the group search",
+            );
+        }
+        // A group deleted between the search and metadata calls is no longer a
+        // usable result. Do not represent missing metadata as STANDARD/indefinite.
+        groups = groups.flatMap((group) => {
+          const detail = details.get(group.logGroupName!);
+          return detail ? [detail] : [];
+        });
+      }
       metadataContinuations.observe(
-        `groups:${prefix}`,
+        `groups:${search}`,
         cursor,
         response.nextToken,
       );
       return {
-        items: (response.logGroups ?? [])
-          .filter((group) => !!group.logGroupName)
-          .map((group) => ({
-            name: group.logGroupName!,
-            arn: group.logGroupArn ?? group.arn,
-            storedBytes: group.storedBytes,
-            retentionDays: group.retentionInDays,
-            logClass: group.logGroupClass,
-          })),
+        items: groups.map((group) => ({
+          name: group.logGroupName!,
+          arn: group.logGroupArn ?? group.arn,
+          storedBytes: group.storedBytes,
+          retentionDays: group.retentionInDays,
+          logClass: group.logGroupClass,
+        })),
         cursor: response.nextToken,
       };
     },
@@ -530,42 +569,50 @@ export function createAwsAdapter(
       const batches = await Promise.all(
         selected.map(async ({ state, index }, position) => {
           const source = request.sources[index];
-          const response = await send<FilterLogEventsCommandOutput>(
-            new FilterLogEventsCommand({
-              ...identifier(source.logGroup),
-              logStreamNames: source.logStreams?.length
-                ? source.logStreams
-                : undefined,
-              startTime: request.startTime,
-              endTime: request.endTime,
-              filterPattern: request.filterPattern || undefined,
-              nextToken: state.token,
-              limit: Math.min(10000, quota + (position < remainder ? 1 : 0)),
-            }),
-            signal,
-          );
-          throwIfAborted(signal);
-          const token = response.nextToken;
-          if (
-            token &&
-            (state.seen.includes(token) || state.seen.length >= 256)
-          ) {
-            state.done = true;
-            state.token = undefined;
-            truncated = true;
-          } else {
-            state.done = !token;
-            state.token = token;
-            if (token) state.seen.push(token);
+          // FilterLogEvents may return empty pages while still searching the range.
+          // Follow those pages automatically, with a bounded per-source scan budget.
+          // A remaining token is kept so the user can continue an exceptionally sparse scan.
+          for (let page = 0; page < 32; page++) {
+            throwIfAborted(signal);
+            const response = await send<FilterLogEventsCommandOutput>(
+              new FilterLogEventsCommand({
+                ...identifier(source.logGroup),
+                logStreamNames: source.logStreams?.length
+                  ? source.logStreams
+                  : undefined,
+                startTime: request.startTime,
+                endTime: request.endTime,
+                filterPattern: request.filterPattern || undefined,
+                nextToken: state.token,
+                limit: Math.min(10000, quota + (position < remainder ? 1 : 0)),
+              }),
+              signal,
+            );
+            throwIfAborted(signal);
+            const token = response.nextToken;
+            if (
+              token &&
+              (state.seen.includes(token) || state.seen.length >= 256)
+            ) {
+              state.done = true;
+              state.token = undefined;
+              truncated = true;
+            } else {
+              state.done = !token;
+              state.token = token;
+              if (token) state.seen.push(token);
+            }
+            const events = (response.events ?? []).map((event) => ({
+              id: `${source.logGroup}:${event.eventId ?? eventId([event.logStreamName, event.timestamp, event.ingestionTime, event.message])}`,
+              timestamp: event.timestamp ?? request.startTime,
+              ingestionTime: event.ingestionTime,
+              message: event.message ?? "",
+              logGroup: nameFromIdentifier(source.logGroup),
+              logStream: event.logStreamName ?? "",
+            }));
+            if (events.length || state.done) return events;
           }
-          return (response.events ?? []).map((event) => ({
-            id: `${source.logGroup}:${event.eventId ?? eventId([event.logStreamName, event.timestamp, event.ingestionTime, event.message])}`,
-            timestamp: event.timestamp ?? request.startTime,
-            ingestionTime: event.ingestionTime,
-            message: event.message ?? "",
-            logGroup: nameFromIdentifier(source.logGroup),
-            logStream: event.logStreamName ?? "",
-          }));
+          return [];
         }),
       );
       throwIfAborted(signal);

@@ -27,6 +27,20 @@
 .toolbar-spacer {
   flex: 1;
 }
+.viewer-mode-control {
+  flex: 0 0 auto;
+}
+.viewer-mode-label {
+  display: inline-flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+.viewer-mode-label svg {
+  flex: none;
+}
 .viewer-meta {
   display: flex;
   align-items: center;
@@ -54,6 +68,7 @@
   vertical-align: middle;
 }
 .viewer-scroll {
+  container-type: inline-size;
   overflow: auto;
   flex: 1;
   min-height: 0;
@@ -121,10 +136,18 @@
   right: 0;
   top: 0;
   height: 100%;
-  width: 5px;
+  width: 8px;
   cursor: col-resize;
   touch-action: none;
+  user-select: none;
+  -webkit-user-drag: none;
   z-index: 3;
+}
+body.resizing-columns,
+body.resizing-columns * {
+  cursor: col-resize !important;
+  user-select: none !important;
+  -webkit-user-drag: none !important;
 }
 .column-resizer:hover,
 .column-resizer.resizing {
@@ -215,6 +238,9 @@
   color: var(--mantine-color-cyan-5);
 }
 .hybrid-detail {
+  position: sticky;
+  left: 0;
+  width: 100cqw;
   padding: 10px 14px 12px 35px;
   border-left: 2px solid var(--mantine-color-cyan-6);
   border-bottom: 1px solid var(--mantine-color-default-border);

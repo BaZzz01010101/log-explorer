@@ -42,7 +42,11 @@ interface Props {
   activeConnectionId: string;
   favorites: Favorite[];
   recents: Favorite[];
-  onOpen(connectionId: string, sources: LogSource[]): void;
+  onOpen(
+    connectionId: string,
+    sources: LogSource[],
+    mode?: "preview" | "permanent",
+  ): void;
   onFavorite(favorite: Favorite): void;
   onManage(): void;
 }
@@ -163,7 +167,7 @@ export function ResourceSidebar(props: Props) {
   const connection =
     props.connections.find((c) => c.id === connectionId) ??
     props.connections[0];
-  const [prefix, setPrefix] = useState("");
+  const [search, setSearch] = useState("");
   const [debounced, setDebounced] = useState("");
   const [streamPrefix, setStreamPrefix] = useState("");
   const [groups, setGroups] = useState<Page<LogGroup>>({ items: [] });
@@ -186,9 +190,9 @@ export function ResourceSidebar(props: Props) {
     setConnectionId(props.activeConnectionId);
   }, [props.activeConnectionId]);
   useEffect(() => {
-    const timeout = setTimeout(() => setDebounced(prefix), 220);
+    const timeout = setTimeout(() => setDebounced(search), 220);
     return () => clearTimeout(timeout);
-  }, [prefix]);
+  }, [search]);
   const loadGroups = async (more = false, version = generation.current) => {
     if (!connection) return;
     const request = ++groupsRequest.current;
@@ -351,16 +355,35 @@ export function ResourceSidebar(props: Props) {
       else if (next.size < 50) next.add(group);
       return next;
     });
-  const openRow = (row: ResourceRow) => {
+  const openRow = (
+    row: ResourceRow,
+    mode: "preview" | "permanent" = "preview",
+  ) => {
     if (row.kind === "group")
-      props.onOpen(connection.id, [{ logGroup: row.group.name }]);
+      props.onOpen(connection.id, [{ logGroup: row.group.name }], mode);
     else if (row.kind === "stream")
-      props.onOpen(connection.id, [
-        { logGroup: row.group.name, logStreams: [row.stream.name] },
-      ]);
+      props.onOpen(
+        connection.id,
+        [{ logGroup: row.group.name, logStreams: [row.stream.name] }],
+        mode,
+      );
     else if (row.kind === "more" || row.kind === "error")
       void loadStreams(row.group.name, row.kind === "more");
   };
+  const openFavorite = (
+    favorite: Favorite,
+    mode: "preview" | "permanent" = "preview",
+  ) =>
+    props.onOpen(
+      favorite.connectionId,
+      [
+        {
+          logGroup: favorite.logGroup,
+          logStreams: favorite.logStream ? [favorite.logStream] : undefined,
+        },
+      ],
+      mode,
+    );
   const focusRow = (index: number) => {
     const row = rows[index];
     if (!row || row.kind === "loading") return;
@@ -432,12 +455,13 @@ export function ResourceSidebar(props: Props) {
       </div>
       <div className="sidebar-search">
         <TextInput
-          aria-label="Log group prefix"
-          placeholder="Log group prefix…"
+          aria-label="Search log groups"
+          placeholder="Search log groups…"
+          description="Matches anywhere · case-sensitive"
           size="xs"
           leftSection={<IconSearch size={14} />}
-          value={prefix}
-          onChange={(e) => setPrefix(e.currentTarget.value)}
+          value={search}
+          onChange={(e) => setSearch(e.currentTarget.value)}
         />
         <TextInput
           aria-label="Filter loaded streams"
@@ -458,14 +482,8 @@ export function ResourceSidebar(props: Props) {
               className="quick-resource"
               title={`${f.logGroup}${f.logStream ? ` / ${f.logStream}` : ""}`}
               key={`${f.connectionId}:${f.logGroup}:${f.logStream ?? ""}`}
-              onClick={() =>
-                props.onOpen(f.connectionId, [
-                  {
-                    logGroup: f.logGroup,
-                    logStreams: f.logStream ? [f.logStream] : undefined,
-                  },
-                ])
-              }
+              onClick={() => openFavorite(f)}
+              onDoubleClick={() => openFavorite(f, "permanent")}
             >
               <IconStarFilled size={13} color="#e8b85c" />
               <span>{f.logStream ?? f.logGroup.split("/").at(-1)}</span>
@@ -516,7 +534,7 @@ export function ResourceSidebar(props: Props) {
       )}
       {!busy && !error && !groups.items.length && (
         <Text size="xs" c="dimmed" p="md">
-          No log groups match this prefix.
+          No log groups contain this text.
         </Text>
       )}
       <div
@@ -645,11 +663,8 @@ export function ResourceSidebar(props: Props) {
                       title={
                         row.group.name + "\n" + groupDescription(row.group)
                       }
-                      onClick={() =>
-                        props.onOpen(connection.id, [
-                          { logGroup: row.group.name },
-                        ])
-                      }
+                      onClick={() => openRow(row)}
+                      onDoubleClick={() => openRow(row, "permanent")}
                     >
                       <IconFolder size={14} />
                       <span>{row.group.name}</span>
@@ -730,14 +745,8 @@ export function ResourceSidebar(props: Props) {
                     <button
                       className="resource-label"
                       title={row.stream.name}
-                      onClick={() =>
-                        props.onOpen(connection.id, [
-                          {
-                            logGroup: row.group.name,
-                            logStreams: [row.stream.name],
-                          },
-                        ])
-                      }
+                      onClick={() => openRow(row)}
+                      onDoubleClick={() => openRow(row, "permanent")}
                     >
                       <IconList size={13} />
                       <span>{row.stream.name}</span>
@@ -816,6 +825,7 @@ export function ResourceSidebar(props: Props) {
             props.onOpen(
               connection.id,
               [...selected].map((logGroup) => ({ logGroup })),
+              "permanent",
             )
           }
         >
@@ -824,7 +834,8 @@ export function ResourceSidebar(props: Props) {
       )}
       <div className="sidebar-footer">
         <Text size="xs" c="dimmed" id={treeId + "-help"}>
-          Arrow keys navigate · Enter opens · Space selects
+          Arrow keys navigate · Enter previews · Double-click keeps · Space
+          selects
         </Text>
         {notice && (
           <Text size="xs" role="status" aria-live="polite">
@@ -839,14 +850,8 @@ export function ResourceSidebar(props: Props) {
                 key={i}
                 className="quick-resource"
                 title={r.logGroup}
-                onClick={() =>
-                  props.onOpen(r.connectionId, [
-                    {
-                      logGroup: r.logGroup,
-                      logStreams: r.logStream ? [r.logStream] : undefined,
-                    },
-                  ])
-                }
+                onClick={() => openFavorite(r)}
+                onDoubleClick={() => openFavorite(r, "permanent")}
               >
                 {r.logStream ?? r.logGroup.split("/").at(-1)}
               </button>

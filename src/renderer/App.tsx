@@ -22,6 +22,7 @@ import {
   IconCloud,
   IconCommand,
   IconLayoutColumns,
+  IconLayoutRows,
   IconLayoutSidebar,
   IconPlayerPlay,
   IconPlus,
@@ -36,6 +37,9 @@ import type {
 } from "../shared/contracts";
 import { createTab, createWorkspace, workspaceReducer } from "./workspace";
 import { useLogJobs } from "./useLogJobs";
+import { useKeyboardModality } from "./useKeyboardModality";
+import { PaneLayoutView } from "./components/PaneLayout";
+import { legacyLayout, nextSplitAxis } from "../shared/pane-layout";
 import { ResourceSidebar } from "./components/ResourceSidebar";
 import {
   WorkspaceTabs,
@@ -88,6 +92,7 @@ function localDate(time: number): string {
 }
 
 export default function App() {
+  useKeyboardModality();
   const [workspace, dispatch] = useReducer(
     workspaceReducer,
     undefined,
@@ -100,8 +105,12 @@ export default function App() {
   const [commandText, setCommandText] = useState("");
   const [saveState, setSaveState] = useState("Loading workspace");
   const workspaceRef = useRef(workspace);
-  const paneGridRef = useRef<HTMLDivElement>(null);
-  const splitSizes = workspace.splitSizes ?? { horizontal: 0.5, vertical: 0.5 };
+  const paneLayout =
+    workspace.layout ??
+    legacyLayout(
+      workspace.panes.map((pane) => pane.id),
+      workspace.splitSizes,
+    );
   workspaceRef.current = workspace;
   const { runtimes, run, cancel } = useLogJobs(workspace, ready, (message) => {
     notifications.show({
@@ -185,13 +194,20 @@ export default function App() {
     [ready],
   );
 
-  const openSources = (connectionId: string, sources: LogSource[]) => {
+  const openSources = (
+    connectionId: string,
+    sources: LogSource[],
+    mode: "preview" | "permanent" = "preview",
+  ) => {
     let tab = createTab(connectionId, sources);
     const preset = workspace.presets.find(
       (p) => p.logGroup && sources.some((s) => s.logGroup === p.logGroup),
     );
     if (preset) tab = { ...tab, view: structuredClone(preset.view) };
-    dispatch({ type: "tab/open", tab });
+    dispatch({
+      type: mode === "preview" ? "tab/preview" : "tab/open-resource",
+      tab,
+    });
     for (const source of sources)
       dispatch({
         type: "recents/add",
@@ -353,80 +369,6 @@ export default function App() {
     target.addEventListener("pointerup", end);
     target.addEventListener("pointercancel", end);
   };
-  const resizePanes = (axis: "horizontal" | "vertical", value: number) =>
-    dispatch({
-      type: "workspace/update",
-      patch: {
-        splitSizes: {
-          ...splitSizes,
-          [axis]: Math.max(0.2, Math.min(0.8, value)),
-        },
-      },
-    });
-  const beginPaneResize = (
-    axis: "horizontal" | "vertical",
-    event: React.PointerEvent<HTMLDivElement>,
-  ) => {
-    event.preventDefault();
-    const target = event.currentTarget;
-    target.focus({ preventScroll: true });
-    target.setPointerCapture(event.pointerId);
-    const rect = paneGridRef.current!.getBoundingClientRect();
-    const move = (e: PointerEvent) =>
-      resizePanes(
-        axis,
-        axis === "horizontal"
-          ? (e.clientX - rect.left) / rect.width
-          : (e.clientY - rect.top) / rect.height,
-      );
-    const end = () => {
-      target.removeEventListener("pointermove", move);
-      target.removeEventListener("pointerup", end);
-      target.removeEventListener("pointercancel", end);
-    };
-    target.addEventListener("pointermove", move);
-    target.addEventListener("pointerup", end);
-    target.addEventListener("pointercancel", end);
-  };
-  const divider = (axis: "horizontal" | "vertical") => (
-    <div
-      className={`pane-divider divider-${axis}`}
-      role="separator"
-      aria-label={`Resize panes ${axis === "horizontal" ? "horizontally" : "vertically"}`}
-      aria-orientation={axis === "horizontal" ? "vertical" : "horizontal"}
-      aria-valuemin={20}
-      aria-valuemax={80}
-      aria-valuenow={Math.round(splitSizes[axis] * 100)}
-      tabIndex={0}
-      style={
-        axis === "horizontal"
-          ? { left: `${splitSizes.horizontal * 100}%` }
-          : {
-              top: `${splitSizes.vertical * 100}%`,
-              left:
-                workspace.panes.length === 3
-                  ? `${splitSizes.horizontal * 100}%`
-                  : 0,
-            }
-      }
-      onPointerDown={(event) => beginPaneResize(axis, event)}
-      onDoubleClick={() => resizePanes(axis, 0.5)}
-      onKeyDown={(event) => {
-        const negative = axis === "horizontal" ? "ArrowLeft" : "ArrowUp";
-        const positive = axis === "horizontal" ? "ArrowRight" : "ArrowDown";
-        if (event.key === negative || event.key === positive) {
-          event.preventDefault();
-          resizePanes(
-            axis,
-            splitSizes[axis] + (event.key === positive ? 0.02 : -0.02),
-          );
-        } else if (event.key === "Home") {
-          event.preventDefault();
-          resizePanes(axis, 0.5);
-        }
-      }}
-    />
-  );
   return (
     <MantineProvider
       theme={theme}
@@ -575,21 +517,21 @@ export default function App() {
                   </Text>
                 </div>
               ) : (
-                <div
-                  ref={paneGridRef}
-                  className={`pane-grid panes-${workspace.panes.length}`}
-                  style={{
-                    gridTemplateColumns:
-                      workspace.panes.length > 1
-                        ? `minmax(0, ${splitSizes.horizontal}fr) minmax(0, ${1 - splitSizes.horizontal}fr)`
-                        : "minmax(0, 1fr)",
-                    gridTemplateRows:
-                      workspace.panes.length > 2
-                        ? `minmax(0, ${splitSizes.vertical}fr) minmax(0, ${1 - splitSizes.vertical}fr)`
-                        : "minmax(0, 1fr)",
-                  }}
-                >
-                  {workspace.panes.map((pane, index) => {
+                <PaneLayoutView
+                  layout={paneLayout}
+                  onResize={(path, ratio) =>
+                    dispatch({ type: "pane/resize", path, ratio })
+                  }
+                  renderPane={(paneId) => {
+                    const pane = workspace.panes.find(
+                      (item) => item.id === paneId,
+                    )!;
+                    const index = workspace.panes.indexOf(pane);
+                    const splitAxis = nextSplitAxis(paneLayout, paneId);
+                    const SplitIcon =
+                      splitAxis === "horizontal"
+                        ? IconLayoutColumns
+                        : IconLayoutRows;
                     const tab = workspace.tabs.find((t) => t.id === pane.tabId);
                     const connection = workspace.connections.find(
                       (c) => c.id === tab?.connectionId,
@@ -641,11 +583,25 @@ export default function App() {
                                   size="sm"
                                   variant="subtle"
                                   aria-label="Split pane"
+                                  aria-description={
+                                    splitAxis === "horizontal"
+                                      ? "Split side by side"
+                                      : "Split above and below"
+                                  }
+                                  title={
+                                    splitAxis === "horizontal"
+                                      ? "Split side by side"
+                                      : "Split above and below"
+                                  }
+                                  data-split-axis={splitAxis}
                                   onClick={() =>
-                                    dispatch({ type: "pane/split" })
+                                    dispatch({
+                                      type: "pane/split",
+                                      paneId: pane.id,
+                                    })
                                   }
                                 >
-                                  <IconLayoutColumns size={14} />
+                                  <SplitIcon size={14} />
                                 </ActionIcon>
                               )}
                               {workspace.panes.length > 1 && (
@@ -724,10 +680,8 @@ export default function App() {
                         </section>
                       </PaneDropTarget>
                     );
-                  })}
-                  {workspace.panes.length > 1 && divider("horizontal")}
-                  {workspace.panes.length > 2 && divider("vertical")}
-                </div>
+                  }}
+                />
               )}
             </WorkspaceDragSurface>
           </main>

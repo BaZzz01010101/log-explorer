@@ -55,6 +55,10 @@ export function useLogJobs(
     new Map<string, { requestId: string; generation: number }>(),
   );
   const autoStarted = useRef(new Set<string>());
+  const observedTimeRanges = useRef(new Map<string, string>());
+  const pendingTimeRefresh = useRef(
+    new Map<string, ReturnType<typeof setTimeout>>(),
+  );
 
   const ownsOperation = useCallback((tabId: string, generation: number) => {
     if (!mounted.current || operations.current.get(tabId) !== generation)
@@ -147,6 +151,10 @@ export function useLogJobs(
       current.current.clear();
       latestRequest.current.clear();
       autoStarted.current.clear();
+      observedTimeRanges.current.clear();
+      for (const timer of pendingTimeRefresh.current.values())
+        clearTimeout(timer);
+      pendingTimeRefresh.current.clear();
       for (const id of ids) void cancelQuietly(id);
     };
   }, [cancelQuietly, ownsRequest]);
@@ -212,6 +220,9 @@ export function useLogJobs(
 
   const run = useCallback(
     async (tab: LogTab, live = false, more = false) => {
+      const pending = pendingTimeRefresh.current.get(tab.id);
+      if (pending) clearTimeout(pending);
+      pendingTimeRefresh.current.delete(tab.id);
       // Allocate before every await: an older cancellation cannot resume over a newer action.
       const generation = ++sequence.current;
       const state = workspaceRef.current;
@@ -366,6 +377,10 @@ export function useLogJobs(
         observedSources.current.delete(tabId);
         latestRequest.current.delete(tabId);
         autoStarted.current.delete(tabId);
+        observedTimeRanges.current.delete(tabId);
+        const pending = pendingTimeRefresh.current.get(tabId);
+        if (pending) clearTimeout(pending);
+        pendingTimeRefresh.current.delete(tabId);
         const id = current.current.get(tabId);
         if (id) {
           requests.current.delete(id);
@@ -383,6 +398,9 @@ export function useLogJobs(
       const previousSource = observedSources.current.get(tab.id);
       observedSources.current.set(tab.id, source);
       if (previousSource !== undefined && previousSource !== source) {
+        const pending = pendingTimeRefresh.current.get(tab.id);
+        if (pending) clearTimeout(pending);
+        pendingTimeRefresh.current.delete(tab.id);
         // A manual run for the new source can already own the tab; preserve that operation.
         if (operationSources.current.get(tab.id) !== source) {
           operations.current.set(tab.id, ++sequence.current);
@@ -438,6 +456,64 @@ export function useLogJobs(
   ]);
 
   useEffect(() => {
+    if (!ready) return;
+    for (const tab of workspace.tabs) {
+      const identity = timeIdentity(tab);
+      const previous = observedTimeRanges.current.get(tab.id);
+      observedTimeRanges.current.set(tab.id, identity);
+      // Startup/restoration and layout changes must not launch another request.
+      if (previous === undefined || previous === identity) continue;
+      const pending = pendingTimeRefresh.current.get(tab.id);
+      if (pending) clearTimeout(pending);
+      pendingTimeRefresh.current.delete(tab.id);
+      if (tab.timePreset === "custom") {
+        const runtime = runtimesRef.current[tab.id];
+        if (
+          runtime?.live ||
+          runtime?.state === "running" ||
+          runtime?.state === "queued"
+        )
+          void cancel(tab.id);
+      }
+      try {
+        resolveTimeRange(tab.timePreset, tab.customStart, tab.customEnd);
+      } catch {
+        // A partially edited, impossible, or reversed custom range is a draft.
+        continue;
+      }
+      if (tab.timePreset !== "custom") {
+        void run(tab);
+        continue;
+      }
+      const source = sourceIdentity(
+        tab.connectionId,
+        tab.sources,
+        workspace.connections.find((item) => item.id === tab.connectionId),
+      );
+      pendingTimeRefresh.current.set(
+        tab.id,
+        setTimeout(() => {
+          pendingTimeRefresh.current.delete(tab.id);
+          const state = workspaceRef.current;
+          const latest = state.tabs.find((item) => item.id === tab.id);
+          if (
+            !mounted.current ||
+            !latest ||
+            timeIdentity(latest) !== identity ||
+            sourceIdentity(
+              latest.connectionId,
+              latest.sources,
+              state.connections.find((item) => item.id === latest.connectionId),
+            ) !== source
+          )
+            return;
+          void run(latest);
+        }, 400),
+      );
+    }
+  }, [workspace.tabs, workspace.connections, ready, run, cancel]);
+
+  useEffect(() => {
     const limit = workspace.preferences.maxEvents;
     setRuntimes((previous) => {
       if (!mounted.current) return previous;
@@ -483,6 +559,14 @@ export function useLogJobs(
     return () => clearInterval(timer);
   }, [workspace.preferences.refreshSeconds, ready, run]);
   return { runtimes, run, cancel };
+}
+
+function timeIdentity(tab: LogTab): string {
+  return JSON.stringify(
+    tab.timePreset === "custom"
+      ? [tab.timePreset, tab.customStart ?? "", tab.customEnd ?? ""]
+      : [tab.timePreset],
+  );
 }
 
 function sourceIdentity(

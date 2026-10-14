@@ -22,6 +22,12 @@
   border-right: 1px solid var(--mantine-color-default-border);
   color: var(--mantine-color-dimmed);
   background: transparent;
+  user-select: none;
+  -webkit-user-drag: none;
+  touch-action: none;
+}
+.workspace-tab.is-preview .workspace-tab-label > span:first-of-type {
+  font-style: italic;
 }
 .workspace-tab.is-active {
   color: var(--mantine-color-text);
@@ -35,7 +41,13 @@
   border-top: 2px solid var(--group-color);
 }
 .workspace-tab.is-dragging {
-  opacity: 0.55;
+  opacity: 0.8;
+  background: color-mix(
+    in srgb,
+    var(--mantine-color-blue-5) 20%,
+    var(--mantine-color-body)
+  );
+  outline: 1px solid var(--mantine-color-blue-5);
   z-index: 5;
 }
 .workspace-tab button,
@@ -58,7 +70,7 @@
   align-items: center;
   gap: 7px;
   min-width: 0;
-  padding: 11px 3px;
+  padding: 11px 8px 11px 12px;
   font-size: 12px !important;
   text-align: left;
   flex: 1;
@@ -248,6 +260,21 @@
   color: var(--mantine-color-text);
   font-size: 13px;
   font-weight: 600;
+}
+.pane-drop-overlay.split-preview-left {
+  right: 50%;
+}
+.pane-drop-overlay.split-preview-right {
+  left: 50%;
+}
+.pane-drop-overlay.split-preview-top {
+  bottom: 50%;
+}
+.pane-drop-overlay.split-preview-bottom {
+  top: 50%;
+}
+.pane-drop-overlay[class*="split-preview-"] {
+  border: 2px solid var(--mantine-color-blue-5);
 }
 .workspace-drag-preview {
   display: flex;
