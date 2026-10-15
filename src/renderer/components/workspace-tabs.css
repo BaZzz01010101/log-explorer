@@ -119,6 +119,40 @@
   border-radius: 3px;
   font-weight: 700;
 }
+.tab-member-count {
+  font-size: 9px;
+  line-height: 16px;
+  min-width: 16px;
+  padding: 0 3px;
+  text-align: center;
+  border-radius: 3px;
+  background: var(--mantine-color-default-hover);
+  color: var(--mantine-color-dimmed);
+}
+.split-tab-tooltip {
+  overflow-wrap: anywhere;
+}
+.pane-drag-header {
+  flex: none;
+  min-width: 0;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+.pane-drag-header.can-drag {
+  cursor: grab;
+}
+.pane-drag-header.is-dragging {
+  outline: 2px solid var(--mantine-color-blue-5);
+  outline-offset: -2px;
+  background: var(--mantine-color-blue-light);
+}
+.pane-drag-header.is-dragging {
+  opacity: 0.7;
+}
+.pane-drag-header > .pane-heading {
+  cursor: inherit;
+}
 .workspace-tab-tools {
   display: flex;
   padding: 4px 7px;
@@ -245,10 +279,6 @@
   min-height: 0;
   height: 100%;
 }
-.pane-drop-target.is-over {
-  outline: 2px solid var(--mantine-color-blue-5);
-  outline-offset: -2px;
-}
 .pane-drop-overlay {
   position: absolute;
   inset: 0;
@@ -294,6 +324,14 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+.workspace-tab-insertion {
+  position: fixed;
+  z-index: 1000;
+  pointer-events: none;
+  background: var(--mantine-color-blue-5);
+  border-radius: 2px;
+  box-shadow: 0 0 0 1px var(--mantine-color-body);
 }
 @media (max-width: 1000px) {
   .pane-chip {

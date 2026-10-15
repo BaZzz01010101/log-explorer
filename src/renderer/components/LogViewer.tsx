@@ -27,6 +27,7 @@ import {
   IconArrowLeft,
   IconArrowRight,
   IconArrowUp,
+  IconArrowsVertical,
   IconBraces,
   IconCheck,
   IconChevronDown,
@@ -35,6 +36,7 @@ import {
   IconCopy,
   IconDownload,
   IconFilter,
+  IconFold,
   IconGripVertical,
   IconPin,
   IconSearch,
@@ -77,6 +79,9 @@ import {
   type ParsedMessage,
 } from "../../shared/log-data";
 import "./viewer.css";
+import { useColumnHeaderDrag } from "../useColumnHeaderDrag";
+import { useScrollPagination } from "../useScrollPagination";
+import { useMessageExpansion } from "../useMessageExpansion";
 
 interface EventRow {
   event: LogEvent;
@@ -89,6 +94,7 @@ export interface LogViewerProps {
   onViewChange: (view: ViewConfig) => void;
   preferences: Preferences;
   onContext?: (event: LogEvent) => void;
+  pagination?: { scope: string; pageKey?: string; onLoad(): void };
 }
 const levelColor: Record<LogLevel, string> = {
   trace: "gray",
@@ -336,11 +342,16 @@ export function LogViewer({
   onViewChange,
   preferences,
   onContext,
+  pagination,
 }: LogViewerProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
-  const [expandedEvents, setExpandedEvents] = useState<Set<string>>(
-    () => new Set(),
-  );
+  useScrollPagination(scrollRef, {
+    scope: pagination?.scope ?? "no-query",
+    targets: pagination?.pageKey
+      ? [{ key: pagination.pageKey, load: pagination.onLoad }]
+      : [],
+  });
+  const expansion = useMessageExpansion(view.mode);
   const [inspectedId, setInspectedId] = useState<string | null>(null);
   const [inspectorMode, setInspectorMode] = useState("structured");
   const [columnsOpened, setColumnsOpened] = useState(false);
@@ -380,6 +391,17 @@ export function LogViewer({
   );
   const currentView = useRef({ view, config, onViewChange });
   currentView.current = { view, config, onViewChange };
+  const headerDrag = useColumnHeaderDrag(
+    config,
+    (columns) => {
+      const current = currentView.current;
+      current.onViewChange({ ...current.view, columns });
+    },
+    scrollRef,
+  );
+  useEffect(() => {
+    headerDrag.cancel();
+  }, [view.mode]);
   const finishColumnResize = (commit: boolean) => {
     const session = resizeSession.current;
     if (!session) return;
@@ -591,8 +613,14 @@ export function LogViewer({
   const virtualizer = useVirtualizer({
     count: rows.length,
     getScrollElement: () => scrollRef.current,
-    estimateSize: () =>
-      view.mode === "json" ? 180 : preferences.density === "compact" ? 34 : 44,
+    estimateSize: (index) =>
+      expansion.isExpanded(rows[index]!.id)
+        ? view.mode === "json"
+          ? 180
+          : 260
+        : preferences.density === "compact"
+          ? 34
+          : 44,
     getItemKey: (index) => rows[index]!.id,
     overscan: 7,
   });
@@ -603,6 +631,7 @@ export function LogViewer({
     view.wrap,
     preferences.density,
     preferences.fontSize,
+    expansion,
     virtualizer,
   ]);
   const inspectedIndex = rows.findIndex(
@@ -616,13 +645,7 @@ export function LogViewer({
   const limitedCount = allRows.filter(
     (row) => row.parsed.kind === "limited",
   ).length;
-  const toggleExpand = (id: string) =>
-    setExpandedEvents((previous) => {
-      const next = new Set(previous);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
+  const toggleExpand = expansion.toggle;
   const moveColumn = (path: string, destination: number) => {
     const next = [...config];
     const index = next.findIndex((column) => column.path === path);
@@ -788,6 +811,25 @@ export function LogViewer({
             <IconTextWrap size={16} />
           </ActionIcon>
         </Tooltip>
+        <Tooltip
+          label={expansion.all ? "Fold all messages" : "Unfold all messages"}
+        >
+          <ActionIcon
+            aria-label={
+              expansion.all ? "Fold all messages" : "Unfold all messages"
+            }
+            aria-pressed={expansion.all}
+            variant={expansion.all ? "light" : "subtle"}
+            onClick={expansion.toggleAll}
+            disabled={events.length === 0}
+          >
+            {expansion.all ? (
+              <IconFold size={16} />
+            ) : (
+              <IconArrowsVertical size={16} />
+            )}
+          </ActionIcon>
+        </Tooltip>
         <Menu position="bottom-end" withinPortal>
           <Menu.Target>
             <Button
@@ -877,6 +919,7 @@ export function LogViewer({
               <div
                 className="log-table-header"
                 role="row"
+                onClickCapture={headerDrag.onClickCapture}
                 style={{
                   minWidth:
                     table.getTotalSize() + (view.mode === "hybrid" ? 32 : 0),
@@ -885,8 +928,9 @@ export function LogViewer({
                 {view.mode === "hybrid" && <div className="hybrid-gutter" />}
                 {table.getHeaderGroups()[0]?.headers.map((header) => (
                   <div
-                    className={`log-header-cell ${header.column.getIsPinned() ? "pinned" : ""}`}
+                    className={`log-header-cell ${header.column.getIsPinned() ? "pinned" : ""}${headerDrag.visual?.sourcePath === columnPath(header.id) ? " is-reordering" : ""}${headerDrag.visual?.targetPath === columnPath(header.id) ? ` column-drop-${headerDrag.visual.edge}` : ""}`}
                     key={header.id}
+                    data-column-path={columnPath(header.id)}
                     style={{
                       ...pinStyle(header.column),
                       ...(header.column.getIsPinned() && view.mode === "hybrid"
@@ -906,6 +950,16 @@ export function LogViewer({
                       className="column-sort"
                       title={`Sort by ${titleFor(columnPath(header.id))}`}
                       onClick={header.column.getToggleSortingHandler()}
+                      draggable={false}
+                      onDragStart={(event) => event.preventDefault()}
+                      onPointerDown={(event) => {
+                        finishColumnResize(true);
+                        headerDrag.begin(columnPath(header.id), event);
+                      }}
+                      onPointerMove={headerDrag.move}
+                      onPointerUp={headerDrag.end}
+                      onPointerCancel={headerDrag.cancel}
+                      onLostPointerCapture={headerDrag.cancel}
                     >
                       {flexRender(
                         header.column.columnDef.header,
@@ -933,6 +987,7 @@ export function LogViewer({
                         if (!event.isPrimary || event.button !== 0) return;
                         event.preventDefault();
                         event.stopPropagation();
+                        headerDrag.cancel();
                         finishColumnResize(true);
                         window.getSelection()?.removeAllRanges();
                         const element = event.currentTarget;
@@ -1046,7 +1101,7 @@ export function LogViewer({
               {virtualizer.getVirtualItems().map((virtualRow) => {
                 const tableRow = rows[virtualRow.index]!;
                 const row = tableRow.original;
-                const expanded = expandedEvents.has(row.event.id);
+                const expanded = expansion.isExpanded(row.event.id);
                 return (
                   <div
                     className={`virtual-event ${view.mode === "json" ? "json-event-card" : "table-event"} level-${row.level}`}
@@ -1064,6 +1119,19 @@ export function LogViewer({
                     {view.mode === "json" ? (
                       <>
                         <div className="json-card-meta">
+                          <button
+                            type="button"
+                            className="event-action expand-event"
+                            aria-label={`${expanded ? "Collapse" : "Expand"} event details`}
+                            aria-expanded={expanded}
+                            onClick={() => toggleExpand(row.event.id)}
+                          >
+                            {expanded ? (
+                              <IconChevronDown size={13} />
+                            ) : (
+                              <IconChevronRight size={13} />
+                            )}
+                          </button>
                           <Badge
                             size="xs"
                             color={levelColor[row.level]}
@@ -1098,12 +1166,30 @@ export function LogViewer({
                             <IconCopy size={13} />
                           </button>
                         </div>
-                        <MessageContent
-                          row={row}
-                          highlight={preferences.highlightText}
-                          compact
-                          onAddColumn={addColumn}
-                        />
+                        {expanded ? (
+                          <div className="event-message-details">
+                            <MessageContent
+                              row={row}
+                              highlight={preferences.highlightText}
+                              compact
+                              onAddColumn={addColumn}
+                            />
+                          </div>
+                        ) : (
+                          <button
+                            type="button"
+                            className="message-summary"
+                            aria-label="Expand message"
+                            onClick={() => toggleExpand(row.event.id)}
+                          >
+                            <HighlightText
+                              text={row.event.message
+                                .slice(0, 600)
+                                .replace(/\s+/g, " ")}
+                              needle={preferences.highlightText}
+                            />
+                          </button>
+                        )}
                       </>
                     ) : (
                       <>
@@ -1116,6 +1202,7 @@ export function LogViewer({
                             <button
                               className="hybrid-gutter expand-event"
                               aria-label={`${expanded ? "Collapse" : "Expand"} event details`}
+                              aria-expanded={expanded}
                               onClick={() => toggleExpand(row.event.id)}
                             >
                               {expanded ? (
@@ -1151,8 +1238,8 @@ export function LogViewer({
                             </div>
                           ))}
                         </div>
-                        {expanded && view.mode === "hybrid" && (
-                          <div className="hybrid-detail">
+                        {expanded && (
+                          <div className="hybrid-detail event-message-details">
                             <MessageContent
                               row={row}
                               highlight={preferences.highlightText}
@@ -1160,6 +1247,15 @@ export function LogViewer({
                               onAddColumn={addColumn}
                             />
                             <Group gap="xs" mt={6}>
+                              {view.mode === "hybrid" && (
+                                <Button
+                                  size="compact-xs"
+                                  variant="subtle"
+                                  onClick={() => toggleExpand(row.event.id)}
+                                >
+                                  Fold message
+                                </Button>
+                              )}
                               <Button
                                 size="compact-xs"
                                 variant="subtle"

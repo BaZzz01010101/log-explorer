@@ -361,3 +361,119 @@ test("expanded hybrid rows retain aligned geometry through horizontal scrolling"
   await page.getByRole("button", { name: "Collapse event details" }).click();
   await expect(detail).toHaveCount(0);
 });
+
+for (const mode of ["JSON", "Table", "Hybrid"]) {
+  test(`${mode} folds and unfolds all messages while preserving row geometry`, async () => {
+    await page
+      .locator("label")
+      .filter({ hasText: new RegExp(`^${mode}$`) })
+      .click();
+    const foldAll = page.getByRole("button", {
+      name: "Fold all messages",
+      exact: true,
+    });
+    const unfoldAll = page.getByRole("button", {
+      name: "Unfold all messages",
+      exact: true,
+    });
+    const rows = page.locator(".virtual-event");
+    const details = page.locator(".event-message-details");
+    if (mode === "JSON") {
+      await expect(foldAll).toBeVisible();
+      await expect.poll(() => details.count()).toBeGreaterThan(0);
+      await foldAll.click();
+    }
+    await expect(unfoldAll).toBeVisible();
+    await expect(details).toHaveCount(0);
+    const foldedHeight = (await rows.nth(1).boundingBox())!.height;
+    await unfoldAll.click();
+    await expect.poll(() => details.count()).toBeGreaterThan(0);
+    await expect
+      .poll(async () => (await rows.nth(1).boundingBox())!.height)
+      .toBeGreaterThan(foldedHeight + 20);
+    if (mode !== "Table") {
+      await rows
+        .first()
+        .getByRole("button", { name: "Collapse event details", exact: true })
+        .click();
+      await expect(rows.first().locator(".event-message-details")).toHaveCount(
+        0,
+      );
+      await expect(rows.nth(1).locator(".event-message-details")).toBeVisible();
+    }
+    await foldAll.click();
+    await expect(details).toHaveCount(0);
+    await unfoldAll.click();
+    await expect(rows.first().locator(".event-message-details")).toBeVisible();
+    const viewport = page.getByRole("region", {
+      name: "Log events",
+      exact: true,
+    });
+    await viewport.hover();
+    await page.mouse.wheel(0, 1000000);
+    await expect
+      .poll(async () => Number(await rows.first().getAttribute("data-index")))
+      .toBeGreaterThan(100);
+    await expect
+      .poll(() =>
+        rows.evaluateAll(
+          (elements) =>
+            elements.length > 0 &&
+            elements.every((element) =>
+              element.querySelector(".event-message-details"),
+            ),
+        ),
+      )
+      .toBe(true);
+    await expect
+      .poll(async () =>
+        rows.evaluateAll((elements) =>
+          elements.every((element, index) => {
+            if (!index) return true;
+            const previous = elements[index - 1].getBoundingClientRect();
+            const current = element.getBoundingClientRect();
+            return current.top >= previous.bottom - 1;
+          }),
+        ),
+      )
+      .toBe(true);
+    await foldAll.click();
+    await expect(details).toHaveCount(0);
+    await expect(unfoldAll).toBeVisible();
+    await page.getByLabel("Local filter loaded events").fill("Payment");
+    await expect(page.locator(".viewer-meta")).toContainText("loaded events");
+    await expect(rows.first()).toContainText("Payment");
+  });
+}
+
+test("the explorer automatically fills remaining group pages and resets continuation after searching", async () => {
+  const groups = page.locator(".resource-tree .resource-label");
+  await expect(groups).toHaveCount(9);
+  await expect(
+    page.getByRole("button", { name: "Load more groups", exact: true }),
+  ).toHaveCount(0);
+  const search = page.getByRole("textbox", {
+    name: "Search log groups",
+    exact: true,
+  });
+  await search.fill("application");
+  await expect(groups).toHaveText([
+    "/application/audit",
+    "/application/security",
+  ]);
+  await search.fill("");
+  await expect(groups).toHaveCount(9);
+  await expect(
+    page.getByRole("treeitem", { name: "/ecs/inventory", exact: true }),
+  ).toBeVisible();
+  await page
+    .getByRole("button", { name: "Expand /aws/lambda/orders-api", exact: true })
+    .click();
+  await expect(groups).toHaveCount(13);
+  await expect(
+    page.getByRole("treeitem", {
+      name: "2026/10/13/[$LATEST]worker-4",
+      exact: true,
+    }),
+  ).toBeVisible();
+});

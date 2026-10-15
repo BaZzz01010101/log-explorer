@@ -36,6 +36,7 @@ import type {
   LogTab,
 } from "../shared/contracts";
 import { createTab, createWorkspace, workspaceReducer } from "./workspace";
+import { activeEntryId, workspaceEntries } from "./workspace-entries";
 import { useLogJobs } from "./useLogJobs";
 import { useKeyboardModality } from "./useKeyboardModality";
 import { PaneLayoutView } from "./components/PaneLayout";
@@ -45,6 +46,7 @@ import {
   WorkspaceTabs,
   WorkspaceDragSurface,
   PaneDropTarget,
+  PaneDragHeader,
 } from "./components/WorkspaceTabs";
 import { QueryPane } from "./components/QueryPane";
 import { Settings } from "./components/Settings";
@@ -125,7 +127,11 @@ export default function App() {
     workspace.panes[0];
   const activeTab = workspace.tabs.find((t) => t.id === activePane?.tabId);
   const activeConnectionId =
-    activeTab?.connectionId ?? workspace.connections[0].id;
+    workspace.activeConnectionId ??
+    activeTab?.connectionId ??
+    workspace.connections[0].id;
+  const entries = workspaceEntries(workspace);
+  const activeWorkspaceTabId = activeEntryId(workspace);
 
   useEffect(() => {
     let disposed = false;
@@ -277,7 +283,8 @@ export default function App() {
       event.preventDefault();
       switch (entry[0]) {
         case "closeTab":
-          if (activeTab) dispatch({ type: "tab/close", tabId: activeTab.id });
+          if (activeWorkspaceTabId)
+            dispatch({ type: "tab/close", tabId: activeWorkspaceTabId });
           break;
         case "reopenTab":
           dispatch({ type: "tab/reopen" });
@@ -296,12 +303,13 @@ export default function App() {
           break;
         case "nextTab":
         case "previousTab": {
-          const index = workspace.tabs.findIndex((t) => t.id === activeTab?.id);
+          const index = entries.findIndex(
+            (entry) => entry.id === activeWorkspaceTabId,
+          );
           const next =
-            workspace.tabs[
-              (index +
-                (entry[0] === "nextTab" ? 1 : workspace.tabs.length - 1)) %
-                workspace.tabs.length
+            entries[
+              (index + (entry[0] === "nextTab" ? 1 : entries.length - 1)) %
+                entries.length
             ];
           if (next) dispatch({ type: "tab/select", tabId: next.id });
           break;
@@ -342,7 +350,7 @@ export default function App() {
       hint: "",
       action: () => setSettingsOpen(true),
     },
-    ...workspace.tabs.map((tab) => ({
+    ...entries.map((tab) => ({
       name: `Go to ${tab.title}`,
       hint: "",
       action: () => dispatch({ type: "tab/select", tabId: tab.id }),
@@ -469,6 +477,9 @@ export default function App() {
               <ResourceSidebar
                 connections={workspace.connections}
                 activeConnectionId={activeConnectionId}
+                onConnectionChange={(connectionId) =>
+                  dispatch({ type: "connection/select", connectionId })
+                }
                 favorites={workspace.favorites}
                 recents={workspace.recents}
                 onOpen={openSources}
@@ -556,7 +567,7 @@ export default function App() {
                           }}
                           aria-label={`Pane ${index + 1}`}
                         >
-                          <div className="pane-heading">
+                          <PaneDragHeader paneId={pane.id}>
                             <Group gap={7}>
                               <Badge
                                 size="xs"
@@ -569,8 +580,13 @@ export default function App() {
                               >
                                 {index + 1}
                               </Badge>
-                              <Text size="xs" fw={600} truncate="end">
-                                {tab?.title ?? "Empty pane"}
+                              <Text
+                                className="pane-title"
+                                size="xs"
+                                fw={600}
+                                truncate="end"
+                              >
+                                {tab?.customTitle ?? tab?.title ?? "Empty pane"}
                               </Text>
                               <IconChevronRight size={12} />
                               <Text size="xs" c="dimmed">
@@ -620,7 +636,7 @@ export default function App() {
                                 </ActionIcon>
                               )}
                             </Group>
-                          </div>
+                          </PaneDragHeader>
                           {tab ? (
                             <QueryPane
                               key={tab.id}
@@ -632,6 +648,12 @@ export default function App() {
                                   type: "tab/update",
                                   tabId: tab.id,
                                   patch,
+                                })
+                              }
+                              onTimezoneChange={(timezone) =>
+                                dispatch({
+                                  type: "preferences/update",
+                                  patch: { timezone },
                                 })
                               }
                               onRun={(live, more) => execute(tab, live, more)}
@@ -663,18 +685,22 @@ export default function App() {
                                 Choose a group or stream in the explorer, or
                                 drag a tab onto this pane.
                               </Text>
-                              <Button
-                                variant="light"
-                                size="xs"
-                                leftSection={<IconPlus size={14} />}
-                                onClick={() =>
-                                  openSources(workspace.connections[0].id, [
-                                    { logGroup: "/aws/lambda/orders-api" },
-                                  ])
-                                }
-                              >
-                                Open fixture source
-                              </Button>
+                              {workspace.connections.find(
+                                (item) => item.id === activeConnectionId,
+                              )?.mode === "offline" && (
+                                <Button
+                                  variant="light"
+                                  size="xs"
+                                  leftSection={<IconPlus size={14} />}
+                                  onClick={() =>
+                                    openSources(activeConnectionId, [
+                                      { logGroup: "/aws/lambda/orders-api" },
+                                    ])
+                                  }
+                                >
+                                  Open fixture source
+                                </Button>
+                              )}
                             </div>
                           )}
                         </section>
@@ -695,7 +721,7 @@ export default function App() {
                 : "Isolated local development"}
             </Text>
             <Text size="xs" c="dimmed">
-              {workspace.tabs.length} tabs · {workspace.panes.length} panes
+              {entries.length} tabs · {workspace.panes.length} panes
             </Text>
           </Group>
           <Group gap={14}>

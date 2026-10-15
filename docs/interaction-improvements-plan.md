@@ -1,5 +1,7 @@
 # Interaction improvements implementation plan
 
+The [panel dragging and query controls plan](panel-drag-and-query-controls-plan.md) tracks the current batch. The earlier [combined split-tab plan](split-workspace-plan.md) supersedes the global split-pane behavior below.
+
 ## Scope and constraints
 
 Implement the reported interaction fixes and the additional split-screen requirements together. Preserve the existing AWS safety boundary: no real AWS calls, credential/profile inspection or user application-data access during development. Desktop regressions use isolated storage, fixtures, injected transports and hidden verification windows.

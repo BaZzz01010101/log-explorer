@@ -209,8 +209,15 @@ test("server and local filtering export real selected data and inspector opens s
     "true",
   );
   await expect(page.locator(".query-status")).toContainText("complete");
+  const timeRange = page.getByRole("button", {
+    name: "Time range",
+    exact: true,
+  });
+  await timeRange.click();
+  await page.getByRole("tab", { name: "Absolute", exact: true }).click();
   const start = Date.parse(await page.getByLabel("Range start").inputValue());
   const end = Date.parse(await page.getByLabel("Range end").inputValue());
+  await timeRange.click();
   const context = JSON.parse(
     await exportLoaded("json", "context"),
   ) as LogEvent[];

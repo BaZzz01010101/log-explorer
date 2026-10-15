@@ -5,6 +5,8 @@ import type {
   LogTab,
   Pane,
   SplitEdge,
+  SplitTab,
+  PaneLayout,
   Preferences,
   SavedQuery,
   TabGroup,
@@ -21,11 +23,23 @@ import {
   mapLayoutIds,
   nextSplitAxis,
 } from "../shared/pane-layout";
+import {
+  activeEntryId,
+  workspaceEntries,
+  logTabLabel,
+  type WorkspaceEntry,
+} from "./workspace-entries";
 
 export type WorkspaceAction =
   | { type: "tab/open"; tab: LogTab; paneId?: string }
   | { type: "tab/preview" | "tab/open-resource"; tab: LogTab; paneId?: string }
   | { type: "tab/promote"; tabId: string }
+  | { type: "tab/duplicate"; tabId: string }
+  | { type: "tab/rename"; tabId: string; title: string }
+  | { type: "split/exit"; tabId: string }
+  | { type: "connection/select"; connectionId: string }
+  | { type: "pane/swap"; paneId: string; overPaneId: string }
+  | { type: "pane/detach"; tabId: string; beforeTabId: string | null }
   | { type: "tab/select"; tabId: string; paneId?: string }
   | { type: "tab/update"; tabId: string; patch: Partial<LogTab> }
   | { type: "tab/close"; tabId: string }
@@ -33,7 +47,12 @@ export type WorkspaceAction =
   | { type: "tab/reorder"; tabId: string; beforeTabId: string | null }
   | { type: "tab/group"; tabIds: string[]; groupId?: string }
   | { type: "pane/split"; tabId?: string; paneId?: string; edge?: SplitEdge }
-  | { type: "pane/drop-tab"; tabId: string; paneId: string; edge: SplitEdge }
+  | {
+      type: "pane/drop-tab";
+      tabId: string;
+      paneId: string;
+      edge: SplitEdge | null;
+    }
   | { type: "pane/show-tabs"; tabIds: string[] }
   | { type: "pane/resize"; path: string; ratio: number }
   | { type: "pane/close"; paneId: string }
@@ -127,6 +146,18 @@ function nextId(prefix: string, items: { id: string }[]): string {
   let index = 1;
   while (items.some((item) => item.id === prefix + "-" + index)) index++;
   return prefix + "-" + index;
+}
+/** View IDs and combined entry IDs share one namespace, including reopen history. */
+function entryIdentities(
+  state: Workspace,
+  additional: { id: string }[] = [],
+): { id: string }[] {
+  return [
+    ...state.tabs,
+    ...(state.splitTabs ?? []),
+    ...state.closedTabs,
+    ...additional,
+  ];
 }
 function defaultView(): ViewConfig {
   return {
@@ -233,7 +264,7 @@ function baseTab(
     filterPattern: "",
     query:
       "fields @timestamp, @message, @logStream\n| sort @timestamp desc\n| limit 1000",
-    timePreset: "1h",
+    timePreset: "clear",
     view: defaultView(),
   };
 }
@@ -254,10 +285,14 @@ function parseTab(
     ...defaults,
     ...(typeof raw.preview === "boolean" ? { preview: raw.preview } : {}),
     title: string(raw.title, defaults.title, 512),
+    ...(typeof raw.customTitle === "string" && raw.customTitle.trim()
+      ? { customTitle: string(raw.customTitle, "", 512) }
+      : {}),
     kind: raw.kind === "insights" ? "insights" : "events",
     filterPattern: string(raw.filterPattern),
     query: string(raw.query, defaults.query, 10000),
     timePreset: [
+      "clear",
       "5m",
       "15m",
       "30m",
@@ -487,6 +522,10 @@ export function createWorkspace(): Workspace {
     name: "Investigation workspace",
     connections: [{ ...OFFLINE_CONNECTION }],
     tabs: [tab],
+    splitTabs: [],
+    tabOrder: [tab.id],
+    activeTabId: tab.id,
+    activeConnectionId: "offline",
     closedTabs: [],
     groups: [],
     panes: [{ id: "pane-1", tabId: tab.id }],
@@ -532,7 +571,12 @@ export function restoreWorkspace(value: unknown): Workspace {
     list(raw.closedTabs, 30)
       .map((tab) => parseTab(tab, connections, groups))
       .filter(valid),
-  ).filter((tab) => !tabs.some((open) => open.id === tab.id));
+  )
+    .filter((tab) => !tabs.some((open) => open.id === tab.id))
+    .map((tab) => {
+      const { customTitle: _closedAlias, ...rest } = tab;
+      return rest;
+    });
   const shown = new Set<string>();
   const panes: Pane[] = unique(
     list(raw.panes, 4).map((value, index) => {
@@ -556,7 +600,7 @@ export function restoreWorkspace(value: unknown): Workspace {
         (item, index, items) =>
           items.findIndex((other) => sameFavorite(item, other)) === index,
       );
-  return {
+  const restored: Workspace = {
     version: 1,
     name: string(raw.name, defaults.name, 120),
     connections,
@@ -588,6 +632,7 @@ export function restoreWorkspace(value: unknown): Workspace {
     presets: unique(list(raw.presets, 500).map(parsePreset).filter(valid)),
     preferences: parsePreferences(raw.preferences),
   };
+  return normalizeWorkspaceEntries(restored, raw);
 }
 export function createTab(connectionId: string, sources: LogSource[]): LogTab {
   return baseTab(
@@ -628,7 +673,7 @@ function openResource(
           ),
         }
       : state;
-    return workspaceReducer(next, {
+    return legacyWorkspaceReducer(next, {
       type: "tab/select",
       tabId: existing.id,
       paneId,
@@ -636,8 +681,8 @@ function openResource(
   }
   const tab = {
     ...parsed,
-    id: state.tabs.some((tab) => tab.id === parsed.id)
-      ? nextId("tab", [...state.tabs, ...state.closedTabs])
+    id: entryIdentities(state).some((tab) => tab.id === parsed.id)
+      ? nextId("tab", entryIdentities(state))
       : parsed.id,
     preview: !permanent,
   };
@@ -659,7 +704,11 @@ function openResource(
           )
         : -1;
   if (index < 0)
-    return workspaceReducer(state, { type: "tab/open", tab, paneId: targetId });
+    return legacyWorkspaceReducer(state, {
+      type: "tab/open",
+      tab,
+      paneId: targetId,
+    });
   const previousId = state.tabs[index].id;
   const next = {
     ...state,
@@ -672,7 +721,7 @@ function openResource(
   return assignPane(next, targetId, tab.id);
 }
 
-export function workspaceReducer(
+function legacyWorkspaceReducer(
   state: Workspace,
   action: WorkspaceAction,
 ): Workspace {
@@ -725,8 +774,8 @@ export function workspaceReducer(
       if (!parsed) return state;
       const tab = {
         ...parsed,
-        id: state.tabs.some((tab) => tab.id === parsed.id)
-          ? nextId("tab", [...state.tabs, ...state.closedTabs])
+        id: entryIdentities(state).some((tab) => tab.id === parsed.id)
+          ? nextId("tab", entryIdentities(state))
           : parsed.id,
       };
       const next = {
@@ -802,7 +851,7 @@ export function workspaceReducer(
     case "tab/reopen": {
       const tab = state.closedTabs[0];
       if (!tab || state.tabs.length >= 100) return state;
-      return workspaceReducer(
+      return legacyWorkspaceReducer(
         { ...state, closedTabs: state.closedTabs.slice(1) },
         { type: "tab/open", tab: { ...tab, preview: false } },
       );
@@ -863,7 +912,7 @@ export function workspaceReducer(
         if (!source) return state;
         const copy = {
           ...structuredClone(source),
-          id: nextId("tab", [...state.tabs, ...state.closedTabs]),
+          id: nextId("tab", entryIdentities(state)),
           preview: false,
         };
         tabs = [
@@ -892,13 +941,13 @@ export function workspaceReducer(
         (pane) => pane.tabId === source.id && pane.id !== target.id,
       );
       const next = from
-        ? workspaceReducer(state, { type: "pane/close", paneId: from.id })
+        ? legacyWorkspaceReducer(state, { type: "pane/close", paneId: from.id })
         : state;
-      return workspaceReducer(next, {
+      return legacyWorkspaceReducer(next, {
         type: "pane/split",
         paneId: target.id,
         tabId: source.id,
-        edge: action.edge,
+        edge: action.edge ?? undefined,
       });
     }
     case "pane/show-tabs": {
@@ -1110,5 +1159,1024 @@ export function workspaceReducer(
       };
     default:
       return state;
+  }
+}
+
+function splitMembers(split: SplitTab): string[] {
+  return split.panes.flatMap((pane) => (pane.tabId ? [pane.tabId] : []));
+}
+
+function entryFor(state: Workspace, id: string): WorkspaceEntry | undefined {
+  return workspaceEntries(state).find(
+    (entry) => entry.id === id || entry.tabIds.includes(id),
+  );
+}
+
+function projectEntry(
+  state: Workspace,
+  id: string | null | undefined,
+  updateConnection = false,
+): Workspace {
+  const entries = workspaceEntries(state);
+  const entry = entries.find((item) => item.id === id) ?? entries[0];
+  const activeConnectionId = state.connections.some(
+    (connection) => connection.id === state.activeConnectionId,
+  )
+    ? state.activeConnectionId!
+    : state.connections[0].id;
+  if (!entry) {
+    const paneId = state.panes.length === 1 ? state.panes[0].id : "pane-1";
+    return {
+      ...state,
+      splitTabs: state.splitTabs ?? [],
+      tabOrder: [],
+      activeTabId: null,
+      activeConnectionId,
+      panes: [{ id: paneId, tabId: null }],
+      layout: { type: "leaf", paneId },
+      activePaneId: paneId,
+    };
+  }
+  const split = state.splitTabs?.find((item) => item.id === entry.id);
+  const paneId =
+    !split && state.panes.length === 1 && state.panes[0].tabId === entry.id
+      ? state.panes[0].id
+      : `pane:${entry.id.slice(0, 155)}`;
+  const panes = split ? split.panes : [{ id: paneId, tabId: entry.id }];
+  const activePaneId = split?.activePaneId ?? paneId;
+  const activeView = state.tabs.find(
+    (tab) => tab.id === panes.find((pane) => pane.id === activePaneId)?.tabId,
+  );
+  return {
+    ...state,
+    splitTabs: state.splitTabs ?? [],
+    tabOrder: entries.map((item) => item.id),
+    activeTabId: entry.id,
+    activeConnectionId:
+      updateConnection && activeView
+        ? activeView.connectionId
+        : activeConnectionId,
+    panes,
+    layout: split?.layout ?? { type: "leaf", paneId },
+    activePaneId,
+  };
+}
+
+/** Repair entry ownership and migrate the former global pane projection. */
+function normalizeWorkspaceEntries(
+  state: Workspace,
+  raw: Record<string, unknown>,
+): Workspace {
+  const tabIds = new Set(state.tabs.map((tab) => tab.id));
+  const occupied = new Set<string>();
+  const splitIds = new Set<string>();
+  const splits: SplitTab[] = [];
+  const modern =
+    Array.isArray(raw.splitTabs) ||
+    Array.isArray(raw.tabOrder) ||
+    raw.activeTabId !== undefined;
+  for (const value of list(raw.splitTabs, 50)) {
+    const item = record(value),
+      id = string(item.id, "", 160);
+    if (!id || tabIds.has(id) || splitIds.has(id)) continue;
+    const panes = list(item.panes, 5).map((value) => {
+      const pane = record(value);
+      return {
+        id: string(pane.id, "", 160),
+        tabId: string(pane.tabId, "", 160),
+      };
+    });
+    const members = panes.map((pane) => pane.tabId);
+    const ids = panes.map((pane) => pane.id);
+    const layout = normalizeLayout(item.layout, ids);
+    if (
+      panes.length < 2 ||
+      panes.length > 4 ||
+      ids.some((id) => !id) ||
+      new Set(ids).size !== ids.length ||
+      new Set(members).size !== members.length ||
+      members.some((id) => !tabIds.has(id) || occupied.has(id)) ||
+      !layout
+    )
+      continue;
+    members.forEach((id) => occupied.add(id));
+    splitIds.add(id);
+    const groupId = string(item.groupId, "", 160);
+    splits.push({
+      id,
+      panes,
+      layout,
+      activePaneId: ids.includes(String(item.activePaneId))
+        ? String(item.activePaneId)
+        : ids[0],
+      ...(typeof item.title === "string" && item.title.trim()
+        ? { title: string(item.title, "", 512) }
+        : {}),
+      ...(state.groups.some((group) => group.id === groupId)
+        ? { groupId }
+        : {}),
+    });
+  }
+  if (!modern) {
+    const panes = state.panes.filter(
+      (pane) => pane.tabId && tabIds.has(pane.tabId),
+    );
+    if (panes.length >= 2) {
+      let layout =
+        state.layout ??
+        legacyLayout(
+          state.panes.map((pane) => pane.id),
+          state.splitSizes,
+        );
+      for (const pane of state.panes)
+        if (!pane.tabId) layout = removeLayoutPane(layout, pane.id) ?? layout;
+      splits.push({
+        id: nextId("split", entryIdentities(state)),
+        panes,
+        layout,
+        activePaneId: panes.some((pane) => pane.id === state.activePaneId)
+          ? state.activePaneId
+          : panes[0].id,
+      });
+    }
+  }
+  const owner = new Map(
+    splits.flatMap((split) =>
+      splitMembers(split).map((id) => [id, split.id] as const),
+    ),
+  );
+  const fallbackOrder = [
+    ...new Set(state.tabs.map((tab) => owner.get(tab.id) ?? tab.id)),
+  ];
+  const available = new Set(fallbackOrder);
+  const requestedOrder = list(raw.tabOrder, 100).filter(
+    (id): id is string => typeof id === "string" && available.has(id),
+  );
+  const order = [...new Set([...requestedOrder, ...fallbackOrder])];
+  const projectedTab = state.panes.find(
+    (pane) => pane.id === state.activePaneId,
+  )?.tabId;
+  const requestedActive =
+    typeof raw.activeTabId === "string" && available.has(raw.activeTabId)
+      ? raw.activeTabId
+      : (owner.get(projectedTab ?? "") ??
+        (projectedTab && available.has(projectedTab)
+          ? projectedTab
+          : (order[0] ?? null)));
+  const activeConnectionId = state.connections.some(
+    (connection) => connection.id === raw.activeConnectionId,
+  )
+    ? String(raw.activeConnectionId)
+    : (state.tabs.find((tab) => tab.id === projectedTab)?.connectionId ??
+      state.connections[0].id);
+  return projectEntry(
+    {
+      ...state,
+      splitTabs: splits,
+      tabOrder: order,
+      activeTabId: requestedActive,
+      activeConnectionId,
+    },
+    requestedActive,
+  );
+}
+
+function modelState(state: Workspace): Workspace {
+  return state.splitTabs !== undefined &&
+    state.tabOrder !== undefined &&
+    state.activeTabId !== undefined &&
+    state.activeConnectionId !== undefined
+    ? state
+    : normalizeWorkspaceEntries(
+        state,
+        state as unknown as Record<string, unknown>,
+      );
+}
+
+function saveActiveProjection(state: Workspace): Workspace {
+  const id = activeEntryId(state);
+  if (!state.splitTabs?.some((split) => split.id === id)) return state;
+  return {
+    ...state,
+    splitTabs: state.splitTabs.map((split) =>
+      split.id === id
+        ? {
+            ...split,
+            panes: state.panes,
+            layout:
+              state.layout ?? legacyLayout(state.panes.map((pane) => pane.id)),
+            activePaneId: state.activePaneId,
+          }
+        : split,
+    ),
+  };
+}
+
+function orderedFlatTabs(state: Workspace): Workspace {
+  const ids = workspaceEntries(state).flatMap((entry) => entry.tabIds);
+  const positions = new Map(ids.map((id, index) => [id, index]));
+  return {
+    ...state,
+    tabs: [...state.tabs].sort(
+      (a, b) =>
+        (positions.get(a.id) ?? Infinity) - (positions.get(b.id) ?? Infinity),
+    ),
+  };
+}
+
+function closeViews(state: Workspace, ids: string[]): Workspace {
+  const closing = new Set(ids);
+  const entries = workspaceEntries(state),
+    active = activeEntryId(state);
+  const activeIndex = Math.max(
+    0,
+    entries.findIndex((entry) => entry.id === active),
+  );
+  const replacements = new Map<string, string[]>();
+  const splitTabs: SplitTab[] = [];
+  for (const split of state.splitTabs ?? []) {
+    const removed = split.panes.filter(
+      (pane) => pane.tabId && closing.has(pane.tabId),
+    );
+    if (!removed.length) {
+      splitTabs.push(split);
+      continue;
+    }
+    const panes = split.panes.filter(
+      (pane) => pane.tabId && !closing.has(pane.tabId),
+    );
+    if (panes.length < 2) {
+      replacements.set(
+        split.id,
+        panes.flatMap((pane) => (pane.tabId ? [pane.tabId] : [])),
+      );
+      continue;
+    }
+    let layout = split.layout;
+    for (const pane of removed) layout = removeLayoutPane(layout, pane.id)!;
+    splitTabs.push({
+      ...split,
+      panes,
+      layout,
+      activePaneId: panes.some((pane) => pane.id === split.activePaneId)
+        ? split.activePaneId
+        : panes[0].id,
+    });
+  }
+  const tabs = state.tabs.filter((tab) => !closing.has(tab.id));
+  const closed = state.tabs
+    .filter((tab) => closing.has(tab.id))
+    .map((tab) => {
+      const { customTitle: _alias, ...rest } = tab;
+      return rest;
+    });
+  const order = (state.tabOrder ?? entries.map((entry) => entry.id)).flatMap(
+    (id) => replacements.get(id) ?? (closing.has(id) ? [] : [id]),
+  );
+  const next = {
+    ...state,
+    tabs,
+    splitTabs,
+    tabOrder: order,
+    closedTabs: [
+      ...closed,
+      ...state.closedTabs.filter((tab) => !closing.has(tab.id)),
+    ].slice(0, 30),
+  };
+  const available = workspaceEntries(next);
+  const nextActive = available.some((entry) => entry.id === active)
+    ? active
+    : (replacements.get(active ?? "")?.[0] ??
+      available[Math.min(activeIndex, available.length - 1)]?.id ??
+      null);
+  return projectEntry(
+    next,
+    nextActive,
+    nextActive !== active && nextActive !== null,
+  );
+}
+
+function addView(
+  state: Workspace,
+  input: LogTab,
+  preview: boolean,
+  replacePreview = false,
+): Workspace {
+  const parsed = parseTab(input, state.connections, state.groups);
+  if (!parsed) return state;
+  const entries = workspaceEntries(state);
+  const active = activeEntryId(state);
+  const replace = replacePreview
+    ? (entries.find(
+        (entry) =>
+          entry.kind === "single" && entry.preview && entry.id === active,
+      ) ?? entries.find((entry) => entry.kind === "single" && entry.preview))
+    : undefined;
+  if (!replace && state.tabs.length >= 100) return state;
+  const id = entryIdentities(state).some((tab) => tab.id === parsed.id)
+    ? nextId("tab", entryIdentities(state))
+    : parsed.id;
+  const tab = { ...parsed, id, preview };
+  const tabs = replace
+    ? state.tabs.map((current) => (current.id === replace.id ? tab : current))
+    : [...state.tabs, tab];
+  const order = replace
+    ? (state.tabOrder ?? []).map((entryId) =>
+        entryId === replace.id ? id : entryId,
+      )
+    : [...(state.tabOrder ?? []), id];
+  return projectEntry(
+    {
+      ...state,
+      tabs,
+      tabOrder: order,
+      closedTabs: state.closedTabs.filter((closed) => closed.id !== id),
+    },
+    id,
+    true,
+  );
+}
+
+function activateViewOrEntry(
+  state: Workspace,
+  id: string,
+  updateConnection = true,
+): Workspace {
+  const entry = entryFor(state, id);
+  if (!entry) return state;
+  let next = state;
+  if (entry.kind === "split" && entry.id !== id)
+    next = {
+      ...state,
+      splitTabs: state.splitTabs!.map((split) =>
+        split.id === entry.id
+          ? {
+              ...split,
+              activePaneId: split.panes.find((pane) => pane.tabId === id)!.id,
+            }
+          : split,
+      ),
+    };
+  return projectEntry(next, entry.id, updateConnection);
+}
+
+function combineEntries(state: Workspace, ids: string[]): Workspace {
+  const entries = [
+    ...new Set(
+      ids
+        .map((id) => entryFor(state, id)?.id)
+        .filter((id): id is string => !!id),
+    ),
+  ].flatMap((id) => {
+    const entry = entryFor(state, id);
+    return entry ? [entry] : [];
+  });
+  const tabIds = [...new Set(entries.flatMap((entry) => entry.tabIds))];
+  if (entries.length < 2 || tabIds.length < 2 || tabIds.length > 4)
+    return state;
+  const existing = entries.find((entry) => entry.kind === "split");
+  const previous = state.splitTabs?.find((split) => split.id === existing?.id);
+  const id = previous?.id ?? nextId("split", entryIdentities(state));
+  const panes = tabIds.map((tabId, index) => ({
+    id: `pane-${index + 1}`,
+    tabId,
+  }));
+  const split: SplitTab = {
+    ...previous,
+    id,
+    panes,
+    layout: legacyLayout(panes.map((pane) => pane.id)),
+    activePaneId: panes[0].id,
+    ...(entries[0].groupId ? { groupId: entries[0].groupId } : {}),
+  };
+  const selected = new Set(entries.map((entry) => entry.id));
+  const order: string[] = [];
+  for (const entryId of state.tabOrder ??
+    workspaceEntries(state).map((entry) => entry.id)) {
+    if (!selected.has(entryId)) order.push(entryId);
+    else if (!order.includes(id)) order.push(id);
+  }
+  return projectEntry(
+    {
+      ...state,
+      tabs: state.tabs.map((tab) =>
+        tabIds.includes(tab.id) ? { ...tab, preview: false } : tab,
+      ),
+      splitTabs: [
+        ...(state.splitTabs ?? []).filter((split) => !selected.has(split.id)),
+        split,
+      ],
+      tabOrder: order,
+    },
+    id,
+    true,
+  );
+}
+
+function graftLayout(
+  layout: PaneLayout,
+  paneId: string,
+  inserted: PaneLayout,
+  edge: SplitEdge,
+): PaneLayout {
+  if (layout.type === "leaf") {
+    if (layout.paneId !== paneId) return layout;
+    const before = edge === "left" || edge === "top";
+    return {
+      type: "split",
+      axis: edge === "left" || edge === "right" ? "horizontal" : "vertical",
+      ratio: 0.5,
+      first: before ? inserted : layout,
+      second: before ? layout : inserted,
+    };
+  }
+  return {
+    ...layout,
+    first: graftLayout(layout.first, paneId, inserted, edge),
+    second: graftLayout(layout.second, paneId, inserted, edge),
+  };
+}
+
+/** Pure drop projection shared by rendering and the committed reducer action. */
+/** Removes a view from its split without closing or recreating the view. */
+function extractSplitPanel(state: Workspace, tabId: string): Workspace | null {
+  const split = state.splitTabs?.find((split) =>
+    split.panes.some((pane) => pane.tabId === tabId),
+  );
+  const source = split?.panes.find((pane) => pane.tabId === tabId);
+  if (!split || !source) return null;
+  const panes = split.panes.filter((pane) => pane.id !== source.id);
+  const remaining = panes.length === 1 ? panes[0].tabId! : split.id;
+  const splitTabs = state.splitTabs!.flatMap((current) => {
+    if (current.id !== split.id) return [current];
+    if (panes.length < 2) return [];
+    return [
+      {
+        ...split,
+        panes,
+        layout: removeLayoutPane(split.layout, source.id)!,
+        activePaneId: panes.some((pane) => pane.id === split.activePaneId)
+          ? split.activePaneId
+          : panes[0].id,
+      },
+    ];
+  });
+  const active = activeEntryId(state);
+  return projectEntry(
+    {
+      ...state,
+      splitTabs,
+      tabOrder: (state.tabOrder ?? []).flatMap((id) =>
+        id === split.id ? [remaining, tabId] : [id],
+      ),
+    },
+    active === split.id ? remaining : active,
+  );
+}
+
+export function projectWorkspaceDrop(
+  input: Workspace,
+  entryId: string,
+  paneId: string,
+  edge: SplitEdge | null,
+): Workspace | null {
+  const state = modelState(input),
+    destination = entryFor(state, activeEntryId(state) ?? "");
+  const target = state.panes.find((pane) => pane.id === paneId);
+  const source = entryFor(state, entryId);
+  if (!target || !source) return null;
+  if (!destination || !target.tabId)
+    return activateViewOrEntry(state, source.id);
+  if (source.id === destination.id) {
+    if (source.kind === "split") {
+      // A pane member can be moved internally; dragging the combined tab onto
+      // itself never duplicates the entire workspace entry.
+      if (entryId === source.id) return null;
+      const from = state.panes.find((pane) => pane.tabId === entryId);
+      if (!from || from.id === target.id) return null;
+      if (edge !== null) {
+        const layout = splitLayout(
+          removeLayoutPane(state.layout!, from.id)!,
+          target.id,
+          from.id,
+          edge,
+        );
+        return projectEntry(
+          saveActiveProjection({ ...state, layout, activePaneId: from.id }),
+          source.id,
+          true,
+        );
+      }
+      const panes = state.panes.map((pane) =>
+        pane.id === from.id
+          ? { ...pane, tabId: target.tabId }
+          : pane.id === target.id
+            ? { ...pane, tabId: from.tabId }
+            : pane,
+      );
+      return projectEntry(
+        saveActiveProjection({ ...state, panes, activePaneId: target.id }),
+        source.id,
+        true,
+      );
+    }
+    if (edge === null || state.tabs.length >= 100) return null;
+    const original = state.tabs.find((tab) => tab.id === source.id)!;
+    const copy = {
+      ...structuredClone(original),
+      id: nextId("tab", entryIdentities(state)),
+      preview: false,
+    };
+    const next = {
+      ...state,
+      tabs: [...state.tabs, copy],
+      tabOrder: [...(state.tabOrder ?? []), copy.id],
+    };
+    return projectWorkspaceDrop(next, copy.id, paneId, edge);
+  }
+  if (source.kind === "split" && entryId !== source.id) {
+    const extracted = extractSplitPanel(state, entryId);
+    return extracted
+      ? projectWorkspaceDrop(extracted, entryId, paneId, edge)
+      : null;
+  }
+  if (source.tabIds.length + destination.tabIds.length > 4) return null;
+  const destinationSplit = state.splitTabs?.find(
+    (split) => split.id === destination.id,
+  );
+  const sourceSplit = state.splitTabs?.find((split) => split.id === source.id);
+  const panes = [...state.panes];
+  const idMap = new Map<string, string>();
+  const inserted = sourceSplit
+    ? sourceSplit.panes.map((pane) => {
+        const id = nextId("pane", panes);
+        const next = { id, tabId: pane.tabId };
+        panes.push(next);
+        idMap.set(pane.id, id);
+        return next;
+      })
+    : (() => {
+        const pane = { id: nextId("pane", panes), tabId: source.id };
+        panes.push(pane);
+        return [pane];
+      })();
+  const sourceLayout = sourceSplit
+    ? mapLayoutIds(sourceSplit.layout, idMap)
+    : { type: "leaf" as const, paneId: inserted[0].id };
+  const currentLayout =
+    state.layout ?? legacyLayout(state.panes.map((pane) => pane.id));
+  const effectiveEdge =
+    edge ??
+    (nextSplitAxis(currentLayout, paneId) === "horizontal"
+      ? "right"
+      : "bottom");
+  const layout = graftLayout(
+    currentLayout,
+    paneId,
+    sourceLayout,
+    effectiveEdge,
+  );
+  const id = destinationSplit?.id ?? nextId("split", entryIdentities(state));
+  const split: SplitTab = {
+    ...destinationSplit,
+    id,
+    panes,
+    layout,
+    activePaneId: inserted[0].id,
+    ...(destination.groupId ? { groupId: destination.groupId } : {}),
+  };
+  const order = (state.tabOrder ?? []).flatMap((current) =>
+    current === source.id ? [] : [current === destination.id ? id : current],
+  );
+  const members = new Set([...destination.tabIds, ...source.tabIds]);
+  return projectEntry(
+    {
+      ...state,
+      tabs: state.tabs.map((tab) =>
+        members.has(tab.id) ? { ...tab, preview: false } : tab,
+      ),
+      splitTabs: [
+        ...(state.splitTabs ?? []).filter(
+          (value) => value.id !== source.id && value.id !== destination.id,
+        ),
+        split,
+      ],
+      tabOrder: order,
+    },
+    id,
+    true,
+  );
+}
+
+export function workspaceReducer(
+  input: Workspace,
+  action: WorkspaceAction,
+): Workspace {
+  if (action.type === "workspace/restore")
+    return restoreWorkspace(action.workspace);
+  const state = modelState(input);
+  switch (action.type) {
+    case "tab/update": {
+      const previous = state.tabs.find((tab) => tab.id === action.tabId);
+      const next = legacyWorkspaceReducer(state, action);
+      const updated = next.tabs.find((tab) => tab.id === action.tabId);
+      const activeViewId = state.panes.find(
+        (pane) => pane.id === state.activePaneId,
+      )?.tabId;
+      return previous &&
+        updated &&
+        activeViewId === action.tabId &&
+        previous.connectionId !== updated.connectionId
+        ? { ...next, activeConnectionId: updated.connectionId }
+        : next;
+    }
+    case "connection/select":
+      return state.connections.some(
+        (connection) => connection.id === action.connectionId,
+      )
+        ? { ...state, activeConnectionId: action.connectionId }
+        : input;
+    case "tab/select":
+      if (action.paneId)
+        return (
+          projectWorkspaceDrop(state, action.tabId, action.paneId, null) ??
+          input
+        );
+      return entryFor(state, action.tabId)
+        ? activateViewOrEntry(state, action.tabId)
+        : input;
+    case "tab/open":
+    case "tab/preview":
+    case "tab/open-resource": {
+      if (
+        action.paneId &&
+        !state.panes.some((pane) => pane.id === action.paneId)
+      )
+        return input;
+      if (action.type !== "tab/open") {
+        const parsed = parseTab(action.tab, state.connections, state.groups);
+        if (!parsed) return input;
+        const existing = state.tabs.find(
+          (tab) => resourceKey(tab) === resourceKey(parsed),
+        );
+        if (existing) {
+          const next =
+            action.type === "tab/open-resource"
+              ? {
+                  ...state,
+                  tabs: state.tabs.map((tab) =>
+                    tab.id === existing.id ? { ...tab, preview: false } : tab,
+                  ),
+                }
+              : state;
+          return action.paneId
+            ? (projectWorkspaceDrop(next, existing.id, action.paneId, null) ??
+                input)
+            : activateViewOrEntry(next, existing.id);
+        }
+      }
+      const opened = addView(
+        state,
+        action.tab,
+        action.type === "tab/preview",
+        action.type === "tab/preview",
+      );
+      if (opened === state) return input;
+      if (!action.paneId) return opened;
+      const newId = activeEntryId(opened)!;
+      const restored = projectEntry(opened, activeEntryId(state));
+      return (
+        projectWorkspaceDrop(restored, newId, action.paneId, null) ?? input
+      );
+    }
+    case "tab/rename": {
+      const entry = entryFor(state, action.tabId),
+        title = string(action.title, "", 512).trim();
+      if (!entry || !title) return input;
+      return entry.kind === "split"
+        ? {
+            ...state,
+            splitTabs: state.splitTabs!.map((split) =>
+              split.id === entry.id ? { ...split, title } : split,
+            ),
+          }
+        : {
+            ...state,
+            tabs: state.tabs.map((tab) =>
+              tab.id === entry.id
+                ? { ...tab, customTitle: title, preview: false }
+                : tab,
+            ),
+          };
+    }
+    case "tab/duplicate": {
+      const entry = entryFor(state, action.tabId);
+      if (!entry || state.tabs.length + entry.tabIds.length > 100) return input;
+      let tabs = [...state.tabs];
+      const map = new Map<string, string>();
+      for (const tabId of entry.tabIds) {
+        const original = tabs.find((tab) => tab.id === tabId)!;
+        const copy = {
+          ...structuredClone(original),
+          id: nextId("tab", entryIdentities(state, tabs)),
+          preview: false,
+          ...(original.customTitle
+            ? { customTitle: `${original.customTitle} copy`.slice(0, 512) }
+            : { title: `${original.title} copy`.slice(0, 512) }),
+        };
+        tabs.push(copy);
+        map.set(tabId, copy.id);
+      }
+      const split = state.splitTabs?.find((split) => split.id === entry.id);
+      const id = split
+        ? nextId("split", entryIdentities(state, tabs))
+        : map.get(entry.id)!;
+      const copySplit = split
+        ? {
+            ...structuredClone(split),
+            id,
+            ...(split.title
+              ? { title: `${split.title} copy`.slice(0, 512) }
+              : {}),
+            panes: split.panes.map((pane) => ({
+              ...pane,
+              tabId: map.get(pane.tabId!)!,
+            })),
+          }
+        : undefined;
+      const order = (state.tabOrder ?? []).flatMap((current) =>
+        current === entry.id ? [current, id] : [current],
+      );
+      return orderedFlatTabs(
+        projectEntry(
+          {
+            ...state,
+            tabs,
+            tabOrder: order,
+            splitTabs: copySplit
+              ? [...(state.splitTabs ?? []), copySplit]
+              : state.splitTabs,
+          },
+          id,
+          true,
+        ),
+      );
+    }
+    case "tab/close": {
+      const entry = workspaceEntries(state).find(
+        (entry) => entry.id === action.tabId,
+      );
+      const ids =
+        entry?.tabIds ??
+        (state.tabs.some((tab) => tab.id === action.tabId)
+          ? [action.tabId]
+          : []);
+      return ids.length ? closeViews(state, ids) : input;
+    }
+    case "tab/reopen": {
+      const tab = state.closedTabs[0];
+      if (!tab || state.tabs.length >= 100) return input;
+      const { customTitle: _closedAlias, ...rest } = tab;
+      return addView(
+        { ...state, closedTabs: state.closedTabs.slice(1) },
+        { ...rest, preview: false },
+        false,
+      );
+    }
+    case "tab/reorder": {
+      const entries = workspaceEntries(state),
+        source = entryFor(state, action.tabId);
+      if (
+        !source ||
+        (action.beforeTabId !== null &&
+          !entries.some((entry) => entry.id === action.beforeTabId))
+      )
+        return input;
+      const order = reorder(entries, source.id, action.beforeTabId).map(
+        (entry) => entry.id,
+      );
+      return orderedFlatTabs({ ...state, tabOrder: order });
+    }
+    case "tab/group": {
+      if (
+        action.groupId &&
+        !state.groups.some((group) => group.id === action.groupId)
+      )
+        return input;
+      const ids = new Set(action.tabIds.map((id) => entryFor(state, id)?.id));
+      const memberIds = new Set(
+        workspaceEntries(state)
+          .filter((entry) => ids.has(entry.id))
+          .flatMap((entry) => entry.tabIds),
+      );
+      const ungroup = <T extends { groupId?: string }>(value: T): T => {
+        const { groupId: _removed, ...rest } = value;
+        return rest as T;
+      };
+      return {
+        ...state,
+        tabs: state.tabs.map((tab) =>
+          memberIds.has(tab.id)
+            ? action.groupId
+              ? { ...tab, groupId: action.groupId, preview: false }
+              : ungroup(tab)
+            : tab,
+        ),
+        splitTabs: state.splitTabs?.map((split) =>
+          ids.has(split.id)
+            ? action.groupId
+              ? { ...split, groupId: action.groupId }
+              : ungroup(split)
+            : split,
+        ),
+      };
+    }
+    case "split/exit": {
+      const split = state.splitTabs?.find((split) => split.id === action.tabId);
+      if (!split) return input;
+      const ids = splitMembers(split),
+        active =
+          split.panes.find((pane) => pane.id === split.activePaneId)?.tabId ??
+          ids[0];
+      const next = {
+        ...state,
+        splitTabs: state.splitTabs!.filter((item) => item.id !== split.id),
+        tabs: state.tabs.map((tab) =>
+          ids.includes(tab.id)
+            ? {
+                ...tab,
+                preview: false,
+                ...(split.groupId ? { groupId: split.groupId } : {}),
+              }
+            : tab,
+        ),
+        tabOrder: (state.tabOrder ?? []).flatMap((id) =>
+          id === split.id ? ids : [id],
+        ),
+      };
+      return projectEntry(
+        next,
+        activeEntryId(state) === split.id ? active : activeEntryId(state),
+      );
+    }
+    case "pane/show-tabs":
+      return combineEntries(state, action.tabIds);
+    case "pane/detach": {
+      if (
+        action.beforeTabId !== null &&
+        !workspaceEntries(state).some(
+          (entry) => entry.id === action.beforeTabId,
+        )
+      )
+        return input;
+      const split = state.splitTabs?.find((split) =>
+        split.panes.some((pane) => pane.tabId === action.tabId),
+      );
+      const extracted = extractSplitPanel(state, action.tabId);
+      if (!split || !extracted) return input;
+      const before =
+        action.beforeTabId === split.id && split.panes.length === 2
+          ? split.panes.find((pane) => pane.tabId !== action.tabId)!.tabId
+          : action.beforeTabId;
+      const order = reorder(
+        workspaceEntries(extracted),
+        action.tabId,
+        before,
+      ).map((entry) => entry.id);
+      return orderedFlatTabs(
+        projectEntry({ ...extracted, tabOrder: order }, action.tabId, true),
+      );
+    }
+    case "pane/drop-tab":
+      return (
+        projectWorkspaceDrop(state, action.tabId, action.paneId, action.edge) ??
+        input
+      );
+    case "pane/assign":
+      return action.tabId
+        ? (projectWorkspaceDrop(state, action.tabId, action.paneId, null) ??
+            input)
+        : input;
+    case "pane/split": {
+      const paneId = action.paneId ?? state.activePaneId;
+      if (
+        !state.panes.some((pane) => pane.id === paneId) ||
+        state.panes.length >= 4
+      )
+        return input;
+      const edge =
+        action.edge ??
+        (nextSplitAxis(state.layout!, paneId) === "horizontal"
+          ? "right"
+          : "bottom");
+      const candidates = workspaceEntries(state).filter(
+        (entry) => entry.id !== activeEntryId(state),
+      );
+      const alternative =
+        candidates.find((entry) => entry.kind === "single") ??
+        candidates.find(
+          (entry) => entry.tabIds.length + state.panes.length <= 4,
+        );
+      const id = action.tabId ?? alternative?.id;
+      if (id && !entryFor(state, id)) return input;
+      if (id && entryFor(state, id)?.id !== activeEntryId(state))
+        return projectWorkspaceDrop(state, id, paneId, edge) ?? input;
+      const original = state.tabs.find(
+        (tab) =>
+          tab.id ===
+          (action.tabId ??
+            state.panes.find((pane) => pane.id === paneId)?.tabId),
+      );
+      if (!original || state.tabs.length >= 100) return input;
+      const copy = {
+        ...structuredClone(original),
+        id: nextId("tab", entryIdentities(state)),
+        preview: false,
+      };
+      return (
+        projectWorkspaceDrop(
+          {
+            ...state,
+            tabs: [...state.tabs, copy],
+            tabOrder: [...(state.tabOrder ?? []), copy.id],
+          },
+          copy.id,
+          paneId,
+          edge,
+        ) ?? input
+      );
+    }
+    case "pane/close": {
+      const entry = entryFor(state, activeEntryId(state) ?? "");
+      const pane = state.panes.find((pane) => pane.id === action.paneId);
+      return entry?.kind === "split" && pane?.tabId
+        ? closeViews(state, [pane.tabId])
+        : input;
+    }
+    case "pane/swap": {
+      const one = state.panes.find((pane) => pane.id === action.paneId),
+        two = state.panes.find((pane) => pane.id === action.overPaneId);
+      if (!one || !two || one === two) return input;
+      const panes = state.panes.map((pane) =>
+        pane.id === one.id
+          ? { ...pane, tabId: two.tabId }
+          : pane.id === two.id
+            ? { ...pane, tabId: one.tabId }
+            : pane,
+      );
+      const activePaneId =
+        state.activePaneId === one.id
+          ? two.id
+          : state.activePaneId === two.id
+            ? one.id
+            : state.activePaneId;
+      return saveActiveProjection({ ...state, panes, activePaneId });
+    }
+    case "pane/activate": {
+      if (!state.panes.some((pane) => pane.id === action.paneId)) return input;
+      const next = saveActiveProjection({
+        ...state,
+        activePaneId: action.paneId,
+      });
+      return projectEntry(next, activeEntryId(next), true);
+    }
+    case "pane/reorder":
+    case "pane/resize": {
+      const next = legacyWorkspaceReducer(state, action);
+      return next === state ? input : saveActiveProjection(next);
+    }
+    case "connections/set": {
+      const next = legacyWorkspaceReducer(state, action);
+      const valid = new Set(next.tabs.map((tab) => tab.id));
+      const missing = state.tabs
+        .filter((tab) => !valid.has(tab.id))
+        .map((tab) => tab.id);
+      const repaired = missing.length
+        ? closeViews({ ...state, connections: next.connections }, missing)
+        : state;
+      return projectEntry(
+        {
+          ...next,
+          splitTabs: repaired.splitTabs,
+          tabOrder: repaired.tabOrder,
+          activeTabId: repaired.activeTabId,
+          activeConnectionId: state.activeConnectionId,
+        },
+        repaired.activeTabId,
+      );
+    }
+    case "group/remove": {
+      const next = legacyWorkspaceReducer(state, action);
+      return {
+        ...next,
+        splitTabs: state.splitTabs?.map((split) => {
+          if (split.groupId !== action.groupId) return split;
+          const { groupId: _removed, ...rest } = split;
+          return rest;
+        }),
+      };
+    }
+    default:
+      return legacyWorkspaceReducer(state, action);
   }
 }

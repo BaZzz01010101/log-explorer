@@ -114,18 +114,22 @@ test.afterEach(async () => {
 });
 
 test("trusted date preset selection refreshes without clicking Run and leaves pattern edits manual", async () => {
+  const picker = page.getByRole("button", { name: "Time range", exact: true });
+  await expect(picker).toHaveText("Clear");
+  await expect(
+    page.getByRole("combobox", { name: "Timezone", exact: true }),
+  ).toBeVisible();
   const initial = await page.locator(".viewer-meta").innerText();
   const count = Number(
     initial.match(/([\d,]+) \/ [\d,]+ loaded events/)?.[1].replaceAll(",", ""),
   );
   expect(count).toBeGreaterThan(100);
-  await page.getByRole("combobox", { name: "Time range", exact: true }).click();
+  await picker.click();
+  await page.getByRole("tab", { name: "Relative", exact: true }).click();
   await page
-    .getByRole("option", { name: "Last 5 minutes", exact: true })
+    .getByRole("button", { name: "Last 5 minutes", exact: true })
     .click();
-  await expect(
-    page.getByRole("combobox", { name: "Time range", exact: true }),
-  ).toHaveValue("Last 5 minutes");
+  await expect(picker).toHaveText("Last 5 minutes");
   // A completed query can still be showing its previous snapshot while React
   // schedules the date effect. Wait for the new result count, not incidental
   // metadata changes or the previous request's already-complete status.
@@ -158,12 +162,47 @@ test("trusted date preset selection refreshes without clicking Run and leaves pa
   await expect(page.locator(".viewer-meta")).toContainText(
     `${reducedCount} / ${reducedCount} loaded events`,
   );
-  await page.getByRole("combobox", { name: "Time range", exact: true }).click();
+  await picker.click();
   await page
-    .getByRole("option", { name: "Last 30 minutes", exact: true })
+    .getByRole("button", { name: "Last 30 minutes", exact: true })
     .click();
   await expect(page.locator(".query-status")).toContainText(
     "complete · 0 loaded",
   );
   await expect(page.getByText(/Query settings changed/)).toHaveCount(0);
+});
+
+test("absolute date ranges refresh automatically in UTC and clearing restores all history", async () => {
+  const metadata = () => page.locator(".viewer-meta").innerText();
+  const count = (text: string) =>
+    Number(
+      text.match(/([\d,]+) \/ [\d,]+ loaded events/)?.[1].replaceAll(",", ""),
+    );
+  const all = count(await metadata());
+  expect(all).toBeGreaterThan(100);
+  const zone = page.getByRole("combobox", { name: "Timezone", exact: true });
+  await zone.click();
+  await page.getByRole("option", { name: "UTC", exact: true }).click();
+  await expect(zone).toHaveValue("UTC");
+  const picker = page.getByRole("button", { name: "Time range", exact: true });
+  await picker.click();
+  await page.getByRole("tab", { name: "Absolute", exact: true }).click();
+  const anchor = Math.floor(Date.now() / 60000) * 60000;
+  const start = new Date(anchor - 10 * 60000).toISOString().slice(0, 16);
+  const end = new Date(anchor).toISOString().slice(0, 16);
+  await page.getByLabel("Range start", { exact: true }).fill(start);
+  await page.getByLabel("Range end", { exact: true }).fill(end);
+  await expect
+    .poll(async () => {
+      const loaded = count(await metadata());
+      return loaded > 0 && loaded < all;
+    })
+    .toBe(true);
+  await expect(page.locator(".query-status")).toContainText("complete");
+  await page
+    .getByRole("button", { name: "Clear time filter", exact: true })
+    .click();
+  await expect(picker).toHaveText("Clear");
+  await expect.poll(async () => count(await metadata())).toBe(all);
+  await expect(zone).toHaveValue("UTC");
 });

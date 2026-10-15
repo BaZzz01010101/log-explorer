@@ -82,6 +82,7 @@ export interface LogTab {
   id: string;
   preview?: boolean;
   title: string;
+  customTitle?: string;
   connectionId: string;
   sources: LogSource[];
   groupId?: string;
@@ -114,6 +115,14 @@ export type PaneLayout =
       first: PaneLayout;
       second: PaneLayout;
     };
+export interface SplitTab {
+  id: string;
+  title?: string;
+  groupId?: string;
+  panes: Pane[];
+  layout: PaneLayout;
+  activePaneId: string;
+}
 export interface SavedQuery {
   id: string;
   name: string;
@@ -146,6 +155,10 @@ export interface Workspace {
   name: string;
   connections: Connection[];
   tabs: LogTab[];
+  splitTabs?: SplitTab[];
+  tabOrder?: string[];
+  activeTabId?: string | null;
+  activeConnectionId?: string;
   closedTabs: LogTab[];
   groups: TabGroup[];
   panes: Pane[];

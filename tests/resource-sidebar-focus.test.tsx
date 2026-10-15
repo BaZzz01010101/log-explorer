@@ -82,6 +82,37 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
+it("reports explicit connection selection without resetting it on an unrelated parent render", async () => {
+  const initial = createWorkspace().connections[0];
+  const second = { ...initial, id: "retained", name: "Retained connection" };
+  const onConnectionChange = vi.fn();
+  const props = {
+    connections: [initial, second],
+    activeConnectionId: initial.id,
+    favorites: [],
+    recents: [],
+    onOpen() {},
+    onFavorite() {},
+    onManage() {},
+    onConnectionChange,
+  };
+  await act(async () => {
+    renderer = create(<ResourceSidebar {...props} />);
+  });
+  await act(async () =>
+    renderer!.root
+      .findByProps({ "aria-label": "AWS connection" })
+      .props.onChange(second.id),
+  );
+  expect(onConnectionChange).toHaveBeenCalledExactlyOnceWith(second.id);
+  await act(async () =>
+    renderer!.update(<ResourceSidebar {...props} recents={[]} />),
+  );
+  expect(
+    renderer!.root.findByProps({ "aria-label": "AWS connection" }).props.value,
+  ).toBe(second.id);
+});
+
 it("advances the active row when ArrowDown transfers focus from a child control", async () => {
   const connection = createWorkspace().connections[0];
   await act(async () => {
@@ -229,6 +260,12 @@ it("uses the same preview and double-click behavior for favorites and recent sou
 it("debounces substring searches through the server API and retains matching-page pagination", async () => {
   vi.useFakeTimers();
   try {
+    const scroll = Object.assign(new EventTarget(), {
+      clientHeight: 0,
+      scrollHeight: 32,
+      scrollTop: 0,
+      firstElementChild: null,
+    });
     const connection = createWorkspace().connections[0];
     const listGroups = vi.fn(
       async (_connection: unknown, search: string, cursor?: string) => ({
@@ -254,6 +291,10 @@ it("debounces substring searches through the server API and retains matching-pag
           onFavorite={() => {}}
           onManage={() => {}}
         />,
+        {
+          createNodeMock: ({ props }) =>
+            (props as { role?: string }).role === "tree" ? scroll : null,
+        },
       );
     });
     const input = renderer!.root
@@ -271,10 +312,10 @@ it("debounces substring searches through the server API and retains matching-pag
       "orders",
       undefined,
     );
-    const more = renderer!.root
-      .findAll((item) => item.props.children === "Load more groups")
-      .at(-1)!;
-    await act(async () => more.props.onClick());
+    scroll.clientHeight = 320;
+    await act(async () => {
+      scroll.dispatchEvent(new Event("scroll"));
+    });
     expect(listGroups).toHaveBeenLastCalledWith(connection, "orders", "next");
     expect(
       renderer!.root

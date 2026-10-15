@@ -24,8 +24,7 @@ import type {
   Workspace,
 } from "../../shared/contracts";
 import type { WorkspaceAction } from "../workspace";
-import { restoreWorkspace } from "../workspace";
-import { workspaceSchema } from "../../main/security";
+import { parseWorkspaceInput } from "../../main/workspace-input";
 
 function NumericPreference({
   value,
@@ -451,19 +450,9 @@ export function Settings({
               onClick={() => {
                 try {
                   const value = JSON.parse(importText);
-                  if (value.version !== 0 && value.version !== 1)
-                    throw new Error("Unsupported workspace version");
-                  if (value.version === 1) workspaceSchema.parse(value);
-                  else if (
-                    !Array.isArray(value.connections) ||
-                    !Array.isArray(value.tabs)
-                  )
-                    throw new Error(
-                      "A legacy workspace must contain connections and tabs",
-                    );
                   dispatch({
                     type: "workspace/restore",
-                    workspace: workspaceSchema.parse(restoreWorkspace(value)),
+                    workspace: parseWorkspaceInput(value),
                   });
                   setImportText("");
                   notifications.show({

@@ -4,7 +4,11 @@ import {
   resolveTimeRange,
   requestMatchesTab,
 } from "../src/renderer/query-state";
-import { createWorkspace } from "../src/renderer/workspace";
+import {
+  createTab,
+  createWorkspace,
+  restoreWorkspace,
+} from "../src/renderer/workspace";
 const event = (id: string, timestamp = 0) => ({
   id,
   timestamp,
@@ -39,6 +43,19 @@ it("derives relative ranges at execution time", () => {
     startTime: 1_100_000,
     endTime: 2_000_000,
   });
+});
+it("starts new tabs with a clear date filter without narrowing available history", () => {
+  const tab = createTab("offline", [{ logGroup: "/old-logs" }]);
+  expect(tab.timePreset).toBe("clear");
+  expect(resolveTimeRange("clear", undefined, undefined, 2_000_000)).toEqual({
+    startTime: 0,
+    endTime: 2_000_000,
+  });
+  const saved = createWorkspace();
+  saved.tabs[0].timePreset = "clear";
+  expect(restoreWorkspace(saved).tabs[0].timePreset).toBe("clear");
+  saved.tabs[0].timePreset = "15m";
+  expect(restoreWorkspace(saved).tabs[0].timePreset).toBe("15m");
 });
 it.each([
   ["30m", 30 * 60000],

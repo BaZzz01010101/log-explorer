@@ -317,18 +317,18 @@ test("preview tabs replace one slot and become permanent on double click", async
 
 test("whole tabs reorder near the strip and create highlighted nested splits away from it", async () => {
   test.setTimeout(150000);
-  for (const name of ["payments-worker", "media-pipeline"]) {
+  for (const name of ["payments-worker", "media-pipeline", "notifications"]) {
     await page
       .getByRole("treeitem", { name: `/aws/lambda/${name}`, exact: true })
       .locator(".resource-label")
       .dblclick();
   }
-  await expect(page.locator(".workspace-tab")).toHaveCount(3);
+  await expect(page.locator(".workspace-tab")).toHaveCount(4);
   await expect(page.locator(".tab-grip,.tab-menu-button")).toHaveCount(0);
   const tab = page.getByRole("tab", { name: "orders-api", exact: true });
   let start = (await tab.boundingBox())!;
   const lastTab = (await page
-    .getByRole("tab", { name: "media-pipeline", exact: true })
+    .getByRole("tab", { name: "notifications", exact: true })
     .boundingBox())!;
   await page.mouse.move(start.x + 30, start.y + start.height / 2);
   await page.mouse.down();
@@ -403,10 +403,12 @@ test("whole tabs reorder near the strip and create highlighted nested splits awa
   expect(
     Math.abs(three[0].height - three[1].height - three[2].height - 6),
   ).toBeLessThan(3);
-  // Splitting the displayed view clones it independently; moving a view from
-  // another pane would collapse its old pane and retain three panes.
-  await splitByDrag("payments-worker", 2, "left");
+  await splitByDrag("media-pipeline", 2, "left");
   await expect(page.locator(".workspace-pane")).toHaveCount(4);
+  await expect(
+    page.locator('.workspace-tab[data-entry-kind="split"]'),
+  ).toHaveCount(1);
+  await expect(page.locator(".workspace-tab")).toHaveCount(1);
   await expect(
     page.getByLabel("Add split pane", { exact: true }),
   ).toBeDisabled();
@@ -438,9 +440,7 @@ test("right clicking a selection shows those tabs in split mode", async () => {
       .locator(".resource-label")
       .dblclick();
   }
-  await page
-    .getByRole("tab", { name: "orders-api", exact: true })
-    .click({ modifiers: ["Control"] });
+  await page.getByRole("tab", { name: "orders-api", exact: true }).click();
   await page
     .getByRole("tab", { name: "payments-worker", exact: true })
     .click({ modifiers: ["Control"] });

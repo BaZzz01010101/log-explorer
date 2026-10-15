@@ -28,6 +28,10 @@ import {
   IconCopy,
 } from "@tabler/icons-react";
 import { defaultRangeExtractor, useVirtualizer } from "@tanstack/react-virtual";
+import {
+  useScrollPagination,
+  type ScrollPageTarget,
+} from "../useScrollPagination";
 import type {
   Connection,
   Favorite,
@@ -40,6 +44,7 @@ import type {
 interface Props {
   connections: Connection[];
   activeConnectionId: string;
+  onConnectionChange?(connectionId: string): void;
   favorites: Favorite[];
   recents: Favorite[];
   onOpen(
@@ -182,10 +187,20 @@ export function ResourceSidebar(props: Props) {
   const [treeFocused, setTreeFocused] = useState(false);
   const generation = useRef(0);
   const groupsRequest = useRef(0);
+  const groupsPending = useRef<number | null>(null);
+  const groupPages = useRef(0);
+  const loadedScope = useRef("");
   const streamRequestCounter = useRef(0);
   const streamRequests = useRef(new Map<string, number>());
   const treeRef = useRef<HTMLDivElement>(null);
   const treeId = useId();
+  const resourceScope = JSON.stringify([
+    connection?.id,
+    connection?.profile,
+    connection?.region,
+    connection?.mode,
+    debounced,
+  ]);
   useEffect(() => {
     setConnectionId(props.activeConnectionId);
   }, [props.activeConnectionId]);
@@ -194,7 +209,14 @@ export function ResourceSidebar(props: Props) {
     return () => clearTimeout(timeout);
   }, [search]);
   const loadGroups = async (more = false, version = generation.current) => {
-    if (!connection) return;
+    if (
+      !connection ||
+      groupsPending.current === version ||
+      (more && !groups.cursor)
+    )
+      return;
+    groupsPending.current = version;
+    if (!more) groupPages.current++;
     const request = ++groupsRequest.current;
     setBusy(true);
     setError("");
@@ -206,6 +228,7 @@ export function ResourceSidebar(props: Props) {
       );
       if (version !== generation.current || request !== groupsRequest.current)
         return;
+      loadedScope.current = resourceScope;
       setGroups((previous) => ({
         items: more
           ? [
@@ -220,6 +243,7 @@ export function ResourceSidebar(props: Props) {
       if (version === generation.current && request === groupsRequest.current)
         setError(e instanceof Error ? e.message : "Could not load log groups");
     } finally {
+      if (groupsPending.current === version) groupsPending.current = null;
       if (version === generation.current && request === groupsRequest.current)
         setBusy(false);
     }
@@ -244,7 +268,12 @@ export function ResourceSidebar(props: Props) {
     debounced,
   ]);
   const loadStreams = async (group: string, more = false) => {
-    if (!connection || streamRequests.current.has(group)) return;
+    if (
+      !connection ||
+      streamRequests.current.has(group) ||
+      (more && !streams[group]?.cursor)
+    )
+      return;
     const version = generation.current;
     const request = ++streamRequestCounter.current;
     streamRequests.current.set(group, request);
@@ -348,6 +377,31 @@ export function ResourceSidebar(props: Props) {
         : indices;
     },
   });
+  const pageTargets: ScrollPageTarget[] = [];
+  if (regionOpen && loadedScope.current === resourceScope) {
+    rows.forEach((row, index) => {
+      if (row.kind === "more")
+        pageTargets.push({
+          key: JSON.stringify([
+            "streams",
+            row.group.name,
+            streams[row.group.name]?.cursor,
+          ]),
+          end: (index + 1) * 32,
+          load: () => void loadStreams(row.group.name, true),
+        });
+    });
+    if (groups.cursor && !busy && !error)
+      pageTargets.push({
+        key: JSON.stringify(["groups", groups.cursor]),
+        end: virtualizer.getTotalSize(),
+        load: () => void loadGroups(true),
+      });
+  }
+  useScrollPagination(treeRef, {
+    scope: `${resourceScope}:${groupPages.current}`,
+    targets: pageTargets,
+  });
   const toggleSelected = (group: string) =>
     setSelected((previous) => {
       const next = new Set(previous);
@@ -368,7 +422,10 @@ export function ResourceSidebar(props: Props) {
         mode,
       );
     else if (row.kind === "more" || row.kind === "error")
-      void loadStreams(row.group.name, row.kind === "more");
+      void loadStreams(
+        row.group.name,
+        Boolean(streams[row.group.name]?.cursor),
+      );
   };
   const openFavorite = (
     favorite: Favorite,
@@ -434,7 +491,11 @@ export function ResourceSidebar(props: Props) {
         <Select
           aria-label="AWS connection"
           value={connection.id}
-          onChange={(value) => value && setConnectionId(value)}
+          onChange={(value) => {
+            if (!value) return;
+            setConnectionId(value);
+            props.onConnectionChange?.(value);
+          }}
           data={props.connections.map((c) => ({ value: c.id, label: c.name }))}
           size="xs"
           searchable
@@ -783,37 +844,34 @@ export function ResourceSidebar(props: Props) {
                     id={rowId(item.index)}
                     aria-level={2}
                     title={row.message}
-                    onClick={() => void loadStreams(row.group.name)}
+                    onClick={() =>
+                      void loadStreams(
+                        row.group.name,
+                        Boolean(streams[row.group.name]?.cursor),
+                      )
+                    }
                   >
                     Retry streams: {row.message.slice(0, 35)}
                   </button>
                 ) : (
-                  <button
+                  <div
                     className="tree-more"
                     role="treeitem"
                     id={rowId(item.index)}
                     aria-level={2}
-                    onClick={() => void loadStreams(row.group.name, true)}
                   >
-                    Load more streams
-                  </button>
+                    More streams load as you scroll
+                  </div>
                 )}
               </div>
             );
           })}
         </div>
       </div>
-      {groups.cursor && (
-        <Button
-          variant="subtle"
-          size="xs"
-          mx="xs"
-          mb="xs"
-          loading={busy}
-          onClick={() => void loadGroups(true)}
-        >
-          Load more groups
-        </Button>
+      {busy && groups.items.length > 0 && (
+        <Text size="xs" c="dimmed" mx="xs" mb="xs" role="status">
+          Loading more groups…
+        </Text>
       )}
       {selected.size > 0 && (
         <Button

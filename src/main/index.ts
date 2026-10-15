@@ -13,7 +13,7 @@ import {
 } from "./security";
 import { WorkspaceStore } from "./persistence";
 import { createCloseCoordinator } from "./close-coordinator";
-import { restoreWorkspace } from "../renderer/workspace";
+import { parseWorkspaceInput } from "./workspace-input";
 
 // No AWS environment variables, shared profiles or tokens are inspected at startup.
 if (process.env.EXPLORER_TEST_USER_DATA)
@@ -34,16 +34,7 @@ let closeToken = "";
 let acknowledgeClose: ((success: boolean) => void) | null = null;
 const primaryInstance = app.requestSingleInstanceLock();
 if (!primaryInstance) app.quit();
-const store = new WorkspaceStore(app.getPath("userData"), (value) =>
-  workspaceSchema.parse(
-    value &&
-      typeof value === "object" &&
-      "version" in value &&
-      value.version === 0
-      ? restoreWorkspace(value)
-      : value,
-  ),
-);
+const store = new WorkspaceStore(app.getPath("userData"), parseWorkspaceInput);
 const service = createLogService(
   (update) => {
     if (window && !window.isDestroyed())

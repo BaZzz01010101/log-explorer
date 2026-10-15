@@ -159,7 +159,10 @@ test("top-edge self-drop clones independent permanent tabs and invalid or cancel
     page.locator(".workspace-drag-preview,.pane-drop-overlay"),
   ).toHaveCount(0);
   await expect(page.locator(".workspace-pane")).toHaveCount(2);
-  await expect(page.locator(".workspace-tab")).toHaveCount(2);
+  await expect(page.locator(".workspace-tab")).toHaveCount(1);
+  await expect(
+    page.locator('.workspace-tab[data-entry-kind="split"]'),
+  ).toHaveCount(1);
   await expect(page.locator(".workspace-tab.is-preview")).toHaveCount(0);
   const panes = page.locator(".workspace-pane");
   const first = (await panes.nth(0).boundingBox())!;
@@ -178,11 +181,16 @@ test("top-edge self-drop clones independent permanent tabs and invalid or cancel
     panes.nth(1).getByLabel("Local filter loaded events"),
   ).toHaveValue("");
 
+  await page
+    .getByRole("treeitem", { name: "/aws/lambda/media-pipeline", exact: true })
+    .locator(".resource-label")
+    .dblclick();
+  await expect(page.locator(".workspace-pane")).toHaveCount(1);
+  const combinedTab = page
+    .locator('.workspace-tab[data-entry-kind="split"]')
+    .getByRole("tab");
   const before = await snapshot();
-  await startDrag(
-    page.getByRole("tab", { name: "orders-api", exact: true }).first(),
-    { x: -35, y: -35 },
-  );
+  await startDrag(combinedTab, { x: -35, y: -35 });
   await expect(page.locator(".pane-drop-overlay")).toHaveCount(0);
   await page.mouse.up();
   await expect(
@@ -196,10 +204,10 @@ test("top-edge self-drop clones independent permanent tabs and invalid or cancel
     .locator("[data-pane-drop-target]")
     .first()
     .boundingBox())!;
-  await startDrag(
-    page.getByRole("tab", { name: "orders-api", exact: true }).first(),
-    { x: target.x + target.width / 2, y: target.y + 45 },
-  );
+  await startDrag(combinedTab, {
+    x: target.x + target.width / 2,
+    y: target.y + 45,
+  });
   await expect(page.locator(".workspace-drag-preview")).toBeVisible();
   await expect(page.locator(".pane-drop-overlay")).toBeVisible();
   await page.keyboard.press("Escape");
@@ -214,13 +222,18 @@ test("top-edge self-drop clones independent permanent tabs and invalid or cancel
   const saved = JSON.parse(
     await readFile(join(directory, "workspace.json"), "utf8"),
   );
-  expect(saved.tabs).toHaveLength(2);
-  expect(new Set(saved.tabs.map((tab: { id: string }) => tab.id)).size).toBe(2);
+  expect(saved.tabs).toHaveLength(3);
+  expect(new Set(saved.tabs.map((tab: { id: string }) => tab.id)).size).toBe(3);
   expect(saved.tabs.every((tab: { preview?: boolean }) => !tab.preview)).toBe(
     true,
   );
   expect(
     saved.tabs
+      .filter((tab: { id: string }) =>
+        saved.splitTabs[0].panes.some(
+          (pane: { tabId: string }) => pane.tabId === tab.id,
+        ),
+      )
       .map((tab: { view: { localSearch: string } }) => tab.view.localSearch)
       .sort(),
   ).toEqual(["", "Payment"]);
@@ -232,7 +245,7 @@ test("a full four-pane workspace refuses a fifth split without adding tabs", asy
   await add.click();
   await add.click();
   await expect(page.locator(".workspace-pane")).toHaveCount(4);
-  await expect(page.locator(".workspace-tab")).toHaveCount(4);
+  await expect(page.locator(".workspace-tab")).toHaveCount(1);
   await expect(add).toBeDisabled();
   const before = await snapshot();
   const target = (await page
@@ -240,14 +253,14 @@ test("a full four-pane workspace refuses a fifth split without adding tabs", asy
     .first()
     .boundingBox())!;
   await startDrag(
-    page.getByRole("tab", { name: "orders-api", exact: true }).first(),
+    page.locator('.workspace-tab[data-entry-kind="split"]').getByRole("tab"),
     { x: target.x + 20, y: target.y + target.height / 2 },
   );
-  await expect(page.locator(".pane-drop-overlay")).toBeVisible();
+  await expect(page.locator(".pane-drop-overlay")).toHaveCount(0);
   await expect(page.locator('[data-split-preview="left"]')).toHaveCount(0);
   await page.mouse.up();
   await expect(page.locator(".workspace-pane")).toHaveCount(4);
-  await expect(page.locator(".workspace-tab")).toHaveCount(4);
+  await expect(page.locator(".workspace-tab")).toHaveCount(1);
   expect(await snapshot()).toEqual(before);
   await closeNaturally();
 });

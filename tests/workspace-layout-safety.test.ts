@@ -42,6 +42,7 @@ describe("persisted pane layout trust boundary", () => {
     const state = twoPanes();
     state.tabs[0].preview = true;
     const layout = split(leaf(state.panes[1].id), leaf(state.panes[0].id));
+    state.splitTabs![0].layout = layout;
     const parsed = workspaceSchema.parse({
       ...state,
       layout: { ...layout, accessKey: "discard" },
@@ -202,16 +203,16 @@ describe("pane and preview model safety", () => {
     ).toBe(state);
   });
   it("splits a self edge-drop into an independent permanent tab and leaves a self assignment unchanged", () => {
-    const state = twoPanes();
+    const state = createWorkspace();
     const next = workspaceReducer(state, {
       type: "pane/drop-tab",
       paneId: state.panes[0].id,
       tabId: state.panes[0].tabId!,
       edge: "right",
     });
-    expect(next.panes).toHaveLength(3);
-    expect(next.tabs).toHaveLength(3);
-    const copy = next.tabs[2];
+    expect(next.panes).toHaveLength(2);
+    expect(next.tabs).toHaveLength(2);
+    const copy = next.tabs[1];
     expect(copy.id).not.toBe(state.tabs[0].id);
     expect(copy.sources).toEqual(state.tabs[0].sources);
     expect(copy.sources).not.toBe(state.tabs[0].sources);
@@ -256,7 +257,7 @@ describe("pane and preview model safety", () => {
       paneId: state.panes[1].id,
     });
     expect(next.panes[1].tabId).toBe(state.tabs[0].id);
-    expect(next.panes[0].tabId).toBeNull();
+    expect(next.panes[0].tabId).toBe(state.panes[1].tabId);
     expect(next.tabs).toHaveLength(2);
     valid(next);
   });
@@ -274,17 +275,16 @@ describe("pane and preview model safety", () => {
     expect(next.tabs).toHaveLength(2);
     valid(next);
   });
-  it("moves a displayed tab at pane capacity and keeps valid layout after closing its new pane", () => {
+  it("swaps a displayed member at pane capacity and closes only that moved member", () => {
     let state = twoPanes();
     state = workspaceReducer(state, { type: "pane/split" });
     state = workspaceReducer(state, { type: "pane/split" });
     const source = state.panes[0].tabId!;
     const target = state.panes[1].id;
     const moved = workspaceReducer(state, {
-      type: "pane/drop-tab",
+      type: "pane/assign",
       paneId: target,
       tabId: source,
-      edge: "bottom",
     });
     expect(moved.panes).toHaveLength(4);
     expect(moved.tabs).toHaveLength(state.tabs.length);
@@ -292,10 +292,11 @@ describe("pane and preview model safety", () => {
     valid(moved);
     const closed = workspaceReducer(moved, {
       type: "pane/close",
-      paneId: moved.activePaneId,
+      paneId: target,
     });
     expect(closed.panes).toHaveLength(3);
-    expect(closed.tabs.some((tab) => tab.id === source)).toBe(true);
+    expect(closed.tabs.some((tab) => tab.id === source)).toBe(false);
+    expect(closed.closedTabs[0].id).toBe(source);
     valid(closed);
   });
   it("does not remove a pane when a drop cannot add an unshown tab at capacity", () => {
@@ -303,7 +304,11 @@ describe("pane and preview model safety", () => {
     state = workspaceReducer(state, { type: "pane/split" });
     state = workspaceReducer(state, { type: "pane/split" });
     const tab = createTab("offline", [{ logGroup: "/unshown" }]);
-    state = { ...state, tabs: [...state.tabs, tab] };
+    state = {
+      ...state,
+      tabs: [...state.tabs, tab],
+      tabOrder: [...state.tabOrder!, tab.id],
+    };
     expect(
       workspaceReducer(state, {
         type: "pane/drop-tab",

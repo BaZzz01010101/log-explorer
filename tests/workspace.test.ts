@@ -97,22 +97,24 @@ describe("workspace state", () => {
     expectValid(state);
   });
 
-  it("caps splits at four, moves each tab to one pane, and preserves tabs when closing panes", () => {
+  it("caps splits at four, swaps internal views, and closes a member with its pane", () => {
     let state = createWorkspace();
     for (let index = 0; index < 5; index++)
       state = workspaceReducer(state, { type: "pane/split" });
     expect(state.panes).toHaveLength(4);
     const tabId = state.tabs[0].id;
     const target = state.panes[2].id;
+    const previous = state.panes[2].tabId;
     state = workspaceReducer(state, {
       type: "pane/assign",
       paneId: target,
       tabId,
     });
-    expect(state.panes[0].tabId).toBeNull();
+    expect(state.panes[0].tabId).toBe(previous);
     expect(state.panes[2].tabId).toBe(tabId);
     state = workspaceReducer(state, { type: "pane/close", paneId: target });
-    expect(state.tabs.some((tab) => tab.id === tabId)).toBe(true);
+    expect(state.tabs.some((tab) => tab.id === tabId)).toBe(false);
+    expect(state.closedTabs[0].id).toBe(tabId);
     expectValid(state);
   });
 

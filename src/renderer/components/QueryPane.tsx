@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import {
   ActionIcon,
   Alert,
@@ -18,7 +18,6 @@ import {
 import {
   IconBookmark,
   IconChevronDown,
-  IconClock,
   IconPlayerPlay,
   IconPlayerStop,
   IconRadio,
@@ -33,13 +32,15 @@ import type {
 } from "../../shared/contracts";
 import type { TabRuntime } from "../useLogJobs";
 import { LogViewer } from "./LogViewer";
-import { requestMatchesTab, resolveTimeRange } from "../query-state";
+import { requestMatchesTab } from "../query-state";
+import { TimeRangePicker } from "./TimeRangePicker";
 
 interface Props {
   workspace: Workspace;
   tab: LogTab;
   runtime?: TabRuntime;
   onPatch(patch: Partial<LogTab>): void;
+  onTimezoneChange(timezone: Workspace["preferences"]["timezone"]): void;
   onRun(live?: boolean, more?: boolean): void;
   onCancel(): void;
   onSaveQuery(query: SavedQuery): void;
@@ -52,6 +53,7 @@ export function QueryPane({
   tab,
   runtime,
   onPatch,
+  onTimezoneChange,
   onRun,
   onCancel,
   onSaveQuery,
@@ -71,18 +73,21 @@ export function QueryPane({
   const running = runtime?.state === "queued" || runtime?.state === "running";
   const stale =
     runtime?.request && !requestMatchesTab(runtime.request, tab, connection);
+  const paginationScope = useRef("");
+  if (runtime?.request && (!paginationScope.current || !runtime.request.cursor))
+    paginationScope.current = runtime.request.requestId;
+  const canPage = Boolean(
+    runtime?.state === "complete" &&
+    runtime.cursor &&
+    runtime.request &&
+    !runtime.live &&
+    !runtime.error &&
+    !runtime.truncated &&
+    !runtime.evicted &&
+    !stale &&
+    runtime.events.length < workspace.preferences.maxEvents,
+  );
   const currentText = tab.kind === "events" ? tab.filterPattern : tab.query;
-  let rangeError: string | undefined;
-  if (tab.timePreset === "custom" && (tab.customStart || tab.customEnd)) {
-    try {
-      resolveTimeRange(tab.timePreset, tab.customStart, tab.customEnd);
-    } catch (error) {
-      rangeError =
-        error instanceof Error
-          ? error.message
-          : "Choose valid start and end times";
-    }
-  }
   const patchView = (view: ViewConfig) => onPatch({ view });
   const presets = workspace.presets.filter(
     (p) => !p.logGroup || tab.sources.some((s) => s.logGroup === p.logGroup),
@@ -155,25 +160,11 @@ export function QueryPane({
             </Menu>
           </Group>
           <Group gap={6}>
-            <Select
-              aria-label="Time range"
-              size="xs"
-              w={128}
-              leftSection={<IconClock size={13} />}
-              value={tab.timePreset}
-              onChange={(value) => value && onPatch({ timePreset: value })}
-              data={[
-                { value: "5m", label: "Last 5 minutes" },
-                { value: "15m", label: "Last 15 minutes" },
-                { value: "30m", label: "Last 30 minutes" },
-                { value: "1h", label: "Last hour" },
-                { value: "3h", label: "Last 3 hours" },
-                { value: "6h", label: "Last 6 hours" },
-                { value: "12h", label: "Last 12 hours" },
-                { value: "24h", label: "Last 24 hours" },
-                { value: "7d", label: "Last 7 days" },
-                { value: "custom", label: "Custom range" },
-              ]}
+            <TimeRangePicker
+              tab={tab}
+              timezone={workspace.preferences.timezone}
+              onPatch={onPatch}
+              onTimezoneChange={onTimezoneChange}
             />
             <Menu>
               <Menu.Target>
@@ -254,37 +245,6 @@ export function QueryPane({
             </Menu>
           </Group>
         </Group>
-        {tab.timePreset === "custom" && (
-          <Group gap="xs" mt={8}>
-            <TextInput
-              size="xs"
-              type="datetime-local"
-              aria-label="Range start"
-              value={tab.customStart ?? ""}
-              error={Boolean(rangeError)}
-              onChange={(e) => onPatch({ customStart: e.currentTarget.value })}
-            />
-            <Text size="xs" c="dimmed">
-              to
-            </Text>
-            <TextInput
-              size="xs"
-              type="datetime-local"
-              aria-label="Range end"
-              value={tab.customEnd ?? ""}
-              error={Boolean(rangeError)}
-              onChange={(e) => onPatch({ customEnd: e.currentTarget.value })}
-            />
-            <Text size="xs" c="dimmed">
-              Local time ({Intl.DateTimeFormat().resolvedOptions().timeZone})
-            </Text>
-          </Group>
-        )}
-        {rangeError && (
-          <Text size="xs" c="red" mt={5} role="status">
-            {rangeError}
-          </Text>
-        )}
         <div
           className={`query-editor ${tab.kind === "insights" ? "insights-editor" : ""}`}
         >
@@ -421,15 +381,6 @@ export function QueryPane({
             : ""}
         </Alert>
       )}
-      {runtime?.state === "complete" &&
-        runtime.cursor &&
-        !runtime.events.length &&
-        !stale && (
-          <Alert color="blue" p="xs" mx="xs">
-            No matching events in the pages searched so far. CloudWatch has more
-            pages in this range; continue searching.
-          </Alert>
-        )}
       <div className="viewer-container">
         <LogViewer
           events={runtime?.events ?? []}
@@ -437,6 +388,13 @@ export function QueryPane({
           onViewChange={patchView}
           preferences={workspace.preferences}
           onContext={onContext}
+          pagination={{
+            scope: `${tab.id}:${paginationScope.current}`,
+            pageKey: canPage
+              ? JSON.stringify([runtime!.cursor, runtime!.request!.requestId])
+              : undefined,
+            onLoad: () => onRun(false, true),
+          }}
         />
       </div>
       <div className="query-status" role="status" aria-live="polite">
@@ -468,15 +426,6 @@ export function QueryPane({
             </Text>
           )}
         </Group>
-        {runtime?.cursor && !running && !stale && (
-          <Button
-            size="compact-xs"
-            variant="light"
-            onClick={() => onRun(false, true)}
-          >
-            {runtime.events.length ? "Load next page" : "Continue searching"}
-          </Button>
-        )}
       </div>
       <Modal
         opened={saveKind !== null}

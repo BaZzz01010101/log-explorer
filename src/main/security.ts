@@ -55,6 +55,7 @@ const viewSchema = z.object({
 const tabSchema = z.object({
   id,
   title: z.string().max(512),
+  customTitle: z.string().max(512).optional(),
   connectionId: id,
   sources: z.array(sourceSchema).max(50),
   groupId: id.optional(),
@@ -101,6 +102,25 @@ export const workspaceSchema = z
     name: z.string().max(120),
     connections: z.array(connectionSchema).min(1).max(50),
     tabs: z.array(tabSchema).max(100),
+    splitTabs: z
+      .array(
+        z.object({
+          id,
+          title: z.string().max(512).optional(),
+          groupId: id.optional(),
+          panes: z
+            .array(z.object({ id, tabId: id }))
+            .min(2)
+            .max(4),
+          layout: boundedPaneLayoutSchema(),
+          activePaneId: id,
+        }),
+      )
+      .max(50)
+      .optional(),
+    tabOrder: z.array(id).max(100).optional(),
+    activeTabId: id.nullable().optional(),
+    activeConnectionId: id.optional(),
     closedTabs: z.array(tabSchema).max(30),
     groups: z
       .array(
@@ -178,6 +198,107 @@ export const workspaceSchema = z
         layoutIds.some((paneId) => !paneIds.has(paneId))
       )
         issue("layout", "Layout must contain each workspace pane exactly once");
+    }
+    const connectionIds = new Set(
+      workspace.connections.map((connection) => connection.id),
+    );
+    const groupIds = new Set(workspace.groups.map((group) => group.id));
+    if (connectionIds.size !== workspace.connections.length)
+      issue("connections", "Connection IDs must be unique");
+    if (
+      [...workspace.tabs, ...workspace.closedTabs].some(
+        (tab) =>
+          !connectionIds.has(tab.connectionId) ||
+          (tab.groupId && !groupIds.has(tab.groupId)),
+      )
+    )
+      issue("tabs", "View connections and groups must exist");
+    const splits = workspace.splitTabs ?? [];
+    const splitIds = new Set(splits.map((split) => split.id));
+    const members = new Set<string>();
+    if (
+      splitIds.size !== splits.length ||
+      splits.some((split) => tabIds.has(split.id))
+    )
+      issue(
+        "splitTabs",
+        "Combined entry IDs must be unique and distinct from view IDs",
+      );
+    for (const split of splits) {
+      const ids = split.panes.map((pane) => pane.id);
+      const layoutIds = layoutPaneIds(split.layout);
+      if (
+        new Set(ids).size !== ids.length ||
+        !ids.includes(split.activePaneId) ||
+        layoutIds.length !== ids.length ||
+        new Set(layoutIds).size !== layoutIds.length ||
+        layoutIds.some((id) => !ids.includes(id))
+      )
+        issue(
+          "splitTabs",
+          "Each combined layout must reference its unique panes exactly once",
+        );
+      if (split.groupId && !groupIds.has(split.groupId))
+        issue("splitTabs", "Combined entry group must exist");
+      for (const pane of split.panes) {
+        if (!tabIds.has(pane.tabId) || members.has(pane.tabId))
+          issue(
+            "splitTabs",
+            "Each combined member must be an existing view with one owner",
+          );
+        members.add(pane.tabId);
+      }
+    }
+    const entryIds = new Set([
+      ...workspace.tabs
+        .filter((tab) => !members.has(tab.id))
+        .map((tab) => tab.id),
+      ...splitIds,
+    ]);
+    if (
+      workspace.tabOrder &&
+      (workspace.tabOrder.length !== entryIds.size ||
+        new Set(workspace.tabOrder).size !== workspace.tabOrder.length ||
+        workspace.tabOrder.some((id) => !entryIds.has(id)))
+    )
+      issue(
+        "tabOrder",
+        "Top-level order must contain every entry exactly once",
+      );
+    if (
+      workspace.activeTabId !== undefined &&
+      (workspace.activeTabId === null
+        ? entryIds.size !== 0
+        : !entryIds.has(workspace.activeTabId))
+    )
+      issue(
+        "activeTabId",
+        "Active entry must exist or be null only when no entries remain",
+      );
+    if (
+      workspace.activeConnectionId &&
+      !connectionIds.has(workspace.activeConnectionId)
+    )
+      issue("activeConnectionId", "Selected connection must exist");
+    if (workspace.activeTabId !== undefined) {
+      const split = splits.find((split) => split.id === workspace.activeTabId);
+      if (split) {
+        if (
+          workspace.activePaneId !== split.activePaneId ||
+          JSON.stringify(workspace.panes) !== JSON.stringify(split.panes) ||
+          JSON.stringify(workspace.layout) !== JSON.stringify(split.layout)
+        )
+          issue("panes", "Rendered panes must match the active combined entry");
+      } else if (
+        workspace.panes.length !== 1 ||
+        workspace.panes[0].tabId !== workspace.activeTabId ||
+        workspace.layout?.type !== "leaf" ||
+        workspace.layout.paneId !== workspace.panes[0].id
+      )
+        issue(
+          "panes",
+          "A normal or empty entry must render one full-size pane",
+        );
     }
   });
 

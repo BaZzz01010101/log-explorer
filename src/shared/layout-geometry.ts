@@ -1,11 +1,5 @@
-import type { PaneLayout, SplitEdge, Workspace } from "./contracts";
-import {
-  clampRatio,
-  layoutPaneIds,
-  legacyLayout,
-  removeLayoutPane,
-  splitLayout,
-} from "./pane-layout";
+import type { PaneLayout } from "./contracts";
+import { clampRatio } from "./pane-layout";
 
 /** Viewport coordinates, matching getBoundingClientRect() and a fixed overlay. */
 export interface LayoutRect {
@@ -13,11 +7,6 @@ export interface LayoutRect {
   top: number;
   width: number;
   height: number;
-}
-
-export interface ProjectedPaneDrop {
-  kind: "split" | "assign";
-  rect: LayoutRect;
 }
 
 function validBounds(bounds: LayoutRect, dividerSize: number): boolean {
@@ -93,47 +82,3 @@ export function paneLayoutRect(
  * Moving an already-visible tab removes its old pane before splitting the target;
  * the target can therefore expand beyond its current on-screen rectangle.
  */
-export function projectPaneDrop(
-  workspace: Pick<Workspace, "tabs" | "panes" | "layout" | "splitSizes">,
-  tabId: string,
-  targetPaneId: string,
-  edge: SplitEdge | null,
-  rootBounds: LayoutRect,
-  dividerSize = 6,
-): ProjectedPaneDrop | null {
-  if (
-    !validBounds(rootBounds, dividerSize) ||
-    !workspace.tabs.some((tab) => tab.id === tabId)
-  )
-    return null;
-  const target = workspace.panes.find((pane) => pane.id === targetPaneId);
-  if (!target) return null;
-  let layout =
-    workspace.layout ??
-    legacyLayout(
-      workspace.panes.map((pane) => pane.id),
-      workspace.splitSizes,
-    );
-  if (edge === null || target.tabId === null) {
-    const rect = paneLayoutRect(layout, targetPaneId, rootBounds, dividerSize);
-    return rect ? { kind: "assign", rect } : null;
-  }
-  const source = workspace.panes.find((pane) => pane.tabId === tabId);
-  const removeSource = source && source.id !== targetPaneId;
-  if (
-    workspace.panes.length - (removeSource ? 1 : 0) >= 4 ||
-    (source?.id === targetPaneId && workspace.tabs.length >= 100)
-  )
-    return null;
-  if (removeSource) {
-    const collapsed = removeLayoutPane(layout, source.id);
-    if (!collapsed) return null;
-    layout = collapsed;
-  }
-  const ids = layoutPaneIds(layout);
-  let projectedId = "__drop-preview__";
-  while (ids.includes(projectedId)) projectedId += "_";
-  const projected = splitLayout(layout, targetPaneId, projectedId, edge);
-  const rect = paneLayoutRect(projected, projectedId, rootBounds, dividerSize);
-  return rect ? { kind: "split", rect } : null;
-}

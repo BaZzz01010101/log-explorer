@@ -106,11 +106,16 @@ test.afterEach(async () => {
   expect(errors).toEqual([]);
 });
 
-test("moving a visible tab previews its final rectangle after the vacated pane collapses", async () => {
+test("dropping a normal tab into a combined tab previews its final nested pane rectangle", async () => {
   await page
     .getByRole("treeitem", { name: "/aws/lambda/payments-worker", exact: true })
     .locator(".resource-label")
     .dblclick();
+  await page
+    .getByRole("treeitem", { name: "/aws/lambda/media-pipeline", exact: true })
+    .locator(".resource-label")
+    .dblclick();
+  await page.getByRole("tab", { name: "payments-worker", exact: true }).click();
   await page.getByLabel("Add split pane", { exact: true }).click();
   await expect(page.locator(".workspace-pane")).toHaveCount(2);
   const paneFor = (name: string) =>
@@ -122,7 +127,7 @@ test("moving a visible tab previews its final rectangle after the vacated pane c
   const left = (await payments.boundingBox())!;
   const right = (await orders.boundingBox())!;
   expect(left.x).toBeLessThan(right.x);
-  const tab = page.getByRole("tab", { name: "orders-api", exact: true });
+  const tab = page.getByRole("tab", { name: "media-pipeline", exact: true });
   const from = (await tab.boundingBox())!;
   await page.mouse.move(from.x + 30, from.y + from.height / 2);
   await page.mouse.down();
@@ -138,9 +143,9 @@ test("moving a visible tab previews its final rectangle after the vacated pane c
   await expect(
     page.locator(".pane-drop-overlay,.workspace-drag-preview"),
   ).toHaveCount(0);
-  await expect(page.locator(".workspace-pane")).toHaveCount(2);
-  await expect(page.locator(".workspace-tab")).toHaveCount(2);
-  const actual = (await orders.boundingBox())!;
+  await expect(page.locator(".workspace-pane")).toHaveCount(3);
+  await expect(page.locator(".workspace-tab")).toHaveCount(1);
+  const actual = (await paneFor("media-pipeline").boundingBox())!;
   for (const key of ["x", "y", "width", "height"] as const)
     expect(
       Math.abs(actual[key] - projected[key]),

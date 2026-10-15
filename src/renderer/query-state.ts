@@ -35,7 +35,7 @@ export function mergeEvents(
   return { events: evicted ? events.slice(evicted) : events, evicted };
 }
 
-function parseRangeTime(value: string | undefined): number {
+export function parseRangeTime(value: string | undefined): number {
   const match = value?.match(
     /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2})(?:\.(\d{1,3}))?)?(Z|[+-]\d{2}:\d{2})?$/,
   );
@@ -90,6 +90,7 @@ export function resolveTimeRange(
   end?: string,
   now = Date.now(),
 ): { startTime: number; endTime: number } {
+  if (preset === "clear") return { startTime: 0, endTime: now };
   if (preset === "custom") {
     const startTime = parseRangeTime(start);
     const endTime = parseRangeTime(end);
