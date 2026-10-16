@@ -71,8 +71,7 @@ afterEach(async () => {
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
-async function mount() {
-  const connection = createWorkspace().connections[0];
+async function mount(connection = createWorkspace().connections[0]) {
   await act(async () => {
     renderer = create(
       <ResourceSidebar
@@ -155,6 +154,52 @@ it("does not repeat a cursor when the service returns it unchanged", async () =>
   expect(listGroups).toHaveBeenCalledTimes(2);
 });
 
+it("reloads an expanded group's streams after refreshing its region", async () => {
+  listGroups.mockResolvedValue({ items: [{ name: "/one" }] });
+  listStreams
+    .mockResolvedValueOnce({ items: [{ name: "before-refresh" }] })
+    .mockResolvedValueOnce({ items: [{ name: "after-refresh" }] });
+  await mount();
+  await act(async () =>
+    renderer!.root.findByProps({ "aria-label": "Expand /one" }).props.onClick(),
+  );
+  expect(listStreams).toHaveBeenCalledTimes(1);
+  await act(async () =>
+    renderer!.root
+      .findByProps({ "aria-label": "Refresh resources" })
+      .props.onClick(),
+  );
+  expect(listStreams).toHaveBeenCalledTimes(2);
+  expect(
+    renderer!.root.findAllByProps({ title: "after-refresh" }),
+  ).not.toHaveLength(0);
+});
+
+it("refreshes ordinary AWS group names that also match object prototype keys", async () => {
+  listGroups.mockResolvedValue({ items: [{ name: "constructor" }] });
+  listStreams.mockResolvedValue({ items: [{ name: "stream" }] });
+  await mount();
+  await act(async () =>
+    renderer!.root
+      .findByProps({ "aria-label": "Expand constructor" })
+      .props.onClick(),
+  );
+  await act(async () =>
+    renderer!.root
+      .findByProps({ "aria-label": "Refresh resources" })
+      .props.onClick(),
+  );
+  expect(listStreams).toHaveBeenCalledTimes(2);
+});
+
+it("supports a restored connection ID that matches an object prototype key", async () => {
+  listGroups.mockResolvedValue({ items: [{ name: "/one" }] });
+  await mount({ ...createWorkspace().connections[0], id: "constructor" });
+  expect(
+    renderer!.root.findAllByProps({ "data-node-kind": "group" }),
+  ).toHaveLength(1);
+});
+
 it("guards overlapping refreshes before React can commit loading state", async () => {
   let resolve: (page: unknown) => void = () => {};
   listGroups.mockImplementation(
@@ -202,7 +247,12 @@ it("preserves loaded streams and retries a failed continuation without restartin
 
 it("discards an old connection's pending page and never feeds its cursor to the new connection", async () => {
   const connection = createWorkspace().connections[0];
-  const second = { ...connection, id: "second", name: "Second" };
+  const second = {
+    ...connection,
+    id: "second",
+    name: "Second",
+    region: "us-east-1",
+  };
   let oldPage: (page: unknown) => void = () => {};
   listGroups.mockImplementation(
     async (selected: { id: string }, _search: string, cursor?: string) => {
@@ -234,7 +284,7 @@ it("discards an old connection's pending page and never feeds its cursor to the 
   expect(listGroups).toHaveBeenCalledTimes(2);
   await act(async () =>
     renderer!.root
-      .findByProps({ "aria-label": "AWS connection" })
+      .findByProps({ "aria-label": "Explorer region" })
       .props.onChange(second.id),
   );
   expect(listGroups).toHaveBeenCalledTimes(3);

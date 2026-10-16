@@ -475,6 +475,7 @@ export default function App() {
               style={{ width: workspace.sidebarWidth }}
             >
               <ResourceSidebar
+                preferences={workspace.preferences}
                 connections={workspace.connections}
                 activeConnectionId={activeConnectionId}
                 onConnectionChange={(connectionId) =>

@@ -302,7 +302,59 @@ export function inferLevel(parsed: ParsedMessage, raw: string): LogLevel {
   return key && Object.hasOwn(aliases, key) ? aliases[key]! : "unknown";
 }
 
-/** @/json/pointer=value matches a property; other tokens search retained message and source. */
+function localFilterTokens(query: string): string[] | undefined {
+  if (query.length > MESSAGE_LIMIT * 2) return undefined;
+  const tokens: string[] = [];
+  let start = -1;
+  let quoted = false;
+  let escaped = false;
+  for (let index = 0; index < query.length; index++) {
+    const character = query[index]!;
+    if (!quoted && /\s/.test(character)) {
+      if (start !== -1) tokens.push(query.slice(start, index));
+      start = -1;
+      continue;
+    }
+    if (start === -1) start = index;
+    if (escaped) escaped = false;
+    else if (quoted && character === "\\") escaped = true;
+    else if (character === '"') quoted = !quoted;
+  }
+  if (quoted) return undefined;
+  if (start !== -1) tokens.push(query.slice(start));
+  return tokens;
+}
+
+function quotedFilterText(
+  token: string,
+  start: number,
+): { value: string; end: number } | undefined {
+  if (token[start] !== '"') return undefined;
+  let escaped = false;
+  for (let index = start + 1; index < token.length; index++) {
+    const character = token[index]!;
+    if (escaped) escaped = false;
+    else if (character === "\\") escaped = true;
+    else if (character === '"') {
+      try {
+        return {
+          value: JSON.parse(token.slice(start, index + 1)) as string,
+          end: index + 1,
+        };
+      } catch {
+        return undefined;
+      }
+    }
+  }
+  return undefined;
+}
+
+/** Quote the exact JSON Pointer and value so property actions cannot add extra filter terms. */
+export function propertyFilterTerm(path: string, value: JsonValue): string {
+  return `@${JSON.stringify(path)}=${JSON.stringify(value)}`;
+}
+
+/** @/json/pointer=value and @"/quoted pointer"="value" match properties; other terms search message and source. */
 export function matchesLocalFilter(
   event: LogEvent,
   parsed: ParsedMessage,
@@ -311,17 +363,37 @@ export function matchesLocalFilter(
 ): boolean {
   if (level && level !== "all" && inferLevel(parsed, event.message) !== level)
     return false;
-  const tokens = query.match(/(?:[^\s"]|"[^"]*")+/g) ?? [];
+  const tokens = localFilterTokens(query);
+  if (!tokens) return false;
   const searchable =
     `${event.message}\n${event.logGroup}\n${event.logStream}`.toLowerCase();
   for (const token of tokens) {
-    const property = token.match(/^@(\/[^=]*)(?:=(.*))?$/);
-    if (property) {
+    let path: string | undefined;
+    let expected: string | undefined;
+    if (token.startsWith('@"')) {
+      const quoted = quotedFilterText(token, 1);
+      if (!quoted || (quoted.value !== "" && !quoted.value.startsWith("/")))
+        return false;
+      path = quoted.value;
+      if (quoted.end < token.length) {
+        if (token[quoted.end] !== "=") return false;
+        expected = token.slice(quoted.end + 1);
+      }
+    } else if (token.startsWith("@/")) {
+      const equals = token.indexOf("=");
+      path = token.slice(1, equals < 0 ? undefined : equals);
+      if (equals !== -1) expected = token.slice(equals + 1);
+    }
+    if (path !== undefined) {
       if (parsed.kind !== "json") return false;
-      const value = getPointer(parsed.value, property[1]!);
+      const value = getPointer(parsed.value, path);
       if (value === undefined) return false;
-      if (property[2] !== undefined) {
-        const expected = property[2].replace(/^"|"$/g, "");
+      if (expected !== undefined) {
+        if (expected.startsWith('"')) {
+          const quoted = quotedFilterText(expected, 0);
+          if (!quoted || quoted.end !== expected.length) return false;
+          expected = quoted.value;
+        }
         if (
           summarizeValue(value, MESSAGE_LIMIT).toLowerCase() !==
           expected.toLowerCase()

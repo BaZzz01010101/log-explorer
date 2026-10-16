@@ -24,6 +24,11 @@
 .level-filter {
   flex: 0 0 106px;
 }
+.quick-highlight {
+  flex: 1 1 145px;
+  max-width: 240px;
+  min-width: 120px;
+}
 .toolbar-spacer {
   flex: 1;
 }
@@ -72,8 +77,45 @@
   overflow: auto;
   flex: 1;
   min-height: 0;
+  min-width: 0;
   position: relative;
   scrollbar-width: thin;
+}
+.event-viewer-layout {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+.event-selected .log-cell,
+.event-selected .hybrid-gutter,
+.json-event-card.event-selected {
+  background: var(--mantine-primary-color-light);
+}
+.virtual-event.event-selected {
+  box-shadow: inset 3px 0 var(--mantine-primary-color-filled);
+}
+.event-selected:hover .log-cell {
+  background: var(--mantine-primary-color-light-hover);
+}
+.structured-actions {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 10px;
+  font-family: var(--mantine-font-family);
+}
+.structured-actions button {
+  border: 1px solid var(--mantine-color-default-border);
+  border-radius: var(--mantine-radius-default);
+  background: var(--mantine-color-default);
+  color: var(--mantine-color-text);
+  font: inherit;
+  font-size: 11px;
+  padding: 4px 8px;
+  cursor: pointer;
+}
+.structured-actions button:hover {
+  background: var(--mantine-color-default-hover);
 }
 .viewer-empty {
   display: flex;
@@ -563,4 +605,25 @@ body.resizing-columns * {
   .column-width {
     display: none;
   }
+}
+.virtual-event[data-highlighted="true"],
+.virtual-event[data-highlighted="true"] .log-cell,
+.virtual-event[data-highlighted="true"] .hybrid-gutter,
+.virtual-event[data-highlighted="true"] .hybrid-detail {
+  background-color: var(--event-highlight-bg, var(--surface-1));
+  color: var(--event-highlight-fg, inherit);
+}
+.virtual-event[data-highlighted="true"] .inspect-cell,
+.virtual-event[data-highlighted="true"] .json-key,
+.virtual-event[data-highlighted="true"] .json-value {
+  color: var(--event-highlight-fg, inherit);
+}
+.virtual-event[data-highlighted="true"].event-selected {
+  outline: 2px solid var(--mantine-color-blue-5);
+  outline-offset: -2px;
+  z-index: 1;
+}
+.profile-highlight-text {
+  border-radius: 2px;
+  padding: 0;
 }

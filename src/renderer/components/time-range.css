@@ -1,18 +1,189 @@
 .time-range-controls {
   min-width: 0;
+  max-width: 100%;
+}
+.time-range-quick-bar {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  border: 1px solid var(--mantine-color-default-border);
+  border-radius: var(--mantine-radius-default);
+  overflow: hidden;
+}
+.time-range-shortcuts {
+  display: flex;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.time-range-shortcuts button,
+.time-range-clear {
+  flex: 0 0 auto;
+  border-radius: 0;
+  padding-inline: 7px;
 }
 .time-range-trigger {
-  min-width: 90px;
-  max-width: 180px;
+  flex: 0 1 auto;
+  min-width: 78px;
+  max-width: 400px;
+  border: 0;
+  border-radius: 0;
+}
+.time-range-trigger .mantine-Button-label {
+  display: block;
+  height: auto;
+  line-height: normal;
+  text-box-trim: none;
+  text-overflow: ellipsis;
+  overflow: hidden;
+  white-space: nowrap;
+}
+.time-range-timezone {
+  flex: 0 0 108px;
 }
 .time-range-popover {
   max-width: calc(100vw - 24px);
+  max-height: min(690px, calc(100dvh - 100px));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 14px 16px 0;
+}
+.time-range-mode-list {
+  width: fit-content;
+}
+.calendar-month-navigation {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 4px 0;
+}
+.calendar-navigation-button {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  background: transparent;
+  color: var(--mantine-color-text);
+  border: 0;
+  border-radius: var(--mantine-radius-default);
+  cursor: pointer;
+}
+.calendar-navigation-button:hover {
+  background: var(--mantine-color-default-hover);
+}
+.calendar-navigation-button:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+.calendar-selection-hint {
+  color: var(--mantine-color-dimmed);
+  font-size: 11px;
+}
+.calendar-months {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 24px;
+}
+.calendar-month h3 {
+  margin: 0 0 10px;
+  font-size: 15px;
+  text-align: center;
+  font-weight: 650;
+}
+.calendar-weekdays,
+.calendar-days {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  text-align: center;
+}
+.calendar-weekdays {
+  color: var(--mantine-color-dimmed);
+  font-size: 11px;
+  margin-bottom: 4px;
+}
+.calendar-days > div {
+  min-width: 0;
+}
+.calendar-week {
+  display: contents;
+}
+.calendar-day {
+  display: block;
+  width: 100%;
+  height: 30px;
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--mantine-color-text);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.calendar-day:hover {
+  background: var(--mantine-primary-color-light-hover);
+}
+.calendar-day.is-in-range {
+  background: var(--mantine-primary-color-light);
+}
+.calendar-day.is-range-start,
+.calendar-day.is-range-end {
+  background: var(--mantine-primary-color-filled);
+  color: var(--mantine-primary-color-contrast);
+  border-radius: var(--mantine-radius-default);
+}
+.calendar-day:focus-visible,
+.calendar-navigation-button:focus-visible {
+  outline: 2px solid var(--mantine-primary-color-filled);
+  outline-offset: -2px;
+}
+.absolute-range-fields {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 14px;
+}
+.absolute-range-fields input {
+  font-variant-numeric: tabular-nums;
+}
+.relative-range-presets {
+  display: grid;
+  gap: 16px;
+  padding: 10px 0 20px;
+}
+.relative-range-row {
+  display: grid;
+  grid-template-columns: 72px repeat(6, minmax(0, 1fr));
+  gap: 12px;
+  align-items: center;
+}
+.relative-duration-fields {
+  display: grid;
+  grid-template-columns: 1fr 2fr;
+  gap: 18px;
 }
 .time-range-footer {
+  position: sticky;
+  bottom: 0;
+  background: var(--mantine-color-body);
   border-top: 1px solid var(--mantine-color-default-border);
+  padding: 12px 0;
+  margin-top: 14px;
+  z-index: 1;
 }
-@media (max-width: 950px) {
-  .time-range-trigger {
-    max-width: 138px;
+@media (max-width: 580px) {
+  .calendar-months {
+    gap: 12px;
+  }
+  .absolute-range-fields {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .relative-range-row {
+    gap: 5px;
+    grid-template-columns: 55px repeat(6, minmax(0, 1fr));
+  }
+  .relative-range-row button {
+    padding-inline: 3px;
+  }
+  .calendar-day {
+    height: 28px;
   }
 }

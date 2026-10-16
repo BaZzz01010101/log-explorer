@@ -27,6 +27,7 @@ import {
 import {
   SortableContext,
   horizontalListSortingStrategy,
+  rectSortingStrategy,
   sortableKeyboardCoordinates,
   useSortable,
 } from "@dnd-kit/sortable";
@@ -181,18 +182,30 @@ function SortableTab({
               transform: CSS.Transform.toString(
                 isDragging
                   ? mode === "reorder" && transform
-                    ? { ...transform, y: 0 }
+                    ? workspace.preferences.tabBarLayout === "wrap"
+                      ? transform
+                      : { ...transform, y: 0 }
                     : null
                   : transform,
               ),
               transition,
             }}
             onPointerDown={(event) => {
+              if (event.button === 1) {
+                event.preventDefault();
+                return;
+              }
               if (
                 event.button === 0 &&
                 !(event.target as HTMLElement).closest("[data-tab-control]")
               )
                 listeners?.onPointerDown?.(event);
+            }}
+            onAuxClick={(event) => {
+              if (event.button !== 1) return;
+              event.preventDefault();
+              event.stopPropagation();
+              dispatch({ type: "tab/close", tabId: tab.id });
             }}
             onDragStart={(event) => event.preventDefault()}
             onContextMenu={(event) => {
@@ -235,10 +248,6 @@ function SortableTab({
                     listeners?.onKeyDown?.(event);
                     if (!event.defaultPrevented) onKeyDown(event);
                   }
-                }}
-                onAuxClick={(event) => {
-                  if (event.button === 1)
-                    dispatch({ type: "tab/close", tabId: tab.id });
                 }}
               >
                 {split ? (
@@ -609,21 +618,51 @@ function dragDestination(
       ...document.querySelectorAll<HTMLElement>(
         ".workspace-tab-list [data-tab-id]",
       ),
-    ];
-    const before = tabs.find((element) => {
-      const rect = element.getBoundingClientRect();
-      return point.x < rect.left + rect.width / 2;
-    });
+    ].map((element) => ({ element, rect: element.getBoundingClientRect() }));
+    // Choose a visual row before comparing horizontal midpoints. At a row's
+    // trailing blank space the insertion belongs before the following row.
+    const rows: { tabs: typeof tabs; top: number; bottom: number }[] = [];
+    for (const tab of tabs) {
+      if (!tab.rect.width || !tab.rect.height) continue;
+      const row = rows.find(
+        (row) => tab.rect.top < row.bottom && tab.rect.bottom > row.top,
+      );
+      if (row) {
+        row.tabs.push(tab);
+        row.top = Math.min(row.top, tab.rect.top);
+        row.bottom = Math.max(row.bottom, tab.rect.bottom);
+      } else
+        rows.push({ tabs: [tab], top: tab.rect.top, bottom: tab.rect.bottom });
+    }
+    const row = rows.reduce<(typeof rows)[number] | undefined>(
+      (closest, candidate) => {
+        const distance = (value: (typeof rows)[number]) =>
+          Math.max(value.top - point.y, 0, point.y - value.bottom);
+        return !closest || distance(candidate) < distance(closest)
+          ? candidate
+          : closest;
+      },
+      undefined,
+    );
+    const before = row?.tabs.find(
+      ({ rect }) => point.x < rect.left + rect.width / 2,
+    );
+    const last = row?.tabs.at(-1);
+    const next = before ?? (last ? tabs[tabs.indexOf(last) + 1] : undefined);
     const boundary = before
-      ? before.getBoundingClientRect().left
-      : (tabs.at(-1)?.getBoundingClientRect().right ?? strip.left);
+      ? before.rect.left
+      : (last?.rect.right ?? strip.left);
+    const top = Math.max(strip.top, row?.top ?? strip.top);
     insertion = {
-      beforeTabId: before?.dataset.tabId ?? null,
+      beforeTabId: next?.element.dataset.tabId ?? null,
       rect: {
         left: Math.min(strip.right - 2, Math.max(strip.left, boundary - 1)),
-        top: strip.top,
+        top,
         width: 3,
-        height: strip.height,
+        height: Math.max(
+          1,
+          Math.min(strip.bottom, row?.bottom ?? strip.bottom) - top,
+        ),
       },
     };
   }
@@ -1163,14 +1202,20 @@ export function WorkspaceTabs({ workspace, dispatch }: Props) {
 
   return (
     <>
-      <div className="workspace-tab-bar">
+      <div
+        className={`workspace-tab-bar ${workspace.preferences.tabBarLayout === "wrap" ? "is-wrapped" : ""}`}
+      >
         <SortableContext
           items={visibleTabs.map((tab) => `tab:${tab.id}`)}
-          strategy={horizontalListSortingStrategy}
+          strategy={
+            workspace.preferences.tabBarLayout === "wrap"
+              ? rectSortingStrategy
+              : horizontalListSortingStrategy
+          }
         >
           <div
             ref={setTabStripRef}
-            className="workspace-tab-list"
+            className={`workspace-tab-list ${workspace.preferences.tabBarLayout === "wrap" ? "is-wrapped" : ""}`}
             role="tablist"
             aria-label="Log views"
           >

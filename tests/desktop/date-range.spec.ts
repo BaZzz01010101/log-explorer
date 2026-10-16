@@ -1,3 +1,4 @@
+import { desktopExecutablePath } from "./desktop-app";
 import {
   _electron as electron,
   expect,
@@ -6,8 +7,7 @@ import {
   type Page,
 } from "@playwright/test";
 import { execFileSync } from "node:child_process";
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { join, resolve, sep } from "node:path";
 
 test.setTimeout(45000);
@@ -16,36 +16,30 @@ let child: ReturnType<ElectronApplication["process"]> | undefined;
 let page: Page;
 let directory: string;
 let errors: string[];
+const temporaryRoot = resolve(".tmp", "desktop-dates");
 
 test.beforeEach(async () => {
-  directory = await mkdtemp(join(tmpdir(), "aws-log-explorer-dates-"));
+  await mkdir(temporaryRoot, { recursive: true });
+  directory = await mkdtemp(join(temporaryRoot, "case-"));
   errors = [];
   const env: Record<string, string> = {};
-  for (const key of [
-    "PATH",
-    "SystemRoot",
-    "WINDIR",
-    "TEMP",
-    "TMP",
-    "USERPROFILE",
-    "LOCALAPPDATA",
-    "APPDATA",
-    "COMSPEC",
-  ])
+  for (const key of ["PATH", "SystemRoot", "WINDIR", "TEMP", "TMP", "COMSPEC"])
     if (process.env[key]) env[key] = process.env[key]!;
   Object.assign(env, {
     EXPLORER_TEST_USER_DATA: directory,
+    USERPROFILE: directory,
+    LOCALAPPDATA: directory,
+    APPDATA: directory,
     AWS_CONFIG_FILE: join(directory, "absent-config"),
     AWS_SHARED_CREDENTIALS_FILE: join(directory, "absent-credentials"),
     AWS_EC2_METADATA_DISABLED: "true",
   });
   const packaged = process.env.EXPLORER_DESKTOP_PACKAGED === "1";
   app = await electron.launch({
-    executablePath: packaged
-      ? join(process.cwd(), "release/win-unpacked/AWS Log Explorer.exe")
-      : undefined,
+    executablePath: packaged ? desktopExecutablePath() : undefined,
     args: [
-      ...(packaged ? ["--offline-verification"] : [process.cwd()]),
+      ...(packaged ? [] : [process.cwd()]),
+      "--offline-verification",
       "--background-verification",
       "--disable-background-networking",
       "--disable-component-update",
@@ -73,7 +67,9 @@ test.beforeEach(async () => {
       );
     };
   });
-  await expect(page.locator(".query-status")).toContainText("complete");
+  await expect(
+    page.locator('.query-status[data-query-state="complete"]'),
+  ).toBeAttached();
 });
 
 test.afterEach(async () => {
@@ -99,11 +95,7 @@ test.afterEach(async () => {
     }
   }
   expect(errors).toEqual([]);
-  if (
-    !resolve(directory).startsWith(
-      resolve(tmpdir()) + sep + "aws-log-explorer-dates-",
-    )
-  )
+  if (!resolve(directory).startsWith(temporaryRoot + sep + "case-"))
     throw new Error("Unsafe date-test cleanup path");
   await rm(directory, {
     recursive: true,
@@ -115,13 +107,16 @@ test.afterEach(async () => {
 
 test("trusted date preset selection refreshes without clicking Run and leaves pattern edits manual", async () => {
   const picker = page.getByRole("button", { name: "Time range", exact: true });
-  await expect(picker).toHaveText("Clear");
+  await expect(picker).toHaveText("Custom");
+  await expect(
+    page.getByRole("button", { name: "Clear time filter", exact: true }),
+  ).toHaveAttribute("aria-pressed", "true");
   await expect(
     page.getByRole("combobox", { name: "Timezone", exact: true }),
   ).toBeVisible();
-  const initial = await page.locator(".viewer-meta").innerText();
+  const initial = await page.locator(".query-status").innerText();
   const count = Number(
-    initial.match(/([\d,]+) \/ [\d,]+ loaded events/)?.[1].replaceAll(",", ""),
+    initial.match(/([\d,]+) loaded/)?.[1].replaceAll(",", ""),
   );
   expect(count).toBeGreaterThan(100);
   await picker.click();
@@ -129,28 +124,33 @@ test("trusted date preset selection refreshes without clicking Run and leaves pa
   await page
     .getByRole("button", { name: "Last 5 minutes", exact: true })
     .click();
-  await expect(picker).toHaveText("Last 5 minutes");
+  await page.getByRole("button", { name: "Apply", exact: true }).click();
+  await expect(picker).toHaveText("Custom");
+  await expect(picker).toHaveAttribute("aria-pressed", "false");
+  await expect(
+    page.getByRole("button", { name: "Set last 5 minutes", exact: true }),
+  ).toHaveAttribute("aria-pressed", "true");
   // A completed query can still be showing its previous snapshot while React
   // schedules the date effect. Wait for the new result count, not incidental
   // metadata changes or the previous request's already-complete status.
   await expect
     .poll(
       async () => {
-        const metadata = await page.locator(".viewer-meta").innerText();
+        const metadata = await page.locator(".query-status").innerText();
         const loaded = Number(
-          metadata
-            .match(/([\d,]+) \/ [\d,]+ loaded events/)?.[1]
-            .replaceAll(",", ""),
+          metadata.match(/([\d,]+) loaded/)?.[1].replaceAll(",", ""),
         );
         return loaded > 0 && loaded < count;
       },
       { timeout: 10000 },
     )
     .toBe(true);
-  await expect(page.locator(".query-status")).toContainText("complete");
-  const reduced = await page.locator(".viewer-meta").innerText();
+  await expect(
+    page.locator('.query-status[data-query-state="complete"]'),
+  ).toBeAttached();
+  const reduced = await page.locator(".query-status").innerText();
   const reducedCount = Number(
-    reduced.match(/([\d,]+) \/ [\d,]+ loaded events/)?.[1].replaceAll(",", ""),
+    reduced.match(/([\d,]+) loaded/)?.[1].replaceAll(",", ""),
   );
   expect(reducedCount).toBeGreaterThan(0);
   expect(reducedCount).toBeLessThan(count);
@@ -159,25 +159,23 @@ test("trusted date preset selection refreshes without clicking Run and leaves pa
   await page.keyboard.press("ControlOrMeta+A");
   await pattern.pressSequentially("unmatched-date-regression-54837");
   await expect(page.getByText(/Query settings changed/)).toBeVisible();
-  await expect(page.locator(".viewer-meta")).toContainText(
-    `${reducedCount} / ${reducedCount} loaded events`,
-  );
-  await picker.click();
-  await page
-    .getByRole("button", { name: "Last 30 minutes", exact: true })
-    .click();
   await expect(page.locator(".query-status")).toContainText(
-    "complete · 0 loaded",
+    `${reducedCount.toLocaleString()} loaded`,
   );
+  await page
+    .getByRole("button", { name: "Set last 30 minutes", exact: true })
+    .click();
+  await expect(
+    page.locator('.query-status[data-query-state="complete"]'),
+  ).toBeAttached();
+  await expect(page.locator(".query-status")).toContainText("0 loaded");
   await expect(page.getByText(/Query settings changed/)).toHaveCount(0);
 });
 
 test("absolute date ranges refresh automatically in UTC and clearing restores all history", async () => {
-  const metadata = () => page.locator(".viewer-meta").innerText();
+  const metadata = () => page.locator(".query-status").innerText();
   const count = (text: string) =>
-    Number(
-      text.match(/([\d,]+) \/ [\d,]+ loaded events/)?.[1].replaceAll(",", ""),
-    );
+    Number(text.match(/([\d,]+) loaded/)?.[1].replaceAll(",", ""));
   const all = count(await metadata());
   expect(all).toBeGreaterThan(100);
   const zone = page.getByRole("combobox", { name: "Timezone", exact: true });
@@ -188,21 +186,33 @@ test("absolute date ranges refresh automatically in UTC and clearing restores al
   await picker.click();
   await page.getByRole("tab", { name: "Absolute", exact: true }).click();
   const anchor = Math.floor(Date.now() / 60000) * 60000;
-  const start = new Date(anchor - 10 * 60000).toISOString().slice(0, 16);
-  const end = new Date(anchor).toISOString().slice(0, 16);
-  await page.getByLabel("Range start", { exact: true }).fill(start);
-  await page.getByLabel("Range end", { exact: true }).fill(end);
+  const start = new Date(anchor - 10 * 60000).toISOString();
+  const end = new Date(anchor).toISOString();
+  await page
+    .getByLabel("Start date", { exact: true })
+    .fill(start.slice(0, 10).replaceAll("-", "/"));
+  await page
+    .getByLabel("Start time", { exact: true })
+    .fill(start.slice(11, 19));
+  await page
+    .getByLabel("End date", { exact: true })
+    .fill(end.slice(0, 10).replaceAll("-", "/"));
+  await page.getByLabel("End time", { exact: true }).fill(end.slice(11, 19));
+  await page.getByRole("button", { name: "Apply", exact: true }).click();
   await expect
     .poll(async () => {
       const loaded = count(await metadata());
       return loaded > 0 && loaded < all;
     })
     .toBe(true);
-  await expect(page.locator(".query-status")).toContainText("complete");
+  await expect(
+    page.locator('.query-status[data-query-state="complete"]'),
+  ).toBeAttached();
+  await picker.click();
   await page
-    .getByRole("button", { name: "Clear time filter", exact: true })
+    .getByRole("button", { name: "Clear custom time filter", exact: true })
     .click();
-  await expect(picker).toHaveText("Clear");
+  await expect(picker).toHaveText("Custom");
   await expect.poll(async () => count(await metadata())).toBe(all);
   await expect(zone).toHaveValue("UTC");
 });

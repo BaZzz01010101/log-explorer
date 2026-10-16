@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { createWorkspace } from "../src/renderer/workspace";
 import {
   connectionSchema,
   querySchema,
@@ -7,6 +8,44 @@ import {
 } from "../src/main/security";
 
 describe("desktop trust boundary", () => {
+  it("preserves bounded highlight profiles while rejecting CSS-shaped colors", () => {
+    const workspace = createWorkspace();
+    workspace.preferences.highlightProfiles = [
+      {
+        id: "p",
+        name: "p",
+        enabled: true,
+        groupPattern: "orders$",
+        groupIgnoreCase: false,
+        rules: [
+          {
+            id: "r",
+            enabled: true,
+            scope: "structured",
+            path: "/level",
+            pattern: "ERROR",
+            ignoreCase: false,
+            target: "row",
+            colors: { background: "#aa0000" },
+            separateThemeColors: false,
+          },
+        ],
+      },
+    ];
+    expect(
+      workspaceSchema.parse(workspace).preferences.highlightProfiles,
+    ).toEqual(workspace.preferences.highlightProfiles);
+    workspace.preferences.highlightProfiles[0].rules[0].colors.background =
+      "url(secret)";
+    expect(workspaceSchema.safeParse(workspace).success).toBe(false);
+  });
+  it("preserves the selected tab layout through workspace validation", () => {
+    const workspace = createWorkspace();
+    workspace.preferences.tabBarLayout = "wrap";
+    expect(workspaceSchema.parse(workspace).preferences.tabBarLayout).toBe(
+      "wrap",
+    );
+  });
   it("cannot enable AWS in development regardless of requested state", () => {
     const gate = new AwsAccessGate(false);
     expect(() => gate.setEnabled(true)).toThrow(/packaged/);

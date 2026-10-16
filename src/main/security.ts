@@ -1,10 +1,12 @@
 import { z } from "zod";
+import { highlightProfilesSchema } from "../shared/highlights";
 import type { PaneLayout } from "../shared/contracts";
 import { layoutPaneIds } from "../shared/pane-layout";
 
 const id = z.string().min(1).max(160);
 const text = z.string().max(10000);
 export const connectionSchema = z.object({
+  enabled: z.boolean().optional(),
   id,
   name: z.string().min(1).max(120),
   profile: z.string().min(1).max(256),
@@ -33,6 +35,7 @@ export const querySchema = z
   })
   .refine((v) => v.endTime > v.startTime, "End time must be after start time");
 const viewSchema = z.object({
+  highlightText: z.string().max(200).optional(),
   mode: z.enum(["hybrid", "table", "json"]),
   columns: z
     .array(
@@ -161,13 +164,22 @@ export const workspaceSchema = z
       )
       .max(500),
     preferences: z.object({
+      profileVisibility: z
+        .record(z.string().min(1).max(256), z.boolean())
+        .refine(
+          (value) => Object.keys(value).length <= 50,
+          "At most 50 profiles",
+        )
+        .optional(),
       theme: z.enum(["dark", "light"]),
       density: z.enum(["compact", "comfortable"]),
       fontSize: z.number().min(10).max(20),
       maxEvents: z.number().int().min(100).max(100000),
       refreshSeconds: z.number().int().min(0).max(3600),
       timezone: z.enum(["local", "utc"]),
+      tabBarLayout: z.enum(["scroll", "wrap"]).optional(),
       highlightText: z.string().max(1000),
+      highlightProfiles: highlightProfilesSchema.optional(),
       shortcuts: z.record(z.string().max(60), z.string().max(80)),
     }),
   })

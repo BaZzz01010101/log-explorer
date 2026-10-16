@@ -1,3 +1,4 @@
+import { desktopExecutablePath } from "./desktop-app";
 import {
   _electron as electron,
   expect,
@@ -63,9 +64,7 @@ async function launch(panels: number, singleTabs = 0) {
     AWS_EC2_METADATA_DISABLED: "true",
   });
   app = await electron.launch({
-    executablePath: packaged
-      ? join(process.cwd(), "release/win-unpacked/AWS Log Explorer.exe")
-      : undefined,
+    executablePath: packaged ? desktopExecutablePath() : undefined,
     args: [
       ...(packaged ? [] : [process.cwd()]),
       "--offline-verification",
@@ -98,7 +97,9 @@ async function launch(panels: number, singleTabs = 0) {
     };
   });
   await expect(page.locator(".workspace-pane")).toHaveCount(panels);
-  await expect(page.locator(".query-status").first()).toContainText("complete");
+  await expect(
+    page.locator('.query-status[data-query-state="complete"]').first(),
+  ).toBeAttached();
   return state;
 }
 

@@ -1,5 +1,6 @@
 export type DataMode = "offline" | "aws";
 export interface Connection {
+  enabled?: boolean;
   id: string;
   name: string;
   profile: string;
@@ -71,6 +72,7 @@ export interface ColumnConfig {
   hidden?: boolean;
 }
 export interface ViewConfig {
+  highlightText?: string;
   mode: ViewMode;
   columns: ColumnConfig[];
   localSearch: string;
@@ -141,8 +143,11 @@ export interface VisualizationPreset {
   view: ViewConfig;
 }
 export interface Preferences {
+  profileVisibility?: Record<string, boolean>;
+  highlightProfiles?: import("./highlights").HighlightProfile[];
   theme: "dark" | "light";
   density: "compact" | "comfortable";
+  tabBarLayout: "scroll" | "wrap";
   fontSize: number;
   maxEvents: number;
   refreshSeconds: number;

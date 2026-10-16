@@ -91,6 +91,27 @@ function setup() {
   return { props, runtime, onRun };
 }
 
+it("passes active loading and one combined filtered status into the event viewer", async () => {
+  const { props, runtime } = setup();
+  await act(async () => {
+    renderer = create(
+      <QueryPane {...props} runtime={{ ...runtime, state: "running" }} />,
+    );
+  });
+  const viewer = renderer!.root.findByType(LogViewer);
+  expect(viewer.props.loading).toBe(true);
+  expect(viewer.props.renderStatus).toBeTypeOf("function");
+  expect(
+    renderer!.root.findAllByProps({ className: "query-status" }),
+  ).toHaveLength(0);
+  await act(async () => {
+    renderer!.update(
+      <QueryPane {...props} runtime={{ ...runtime, state: "cancelled" }} />,
+    );
+  });
+  expect(renderer!.root.findByType(LogViewer).props.loading).toBe(false);
+});
+
 it("provides automatic event pagination while retaining the original query generation across page requests", async () => {
   const { props, runtime, onRun } = setup();
   await act(async () => {

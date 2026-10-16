@@ -1,3 +1,4 @@
+import { desktopExecutablePath } from "./desktop-app";
 import {
   _electron as electron,
   expect,
@@ -24,10 +25,7 @@ let directory: string;
 let environment: Record<string, string>;
 let rendererErrors: string[];
 const packaged = process.env.EXPLORER_DESKTOP_PACKAGED === "1";
-const executable = join(
-  process.cwd(),
-  "release/win-unpacked/AWS Log Explorer.exe",
-);
+const executable = desktopExecutablePath();
 
 function delay(milliseconds: number) {
   return new Promise<void>((resolveDelay) =>
@@ -77,7 +75,9 @@ async function launch() {
       );
     };
   });
-  await expect(page.locator(".query-status").first()).toContainText("complete");
+  await expect(
+    page.locator('.query-status[data-query-state="complete"]').first(),
+  ).toBeAttached();
 }
 
 async function closeNaturally() {
@@ -253,7 +253,7 @@ test("unsorted and sorted tables settle at idle and remain responsive to trusted
     const search = page.getByLabel("Local filter loaded events");
     await typeText(search, "Payment");
     await expect(search).toHaveValue("Payment");
-    await expect(page.locator(".viewer-meta")).not.toContainText("540 / 540");
+    await expect(page.locator(".query-status")).toContainText("shown /");
     await expect(page.locator(".log-table-row").first()).toContainText(
       "Payment provider timed out",
     );
@@ -265,7 +265,9 @@ test("unsorted and sorted tables settle at idle and remain responsive to trusted
     await expect(page.locator(".log-table-row").first()).toBeVisible();
     await typeText(page.getByLabel("CloudWatch filter pattern"), '"Payment"');
     await page.getByTestId("run-query").click({ timeout: 3000 });
-    await expect(page.locator(".query-status")).toContainText("complete");
+    await expect(
+      page.locator('.query-status[data-query-state="complete"]'),
+    ).toBeAttached();
     await expect(page.locator(".log-table-row").first()).toContainText(
       "Payment provider timed out",
     );
@@ -494,11 +496,11 @@ test("trusted settings edits and final workspace changes survive a natural resta
   await page.keyboard.press("Enter");
   const maxEvents = page.getByLabel("Maximum events per view", { exact: true });
   const loadedBeforeLimitEdit =
-    (await page.locator(".viewer-meta").first().textContent()) ?? "";
+    (await page.locator(".query-status").first().textContent()) ?? "";
   await typeText(maxEvents, "25000");
   await expect(maxEvents).toHaveValue("25000");
   await page.keyboard.press("Tab");
-  await expect(page.locator(".viewer-meta").first()).toHaveText(
+  await expect(page.locator(".query-status").first()).toHaveText(
     loadedBeforeLimitEdit,
   );
   const refresh = page.getByLabel("Automatic refresh (seconds)", {

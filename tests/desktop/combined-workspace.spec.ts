@@ -1,3 +1,4 @@
+import { desktopExecutablePath } from "./desktop-app";
 import {
   _electron as electron,
   test,
@@ -22,9 +23,7 @@ const packaged = process.env.EXPLORER_DESKTOP_PACKAGED === "1";
 
 async function launch(waitForQuery = true) {
   app = await electron.launch({
-    executablePath: packaged
-      ? join(process.cwd(), "release/win-unpacked/AWS Log Explorer.exe")
-      : undefined,
+    executablePath: packaged ? desktopExecutablePath() : undefined,
     args: [
       ...(packaged ? [] : [process.cwd()]),
       "--offline-verification",
@@ -57,9 +56,9 @@ async function launch(waitForQuery = true) {
   expect(info.awsEnabled).toBe(false);
   expect(info.canEnableAws).toBe(false);
   if (waitForQuery)
-    await expect(page.locator(".query-status").first()).toContainText(
-      "complete",
-    );
+    await expect(
+      page.locator('.query-status[data-query-state="complete"]').first(),
+    ).toBeAttached();
   else
     await expect(
       page.getByText("Saved locally", { exact: true }),
@@ -362,10 +361,10 @@ test("dragging selects a destination split, pane headers reorder in place, and a
 
 test("closing the last tab preserves the explorer connection and restart selection", async () => {
   const connection = page.getByRole("combobox", {
-    name: "AWS connection",
+    name: "Explorer region",
     exact: true,
   });
-  await expect(connection).toHaveValue("Retained connection");
+  await expect(connection).toHaveValue("eu-west-1");
   await page
     .getByRole("button", { name: "Close orders-api", exact: true })
     .click();
@@ -373,7 +372,7 @@ test("closing the last tab preserves the explorer connection and restart selecti
   // Observe the settled connection after close effects and the save debounce,
   // rather than accepting the previous select value before its effect runs.
   await page.waitForTimeout(750);
-  await expect(connection).toHaveValue("Retained connection");
+  await expect(connection).toHaveValue("eu-west-1");
   await closeNaturally();
   const saved = JSON.parse(
     await readFile(join(directory, "workspace.json"), "utf8"),
@@ -382,8 +381,8 @@ test("closing the last tab preserves the explorer connection and restart selecti
   expect(saved.tabs).toHaveLength(0);
   await launch(false);
   await expect(
-    page.getByRole("combobox", { name: "AWS connection", exact: true }),
-  ).toHaveValue("Retained connection");
+    page.getByRole("combobox", { name: "Explorer region", exact: true }),
+  ).toHaveValue("eu-west-1");
   await expect(page.locator(".workspace-tab")).toHaveCount(0);
   await closeNaturally();
 });

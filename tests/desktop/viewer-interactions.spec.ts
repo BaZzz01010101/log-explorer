@@ -1,3 +1,4 @@
+import { desktopExecutablePath } from "./desktop-app";
 import {
   _electron as electron,
   expect,
@@ -17,10 +18,7 @@ let page: Page;
 let directory: string;
 let errors: string[];
 const packaged = process.env.EXPLORER_DESKTOP_PACKAGED === "1";
-const executable = join(
-  process.cwd(),
-  "release/win-unpacked/AWS Log Explorer.exe",
-);
+const executable = desktopExecutablePath();
 
 test.beforeEach(async () => {
   test.skip(
@@ -71,7 +69,9 @@ test.beforeEach(async () => {
   const cdp = await page.context().newCDPSession(page);
   await cdp.send("Emulation.setFocusEmulationEnabled", { enabled: true });
   page.on("pageerror", (error) => errors.push(error.message));
-  await expect(page.locator(".query-status")).toContainText("complete");
+  await expect(
+    page.locator('.query-status[data-query-state="complete"]'),
+  ).toBeAttached();
   const info = await page.evaluate(() => window.explorer.environment());
   expect(info.awsEnabled).toBe(false);
   expect(info.canEnableAws).toBe(false);
@@ -332,7 +332,7 @@ test("expanded hybrid rows retain aligned geometry through horizontal scrolling"
       return following!.y - expanded!.y - expanded!.height;
     })
     .toBeGreaterThanOrEqual(-1);
-  const viewport = page.getByRole("region", {
+  const viewport = page.getByRole("grid", {
     name: "Log events",
     exact: true,
   });
@@ -405,7 +405,7 @@ for (const mode of ["JSON", "Table", "Hybrid"]) {
     await expect(details).toHaveCount(0);
     await unfoldAll.click();
     await expect(rows.first().locator(".event-message-details")).toBeVisible();
-    const viewport = page.getByRole("region", {
+    const viewport = page.getByRole("grid", {
       name: "Log events",
       exact: true,
     });
@@ -441,7 +441,7 @@ for (const mode of ["JSON", "Table", "Hybrid"]) {
     await expect(details).toHaveCount(0);
     await expect(unfoldAll).toBeVisible();
     await page.getByLabel("Local filter loaded events").fill("Payment");
-    await expect(page.locator(".viewer-meta")).toContainText("loaded events");
+    await expect(page.locator(".query-status")).toContainText("shown /");
     await expect(rows.first()).toContainText("Payment");
   });
 }

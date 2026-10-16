@@ -1,3 +1,4 @@
+import { desktopExecutablePath } from "./desktop-app";
 import {
   _electron as electron,
   expect,
@@ -7,9 +8,8 @@ import {
   type Locator,
 } from "@playwright/test";
 import { existsSync } from "node:fs";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
 import { execFileSync } from "node:child_process";
-import { tmpdir } from "node:os";
 import { join, resolve, sep } from "node:path";
 
 let app: ElectronApplication;
@@ -17,6 +17,7 @@ let childProcess: ReturnType<ElectronApplication["process"]> | undefined;
 let page: Page;
 let directory: string;
 let environment: Record<string, string>;
+const temporaryRoot = resolve(".tmp", "desktop-lifecycle");
 const errors: string[] = [];
 
 // Trusted Chromium input exercises focus, pointer and keyboard behavior.
@@ -41,7 +42,11 @@ async function key(
   await page.keyboard.press(chord);
   if (key === "Escape") await expect(page.getByRole("dialog")).toHaveCount(0);
 }
-async function launch(executablePath?: string) {
+async function launch(
+  executablePath = process.env.EXPLORER_DESKTOP_PACKAGED === "1"
+    ? desktopExecutablePath()
+    : undefined,
+) {
   app = await electron.launch({
     executablePath,
     args: executablePath
@@ -78,7 +83,9 @@ async function launch(executablePath?: string) {
     ),
   ).toBe(false);
   page.on("pageerror", (error) => errors.push(error.message));
-  await expect(page.locator(".query-status")).toContainText("complete");
+  await expect(
+    page.locator('.query-status[data-query-state="complete"]'),
+  ).toBeAttached();
 }
 async function close() {
   if (!app || !childProcess || childProcess.exitCode !== null) return;
@@ -99,7 +106,8 @@ async function close() {
 }
 
 test.beforeAll(async () => {
-  directory = await mkdtemp(join(tmpdir(), "aws-log-explorer-desktop-"));
+  await mkdir(temporaryRoot, { recursive: true });
+  directory = await mkdtemp(join(temporaryRoot, "case-"));
   environment = {};
   // Whitelist OS variables; never inherit AWS secrets, profiles or token paths.
   for (const key of [
@@ -115,6 +123,8 @@ test.beforeAll(async () => {
   ])
     if (process.env[key]) environment[key] = process.env[key]!;
   environment.EXPLORER_TEST_USER_DATA = directory;
+  for (const key of ["USERPROFILE", "LOCALAPPDATA", "APPDATA"])
+    environment[key] = directory;
   environment.AWS_CONFIG_FILE = join(directory, "no-config");
   environment.AWS_SHARED_CREDENTIALS_FILE = join(directory, "no-credentials");
   environment.AWS_EC2_METADATA_DISABLED = "true";
@@ -122,11 +132,7 @@ test.beforeAll(async () => {
 });
 test.afterAll(async () => {
   await close();
-  if (
-    !resolve(directory).startsWith(
-      resolve(tmpdir()) + sep + "aws-log-explorer-desktop-",
-    )
-  )
+  if (!resolve(directory).startsWith(temporaryRoot + sep + "case-"))
     throw new Error("Unsafe test cleanup path");
   await rm(directory, {
     recursive: true,
@@ -153,8 +159,8 @@ test("desktop vertical slice stays isolated and supports investigation", async (
   const info = await page.evaluate(() => window.explorer.environment());
   expect(info.awsEnabled).toBe(false);
   expect(info.canEnableAws).toBe(false);
-  expect(info.packaged).toBe(false);
-  expect(info.version).toBe("0.1.4");
+  expect(info.packaged).toBe(process.env.EXPLORER_DESKTOP_PACKAGED === "1");
+  expect(info.version).toBe("0.1.8");
   await expect(
     page.evaluate(() => window.explorer.enableAws(true)),
   ).rejects.toThrow(/development/);
@@ -164,7 +170,9 @@ test("desktop vertical slice stays isolated and supports investigation", async (
     page.getByText(/Displayed events belong to the previous request/),
   ).toBeVisible();
   await click(page.getByTestId("run-query"));
-  await expect(page.locator(".query-status")).toContainText("complete");
+  await expect(
+    page.locator('.query-status[data-query-state="complete"]'),
+  ).toBeAttached();
   await click(page.locator("label").filter({ hasText: /^JSON$/ }));
   await expect(page.locator(".json-event-card").first()).toBeVisible();
   await click(page.locator("label").filter({ hasText: /^Table$/ }));
@@ -172,9 +180,15 @@ test("desktop vertical slice stays isolated and supports investigation", async (
   await click(page.locator("label").filter({ hasText: /^Hybrid$/ }));
   await click(page.getByLabel("Expand event details").first());
   await expect(page.locator(".hybrid-detail").first()).toBeVisible();
-  await click(page.getByLabel("Inspect event", { exact: false }).first());
-  await expect(page.getByRole("dialog")).toBeVisible();
-  await key("Escape");
+  await page.locator(".inspect-cell").first().dblclick();
+  const inspector = page.getByRole("region", {
+    name: "Event inspector",
+    exact: true,
+  });
+  await expect(inspector).toBeVisible();
+  await click(
+    inspector.getByRole("button", { name: "Hide inspector", exact: true }),
+  );
   await click(page.getByLabel("Split pane", { exact: true }));
   await expect(page.locator(".workspace-pane")).toHaveCount(2);
   await expect(page.locator("[data-pane-drop-target]")).toHaveCount(2);
@@ -204,8 +218,15 @@ test("desktop vertical slice stays isolated and supports investigation", async (
   ).toBe(true);
   await click(page.getByRole("button", { name: "Live", exact: true }));
   await expect(page.locator(".query-status")).toContainText("Live stream");
+  await expect(page.locator(".query-status")).toHaveAttribute(
+    "data-query-state",
+    "running",
+  );
   await click(page.getByLabel("Cancel query"));
-  await expect(page.locator(".query-status")).toContainText("cancelled");
+  await expect(page.locator(".query-status")).toHaveAttribute(
+    "data-query-state",
+    "cancelled",
+  );
   await click(
     page.getByRole("button", { name: "Workspace settings", exact: true }),
   );
@@ -253,10 +274,7 @@ test("saves the final edit before immediate quit and restores it on restart", as
 });
 
 test("packaged executable loads fixtures with AWS hard-disabled in verification mode", async () => {
-  const executable = join(
-    process.cwd(),
-    "release/win-unpacked/AWS Log Explorer.exe",
-  );
+  const executable = desktopExecutablePath();
   test.skip(
     process.platform !== "win32" || !existsSync(executable),
     "Build a Windows package first",

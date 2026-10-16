@@ -1,3 +1,4 @@
+import { desktopExecutablePath } from "./desktop-app";
 import {
   _electron as electron,
   expect,
@@ -6,8 +7,7 @@ import {
   type Page,
 } from "@playwright/test";
 import { execFileSync } from "node:child_process";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
 import { join, resolve, sep } from "node:path";
 import type { LogEvent, QueryUpdate } from "../../src/shared/contracts";
 
@@ -21,9 +21,11 @@ let directory: string;
 let errors: string[];
 type ProbeWindow = Window & { investigationUpdates: QueryUpdate[] };
 const packaged = process.env.EXPLORER_DESKTOP_PACKAGED === "1";
+const temporaryRoot = resolve(".tmp", "desktop-investigation");
 
 test.beforeEach(async () => {
-  directory = await mkdtemp(join(tmpdir(), "aws-log-explorer-investigation-"));
+  await mkdir(temporaryRoot, { recursive: true });
+  directory = await mkdtemp(join(temporaryRoot, "case-"));
   const environment: Record<string, string> = {};
   for (const name of [
     "PATH",
@@ -31,14 +33,14 @@ test.beforeEach(async () => {
     "WINDIR",
     "TEMP",
     "TMP",
-    "USERPROFILE",
-    "LOCALAPPDATA",
-    "APPDATA",
     "COMSPEC",
   ]) {
     if (process.env[name]) environment[name] = process.env[name]!;
   }
   environment.EXPLORER_TEST_USER_DATA = directory;
+  environment.USERPROFILE = directory;
+  environment.LOCALAPPDATA = directory;
+  environment.APPDATA = directory;
   environment.AWS_CONFIG_FILE = join(directory, "absent-config");
   environment.AWS_SHARED_CREDENTIALS_FILE = join(
     directory,
@@ -47,11 +49,10 @@ test.beforeEach(async () => {
   environment.AWS_EC2_METADATA_DISABLED = "true";
   errors = [];
   app = await electron.launch({
-    executablePath: packaged
-      ? join(process.cwd(), "release/win-unpacked/AWS Log Explorer.exe")
-      : undefined,
+    executablePath: packaged ? desktopExecutablePath() : undefined,
     args: [
-      ...(packaged ? ["--offline-verification"] : [process.cwd()]),
+      ...(packaged ? [] : [process.cwd()]),
+      "--offline-verification",
       "--background-verification",
       "--disable-background-networking",
       "--disable-component-update",
@@ -79,7 +80,9 @@ test.beforeEach(async () => {
       BrowserWindow.getAllWindows()[0].isVisible(),
     ),
   ).toBe(false);
-  await expect(page.locator(".query-status")).toContainText("complete");
+  await expect(
+    page.locator('.query-status[data-query-state="complete"]'),
+  ).toBeAttached();
   // Observation only; all application actions below use trusted Chromium input.
   await page.evaluate(() => {
     const probe = window as unknown as ProbeWindow;
@@ -108,11 +111,7 @@ test.afterEach(async () => {
   }
   app = undefined;
   child = undefined;
-  if (
-    !resolve(directory).startsWith(
-      resolve(tmpdir()) + sep + "aws-log-explorer-investigation-",
-    )
-  )
+  if (!resolve(directory).startsWith(temporaryRoot + sep + "case-"))
     throw new Error("Unsafe investigation cleanup path");
   await rm(directory, {
     recursive: true,
@@ -148,7 +147,9 @@ async function exportLoaded(format: "json" | "csv", name: string) {
 
 async function runQuery() {
   await page.getByTestId("run-query").click();
-  await expect(page.locator(".query-status")).toContainText("complete");
+  await expect(
+    page.locator('.query-status[data-query-state="complete"]'),
+  ).toBeAttached();
 }
 
 test("server and local filtering export real selected data and inspector opens source context", async () => {
@@ -161,7 +162,6 @@ test("server and local filtering export real selected data and inspector opens s
   expect(
     serverResults.every((event) => event.message.includes("Payment")),
   ).toBe(true);
-  const serverStatus = await page.locator(".query-status").innerText();
   const queryIds = await page.evaluate(() => [
     ...new Set(
       (window as unknown as ProbeWindow).investigationUpdates.map(
@@ -172,11 +172,17 @@ test("server and local filtering export real selected data and inspector opens s
   expect(queryIds).toHaveLength(1);
 
   await page.getByLabel("Local filter loaded events").fill("req-000005");
-  await expect(page.locator(".viewer-meta")).toContainText(
-    /1 \/ \d+ loaded events/,
+  await expect(page.locator(".query-status")).toContainText(
+    /1 shown \/ [\d,]+ loaded/,
   );
   await expect(page.getByText("Saved locally", { exact: true })).toBeVisible();
-  expect(await page.locator(".query-status").innerText()).toBe(serverStatus);
+  await expect(page.locator(".query-status")).toHaveAttribute(
+    "data-query-state",
+    "complete",
+  );
+  await expect(page.locator(".query-status")).toContainText(
+    `${serverResults.length.toLocaleString()} loaded`,
+  );
   expect(
     await page.evaluate(() => [
       ...new Set(
@@ -197,8 +203,11 @@ test("server and local filtering export real selected data and inspector opens s
   expect(csv).toContain('"Payment provider timed out"');
   expect(csv).toContain('"req-000005"');
 
-  await page.getByLabel("Inspect event", { exact: false }).first().click();
-  const inspector = page.getByRole("dialog", { name: "Event inspector" });
+  await page.locator(".inspect-cell").first().dblclick();
+  const inspector = page.getByRole("region", {
+    name: "Event inspector",
+    exact: true,
+  });
   await expect(inspector).toContainText(selected[0].logStream);
   await inspector
     .getByRole("button", { name: "Surrounding context", exact: true })
@@ -208,16 +217,33 @@ test("server and local filtering export real selected data and inspector opens s
     "aria-selected",
     "true",
   );
-  await expect(page.locator(".query-status")).toContainText("complete");
+  await expect(
+    page.locator('.query-status[data-query-state="complete"]'),
+  ).toBeAttached();
   const timeRange = page.getByRole("button", {
     name: "Time range",
     exact: true,
   });
   await timeRange.click();
   await page.getByRole("tab", { name: "Absolute", exact: true }).click();
-  const start = Date.parse(await page.getByLabel("Range start").inputValue());
-  const end = Date.parse(await page.getByLabel("Range end").inputValue());
-  await timeRange.click();
+  const readBound = async (part: "Start" | "End") => {
+    const date = await page
+      .getByLabel(`${part} date`, { exact: true })
+      .inputValue();
+    const time = await page
+      .getByLabel(`${part} time`, { exact: true })
+      .inputValue();
+    const zone = await page
+      .getByRole("combobox", { name: "Timezone", exact: true })
+      .inputValue();
+    return Date.parse(
+      `${date.replaceAll("/", "-")}T${time}${zone === "UTC" ? "Z" : ""}`,
+    );
+  };
+  const start = await readBound("Start");
+  // Visible fields show whole seconds; context instants retain milliseconds.
+  const end = (await readBound("End")) + 999;
+  await page.getByRole("button", { name: "Cancel", exact: true }).click();
   const context = JSON.parse(
     await exportLoaded("json", "context"),
   ) as LogEvent[];
@@ -246,7 +272,10 @@ test("Insights recovers after unsupported syntax and aggregates changed sources 
   const editor = page.getByLabel("CloudWatch Logs Insights query");
   await editor.fill("dedup @message");
   await page.getByTestId("run-query").click();
-  await expect(page.locator(".query-status")).toContainText("error");
+  await expect(page.locator(".query-status")).toHaveAttribute(
+    "data-query-state",
+    "error",
+  );
   await expect(page.getByRole("alert")).toContainText(
     "Offline Insights supports",
   );
@@ -278,6 +307,9 @@ test("Insights recovers after unsupported syntax and aggregates changed sources 
     exact: true,
   });
   const groups = sources.getByLabel("Log groups, one per line");
+  await sources
+    .getByText("Paste multiple group names", { exact: true })
+    .click();
   await groups.fill("");
   await expect(
     sources.getByRole("button", { name: "Apply sources" }),
@@ -285,10 +317,11 @@ test("Insights recovers after unsupported syntax and aggregates changed sources 
   await groups.fill("/aws/lambda/orders-api\n/aws/lambda/payments-worker");
   await sources.getByRole("button", { name: "Apply sources" }).click();
   await expect(sources).toHaveCount(0);
-  await expect(page.locator(".query-status")).toContainText("idle");
-  await expect(page.locator(".viewer-meta")).toContainText(
-    "0 / 0 loaded events",
+  await expect(page.locator(".query-status")).toHaveAttribute(
+    "data-query-state",
+    "idle",
   );
+  await expect(page.locator(".query-status")).toContainText("0 loaded");
   await runQuery();
   const combined = JSON.parse(
     await exportLoaded("json", "combined"),

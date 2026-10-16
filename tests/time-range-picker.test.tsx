@@ -69,15 +69,17 @@ afterEach(async () => {
   vi.unstubAllEnvs();
 });
 
-it("commits a relative choice immediately and clears it without keeping absolute bounds", async () => {
+it("stages a relative choice until Apply and clears it without keeping absolute bounds", async () => {
   await act(async () => {
     renderer = create(<Harness />);
   });
   await act(async () => element("Time range").props.onClick());
-  const relative = renderer!.root
-    .findAllByType("button")
-    .find((node) => node.children.includes("Last 5 minutes"))!;
+  const relative = element("Last 5 minutes");
   await act(async () => relative.props.onClick());
+  expect(patched).not.toHaveBeenCalled();
+  await act(async () =>
+    renderer!.root.findByType("form").props.onSubmit({ preventDefault() {} }),
+  );
   expect(patched).toHaveBeenLastCalledWith({ timePreset: "5m" });
   await act(async () => element("Clear time filter").props.onClick());
   expect(patched).toHaveBeenLastCalledWith({
@@ -87,22 +89,79 @@ it("commits a relative choice immediately and clears it without keeping absolute
   });
 });
 
-it("keeps invalid edits as drafts and automatically commits a valid absolute pair in UTC", async () => {
+it("highlights an applied custom relative range and transfers selection to a shortcut", async () => {
+  await act(async () => {
+    renderer = create(<Harness />);
+  });
+  await act(async () => element("Time range").props.onClick());
+  await act(async () => element("Last 2 hours").props.onClick());
+  expect(patched).not.toHaveBeenCalled();
+  await act(async () =>
+    renderer!.root.findByType("form").props.onSubmit({ preventDefault() {} }),
+  );
+  expect(patched).toHaveBeenLastCalledWith({ timePreset: "2h" });
+  expect(element("Time range").props["aria-pressed"]).toBe(true);
+  expect(element("Clear time filter").props["aria-pressed"]).toBe(false);
+  await act(async () => element("Set last 5 minutes").props.onClick());
+  expect(patched).toHaveBeenLastCalledWith({ timePreset: "5m" });
+  expect(element("Time range").props["aria-pressed"]).toBe(false);
+  expect(element("Set last 5 minutes").props["aria-pressed"]).toBe(true);
+});
+
+it.each([
+  ["Set last 5 minutes", "5m"],
+  ["Set last 1 day", "1d"],
+])("applies the %s shortcut immediately", async (name, preset) => {
+  await act(async () => {
+    renderer = create(<Harness />);
+  });
+  expect(element(name)).toBeDefined();
+  await act(async () => element(name).props.onClick());
+  expect(patched).toHaveBeenCalledExactlyOnceWith({ timePreset: preset });
+  expect(element(name).props["aria-pressed"]).toBe(true);
+  expect(element("Time range").props["aria-pressed"]).toBe(false);
+});
+
+it("keeps separate date/time edits as drafts until Apply commits a valid absolute pair", async () => {
   await act(async () => {
     renderer = create(<Harness />);
   });
   await act(async () => element("Time range").props.onClick());
   await act(async () =>
-    element("Range start").props.onChange({
-      currentTarget: { value: "2099-10-15T10:00" },
+    renderer!.root
+      .findAll(
+        (node) =>
+          typeof node.type === "string" &&
+          node.props.value === "relative" &&
+          typeof node.props.onChange === "function",
+      )[0]
+      .props.onChange("absolute"),
+  );
+  await act(async () =>
+    element("Start date").props.onChange({
+      currentTarget: { value: "2099/10/15" },
     }),
   );
   expect(patched).not.toHaveBeenCalled();
-  expect(element("Range start").props.value).toBe("2099-10-15T10:00");
+  expect(element("Start date").props.value).toBe("2099/10/15");
   await act(async () =>
-    element("Range end").props.onChange({
-      currentTarget: { value: "2099-10-15T11:00" },
+    element("End date").props.onChange({
+      currentTarget: { value: "2099/10/15" },
     }),
+  );
+  await act(async () =>
+    element("Start time").props.onChange({
+      currentTarget: { value: "10:00:00" },
+    }),
+  );
+  await act(async () =>
+    element("End time").props.onChange({
+      currentTarget: { value: "11:00:00" },
+    }),
+  );
+  expect(patched).not.toHaveBeenCalled();
+  await act(async () =>
+    renderer!.root.findByType("form").props.onSubmit({ preventDefault() {} }),
   );
   expect(patched).toHaveBeenCalledExactlyOnceWith({
     timePreset: "custom",
@@ -110,6 +169,16 @@ it("keeps invalid edits as drafts and automatically commits a valid absolute pai
     customEnd: "2099-10-15T11:00:00.000Z",
   });
   await act(async () => renderer!.update(<Harness timezone="local" />));
-  expect(element("Range start").props.value).toBe("2099-10-15T12:00:00");
+  await act(async () => element("Time range").props.onClick());
+  expect(element("Start time").props.value).toBe("12:00:00");
   expect(patched).toHaveBeenCalledTimes(1);
+  expect(element("Clear time filter")).toBeDefined();
+  expect(element("Time range").props["aria-pressed"]).toBe(true);
+  await act(async () => element("Clear time filter").props.onClick());
+  expect(patched).toHaveBeenLastCalledWith({
+    timePreset: "clear",
+    customStart: undefined,
+    customEnd: undefined,
+  });
+  expect(element("Time range").props["aria-pressed"]).toBe(false);
 });

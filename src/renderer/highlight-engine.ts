@@ -1,0 +1,187 @@
+import type { ColumnConfig, LogEvent, Preferences } from "../shared/contracts";
+import type {
+  HighlightColors,
+  HighlightProfile,
+  HighlightRule,
+} from "../shared/highlights";
+import {
+  eventColumnValue,
+  flattenJson,
+  formatColumnValue,
+  getPointer,
+  parseLogMessage,
+  summarizeValue,
+} from "../shared/log-data";
+
+export interface HighlightSpan {
+  start: number;
+  end: number;
+  colors: HighlightColors;
+}
+export interface EventHighlights {
+  row: HighlightColors;
+  text: Record<string, HighlightSpan[]>;
+}
+export const textHighlightKey = (path: string, text: string) =>
+  JSON.stringify([path, text]);
+const compile = (pattern: string, ignoreCase: boolean) => {
+  try {
+    return pattern && pattern.length <= 500
+      ? new RegExp(pattern, ignoreCase ? "giu" : "gu")
+      : undefined;
+  } catch {
+    return;
+  }
+};
+const matches = (regex: RegExp, text: string) => {
+  regex.lastIndex = 0;
+  return regex.test(text);
+};
+const ruleColors = (rule: HighlightRule, theme: Preferences["theme"]) =>
+  rule.separateThemeColors
+    ? ((theme === "dark" ? rule.darkColors : rule.lightColors) ?? rule.colors)
+    : rule.colors;
+
+// Called only in the worker in production. Tests call it directly with bounded,
+// ordinary patterns; arbitrary user regexes never execute on the renderer thread.
+export function highlightEvent(
+  event: LogEvent,
+  profiles: HighlightProfile[],
+  theme: Preferences["theme"],
+  columns: ColumnConfig[],
+  timezone: Preferences["timezone"],
+): EventHighlights {
+  const result: EventHighlights = { row: {}, text: Object.create(null) };
+  const raw = event.message.slice(0, 200_000);
+  const parsed = parseLogMessage(raw);
+  const fields = new Map<string, { path: string; text: string }>();
+  let budget = 100_000;
+  const add = (path: string, text: string, required = false) => {
+    if (!text || (!required && (budget -= text.length) < 0)) return;
+    fields.set(textHighlightKey(path, text), { path, text });
+  };
+  add("@message", raw, true);
+  add("@message", raw.slice(0, 600).replace(/\s+/g, " "), true);
+  add("@message", raw.slice(0, 6000), true);
+  if (parsed.kind === "json") {
+    for (const [path, value] of Object.entries(
+      flattenJson(parsed.value!, { maxFields: 256, maxNodes: 800 }).fields,
+    )) {
+      for (const limit of [500, 4000])
+        add(
+          path,
+          typeof value === "string"
+            ? JSON.stringify(summarizeValue(value, limit))
+            : String(value),
+        );
+    }
+  }
+  for (const column of columns.filter((column) => !column.hidden)) {
+    let path = column.path;
+    let text = formatColumnValue(
+      eventColumnValue(event, parsed, path),
+      column.format,
+      timezone,
+    );
+    if (
+      path === "@message" &&
+      (!column.format || column.format === "auto") &&
+      parsed.kind === "json"
+    ) {
+      for (const candidate of ["/message", "/msg"]) {
+        const value = getPointer(parsed.value, candidate);
+        if (typeof value === "string") {
+          path = candidate;
+          text = summarizeValue(value, 1500);
+          break;
+        }
+      }
+    }
+    add(path, text);
+  }
+  let spanCount = 0;
+  for (const profile of profiles) {
+    if (!profile.enabled) continue;
+    if (profile.groupPattern) {
+      const group = compile(profile.groupPattern, profile.groupIgnoreCase);
+      if (!group || !matches(group, event.logGroup ?? "")) continue;
+    }
+    for (const rule of profile.rules) {
+      if (!rule.enabled) continue;
+      const regex = compile(rule.pattern, rule.ignoreCase);
+      if (!regex) continue;
+      let search = raw;
+      if (rule.scope === "structured") {
+        if (
+          parsed.kind !== "json" ||
+          (rule.path !== "" && !rule.path.startsWith("/"))
+        )
+          continue;
+        const value = getPointer(parsed.value, rule.path);
+        if (value === undefined) continue;
+        search =
+          typeof value === "string"
+            ? value
+            : JSON.stringify(value).slice(0, 200_000);
+      }
+      if (!matches(regex, search)) continue;
+      const colors = ruleColors(rule, theme);
+      if (rule.target === "row") {
+        result.row.foreground ??= colors.foreground;
+        result.row.background ??= colors.background;
+        continue;
+      }
+      for (const [key, field] of fields) {
+        if (
+          rule.scope === "structured" &&
+          field.path !== rule.path &&
+          !(rule.path === "" || field.path.startsWith(rule.path + "/"))
+        )
+          continue;
+        let matchText = field.text;
+        let encodedString: string | undefined;
+        if (rule.scope === "structured" && field.text.startsWith('"')) {
+          try {
+            const decoded = JSON.parse(field.text);
+            if (typeof decoded === "string") {
+              encodedString = decoded;
+              matchText = decoded;
+            }
+          } catch {
+            /* A bounded summary may not be a complete JSON string. */
+          }
+        }
+        regex.lastIndex = 0;
+        let count = 0;
+        while (count++ < 100 && spanCount < 512) {
+          const match = regex.exec(matchText);
+          if (!match) break;
+          if (!match[0].length) {
+            regex.lastIndex +=
+              (matchText.codePointAt(regex.lastIndex) ?? 0) > 0xffff ? 2 : 1;
+            continue;
+          }
+          const rawStart = match.index,
+            rawEnd = rawStart + match[0].length;
+          const start =
+            encodedString === undefined
+              ? rawStart
+              : JSON.stringify(encodedString.slice(0, rawStart)).length - 1;
+          const end =
+            encodedString === undefined
+              ? rawEnd
+              : JSON.stringify(encodedString.slice(0, rawEnd)).length - 1;
+          const spans = result.text[key] ?? [];
+          if (spans.some((span) => start < span.end && end > span.start))
+            continue;
+          spans.push({ start, end, colors });
+          result.text[key] = spans;
+          spanCount++;
+        }
+      }
+    }
+  }
+  for (const spans of Object.values(result.text))
+    spans.sort((a, b) => a.start - b.start);
+  return result;
+}

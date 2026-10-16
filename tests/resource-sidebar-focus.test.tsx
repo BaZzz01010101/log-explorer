@@ -83,8 +83,19 @@ afterEach(async () => {
 });
 
 it("reports explicit connection selection without resetting it on an unrelated parent render", async () => {
+  const scroll = Object.assign(new EventTarget(), {
+    clientHeight: 320,
+    scrollHeight: 1000,
+    scrollTop: 0,
+    firstElementChild: null,
+  });
   const initial = createWorkspace().connections[0];
-  const second = { ...initial, id: "retained", name: "Retained connection" };
+  const second = {
+    ...initial,
+    id: "retained",
+    name: "Retained connection",
+    region: "us-east-1",
+  };
   const onConnectionChange = vi.fn();
   const props = {
     connections: [initial, second],
@@ -97,19 +108,24 @@ it("reports explicit connection selection without resetting it on an unrelated p
     onConnectionChange,
   };
   await act(async () => {
-    renderer = create(<ResourceSidebar {...props} />);
+    renderer = create(<ResourceSidebar {...props} />, {
+      createNodeMock: ({ props }) =>
+        (props as { role?: string }).role === "tree" ? scroll : null,
+    });
   });
+  scroll.scrollTop = 600;
   await act(async () =>
     renderer!.root
-      .findByProps({ "aria-label": "AWS connection" })
+      .findByProps({ "aria-label": "Explorer region" })
       .props.onChange(second.id),
   );
   expect(onConnectionChange).toHaveBeenCalledExactlyOnceWith(second.id);
+  expect(scroll.scrollTop).toBe(0);
   await act(async () =>
     renderer!.update(<ResourceSidebar {...props} recents={[]} />),
   );
   expect(
-    renderer!.root.findByProps({ "aria-label": "AWS connection" }).props.value,
+    renderer!.root.findByProps({ "aria-label": "Explorer region" }).props.value,
   ).toBe(second.id);
 });
 
@@ -257,6 +273,49 @@ it("uses the same preview and double-click behavior for favorites and recent sou
   );
 });
 
+it("keeps favorites for legacy duplicate IDs while offering a single region and no extra tree levels", async () => {
+  const connection = createWorkspace().connections[0];
+  const duplicate = { ...connection, id: "duplicate", name: "Second name" };
+  const onOpen = vi.fn();
+  await act(async () => {
+    renderer = create(
+      <ResourceSidebar
+        connections={[connection, duplicate]}
+        activeConnectionId={connection.id}
+        favorites={[{ connectionId: duplicate.id, logGroup: "/saved" }]}
+        recents={[]}
+        onOpen={onOpen}
+        onFavorite={() => {}}
+        onManage={() => {}}
+      />,
+    );
+  });
+  expect(
+    renderer!.root
+      .findByProps({ "aria-label": "Explorer region" })
+      .props.data.map((item: { value: string }) => item.value),
+  ).toEqual([connection.id]);
+  const favorite = renderer!.root.findAll(
+    (node) => node.type === "button" && node.props.title === "/saved",
+  )[0];
+  expect(favorite).toBeDefined();
+  await act(async () => favorite.props.onClick());
+  expect(onOpen).toHaveBeenCalledWith(
+    duplicate.id,
+    [{ logGroup: "/saved", logStreams: undefined }],
+    "preview",
+  );
+  expect(
+    renderer!.root.findAllByProps({ "data-node-kind": "region" }),
+  ).toHaveLength(0);
+  expect(
+    renderer!.root.findAllByProps({ "aria-label": "Filter loaded streams" }),
+  ).toHaveLength(0);
+  expect(
+    renderer!.root.findByProps({ "aria-label": "Explorer profile" }),
+  ).toBeDefined();
+});
+
 it("debounces substring searches through the server API and retains matching-page pagination", async () => {
   vi.useFakeTimers();
   try {
@@ -319,7 +378,7 @@ it("debounces substring searches through the server API and retains matching-pag
     expect(listGroups).toHaveBeenLastCalledWith(connection, "orders", "next");
     expect(
       renderer!.root
-        .findAllByProps({ role: "treeitem" })
+        .findAllByProps({ role: "treeitem", "data-node-kind": "group" })
         .map((row) => row.props["aria-label"]),
     ).toEqual(["/aws/lambda/orders-one", "/aws/lambda/orders-two"]);
   } finally {

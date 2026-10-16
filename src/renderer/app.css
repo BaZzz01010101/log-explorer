@@ -280,19 +280,37 @@ input:focus-visible {
   overflow: hidden;
 }
 .active-pane .pane-heading {
-  border-top-color: #7186eb;
+  border-top-color: var(--mantine-color-indigo-5);
+  background: color-mix(
+    in srgb,
+    var(--mantine-color-indigo-5) 14%,
+    var(--surface-alt)
+  );
+  box-shadow: inset 3px 0 0 var(--mantine-color-indigo-5);
 }
 .pane-heading {
-  height: 34px;
-  flex: 0 0 34px;
+  height: 38px;
+  flex: 0 0 38px;
   padding: 0 10px;
   border-bottom: 1px solid var(--line);
-  border-top: 2px solid transparent;
+  border-top: 2px solid var(--mantine-color-default-border);
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
   background: var(--surface-alt);
+}
+.pane-heading .pane-title {
+  color: var(--mantine-color-text);
+  letter-spacing: 0.1px;
+}
+.pane-heading > div:last-child {
+  flex-shrink: 0;
+}
+.pane-heading button {
+  border: 1px solid var(--mantine-color-default-border);
+  background: var(--mantine-color-body);
+  color: var(--mantine-color-text);
 }
 .pane-heading > div:first-child {
   min-width: 0;

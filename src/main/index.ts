@@ -1,4 +1,12 @@
-import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu } from "electron";
+import {
+  app,
+  BrowserWindow,
+  clipboard,
+  dialog,
+  ipcMain,
+  Menu,
+  screen,
+} from "electron";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { randomUUID } from "node:crypto";
@@ -14,6 +22,11 @@ import {
 import { WorkspaceStore } from "./persistence";
 import { createCloseCoordinator } from "./close-coordinator";
 import { parseWorkspaceInput } from "./workspace-input";
+import {
+  loadWindowState,
+  restoreWindowBounds,
+  saveWindowState,
+} from "./window-state";
 
 // No AWS environment variables, shared profiles or tokens are inspected at startup.
 if (process.env.EXPLORER_TEST_USER_DATA)
@@ -228,9 +241,16 @@ handle("explorer:export", async (content, extension) => {
 
 function createWindow(): void {
   allowWindowClose = false;
+  const statePath = join(app.getPath("userData"), "window-state.json");
+  const savedState = loadWindowState(statePath);
+  const bounds = savedState
+    ? restoreWindowBounds(
+        savedState.bounds,
+        screen.getAllDisplays().map((display) => display.workArea),
+      )
+    : { width: 1500, height: 980 };
   window = new BrowserWindow({
-    width: 1500,
-    height: 980,
+    ...bounds,
     minWidth: 860,
     minHeight: 580,
     title: "AWS Log Explorer",
@@ -250,21 +270,47 @@ function createWindow(): void {
         (app.isPackaged || !process.env.EXPLORER_TEST_USER_DATA),
     },
   });
+  // Windows can round constructor dimensions differently from setBounds.
+  // Reapply saved outer bounds to avoid cumulative drift across restarts.
+  if (savedState) window.setBounds(bounds);
   window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
   window.webContents.on("will-navigate", (event) => event.preventDefault());
   window.webContents.session.setPermissionRequestHandler(
     (_webContents, _permission, callback) => callback(false),
   );
   window.once("ready-to-show", () => {
-    if (!backgroundVerification) window?.show();
+    if (!backgroundVerification) {
+      if (savedState?.maximized) window?.maximize();
+      window?.show();
+    }
   });
+  const currentWindow = window;
+  let stateTimer: ReturnType<typeof setTimeout> | undefined;
+  const persistState = () => {
+    clearTimeout(stateTimer);
+    if (currentWindow.isDestroyed() || currentWindow.isMinimized()) return;
+    saveWindowState(statePath, {
+      bounds: currentWindow.getNormalBounds(),
+      maximized: currentWindow.isMaximized(),
+    });
+  };
+  const scheduleState = () => {
+    clearTimeout(stateTimer);
+    stateTimer = setTimeout(persistState, 250);
+  };
+  currentWindow.on("move", scheduleState);
+  currentWindow.on("resize", scheduleState);
+  currentWindow.on("maximize", persistState);
+  currentWindow.on("unmaximize", persistState);
   window.on("close", (event) => {
+    persistState();
     if (!allowWindowClose && !quitting) {
       event.preventDefault();
       void finishClose(false);
     }
   });
   window.on("closed", () => {
+    clearTimeout(stateTimer);
     window = null;
     if (!allowWindowClose)
       void service.shutdown().catch((error) => {

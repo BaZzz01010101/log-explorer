@@ -22,7 +22,11 @@
   flex: 0 0 6px;
   position: relative;
   z-index: 16;
-  background: var(--mantine-color-body);
+  background: color-mix(
+    in srgb,
+    var(--mantine-color-text) 12%,
+    var(--mantine-color-body)
+  );
   touch-action: none;
   user-select: none;
   -webkit-user-drag: none;
@@ -30,20 +34,30 @@
 }
 .pane-layout-horizontal > .pane-layout-divider {
   cursor: col-resize;
+  border-inline: 1px solid var(--mantine-color-default-border);
 }
 .pane-layout-vertical > .pane-layout-divider {
   cursor: row-resize;
+  border-block: 1px solid var(--mantine-color-default-border);
 }
 .pane-layout-divider::after {
   content: "";
   position: absolute;
   inset: 0;
-  background: transparent;
+  background: color-mix(in srgb, var(--mantine-color-text) 55%, transparent);
+  border-radius: 2px;
+}
+.pane-layout-horizontal > .pane-layout-divider::after {
+  inset: calc(50% - 22px) 1px;
+}
+.pane-layout-vertical > .pane-layout-divider::after {
+  inset: 1px calc(50% - 22px);
 }
 .pane-layout-divider:hover::after,
 html[data-input-modality="keyboard"] .pane-layout-divider:focus-visible::after,
 .pane-layout-split.is-resizing > .pane-layout-divider::after {
   background: var(--mantine-color-blue-5);
+  outline: 1px solid var(--mantine-color-blue-5);
 }
 .pane-layout-split.is-resizing,
 .pane-layout-split.is-resizing * {

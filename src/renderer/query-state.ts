@@ -104,21 +104,23 @@ export function resolveTimeRange(
       throw new Error("End time must be after start time");
     return { startTime, endTime };
   }
-  const duration = (
-    {
-      "5m": 300000,
-      "15m": 900000,
-      "30m": 1800000,
-      "1h": 3600000,
-      "3h": 10800000,
-      "6h": 21600000,
-      "12h": 43200000,
-      "24h": 86400000,
-      "7d": 604800000,
-    } as Record<string, number>
-  )[preset];
-  if (!duration) throw new Error("Choose a supported time range");
+  const relative = parseRelativePreset(preset);
+  if (!relative) throw new Error("Choose a supported time range");
+  const duration =
+    relative.duration *
+    { m: 60000, h: 3600000, d: 86400000, w: 604800000 }[relative.unit];
   return { startTime: Math.max(0, now - duration), endTime: now };
+}
+
+export type RelativeUnit = "m" | "h" | "d" | "w";
+
+export function parseRelativePreset(
+  preset: string,
+): { duration: number; unit: RelativeUnit } | null {
+  const match = /^([1-9]\d{0,3})(m|h|d|w)$/.exec(preset);
+  return match
+    ? { duration: Number(match[1]), unit: match[2] as RelativeUnit }
+    : null;
 }
 
 export function requestMatchesTab(

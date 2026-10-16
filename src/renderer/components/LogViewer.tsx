@@ -1,6 +1,7 @@
 import {
-  memo,
   useDeferredValue,
+  useId,
+  useLayoutEffect,
   useEffect,
   useMemo,
   useRef,
@@ -38,6 +39,7 @@ import {
   IconFilter,
   IconFold,
   IconGripVertical,
+  IconHighlight,
   IconPin,
   IconSearch,
   IconTable,
@@ -68,10 +70,10 @@ import {
   flattenJson,
   getPointer,
   inferLevel,
-  inspectionRows,
   matchesLocalFilter,
   META_COLUMNS,
   parseLogMessage,
+  propertyFilterTerm,
   serializeEvents,
   summarizeValue,
   type JsonValue,
@@ -82,6 +84,15 @@ import "./viewer.css";
 import { useColumnHeaderDrag } from "../useColumnHeaderDrag";
 import { useScrollPagination } from "../useScrollPagination";
 import { useMessageExpansion } from "../useMessageExpansion";
+import { HighlightText, MessageContent } from "./EventMessage";
+import { EventInspector } from "./EventInspector";
+import { EventLoadingIndicator } from "./EventLoadingIndicator";
+import { formatTimestamp } from "../timestamp-format";
+import { useEventSelection } from "../useEventSelection";
+import {
+  EventHighlightContext,
+  useEventHighlights,
+} from "../useEventHighlights";
 
 interface EventRow {
   event: LogEvent;
@@ -95,6 +106,8 @@ export interface LogViewerProps {
   preferences: Preferences;
   onContext?: (event: LogEvent) => void;
   pagination?: { scope: string; pageKey?: string; onLoad(): void };
+  loading?: boolean;
+  renderStatus?: (eventsShown: number) => React.ReactNode;
 }
 const levelColor: Record<LogLevel, string> = {
   trace: "gray",
@@ -148,172 +161,7 @@ function timeLabel(
   timestamp: number,
   timezone: Preferences["timezone"],
 ): string {
-  if (!Number.isFinite(timestamp)) return "Invalid timestamp";
-  const date = new Date(timestamp);
-  if (!Number.isFinite(date.getTime())) return "Invalid timestamp";
-  if (timezone === "utc")
-    return date.toISOString().replace("T", " ").replace("Z", " UTC");
-  return `${date.toLocaleDateString(undefined, { month: "short", day: "2-digit" })} ${date.toLocaleTimeString(undefined, { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" })}.${String(date.getMilliseconds()).padStart(3, "0")}`;
-}
-
-const HighlightText = memo(function HighlightText({
-  text,
-  needle,
-}: {
-  text: string;
-  needle: string;
-}) {
-  if (!needle || needle.length > 200) return <>{text}</>;
-  const parts: React.ReactNode[] = [];
-  const lower = text.toLowerCase();
-  let cursor = 0;
-  for (let count = 0; count < 30; count++) {
-    const index = lower.indexOf(needle.toLowerCase(), cursor);
-    if (index === -1) break;
-    parts.push(
-      text.slice(cursor, index),
-      <mark key={index}>{text.slice(index, index + needle.length)}</mark>,
-    );
-    cursor = index + needle.length;
-  }
-  parts.push(text.slice(cursor));
-  return <>{parts}</>;
-});
-
-function JsonTree({
-  value,
-  highlight,
-  compact = false,
-  onAddColumn,
-}: {
-  value: JsonValue;
-  highlight: string;
-  compact?: boolean;
-  onAddColumn?: (path: string) => void;
-}) {
-  const [expanded, setExpanded] = useState(() => new Set([""]));
-  const model = useMemo(
-    () => inspectionRows(value, expanded, { maxNodes: compact ? 120 : 800 }),
-    [value, expanded, compact],
-  );
-  const toggle = (path: string) =>
-    setExpanded((previous) => {
-      const next = new Set(previous);
-      if (next.has(path)) next.delete(path);
-      else next.add(path);
-      return next;
-    });
-  return (
-    <div className={`json-tree ${compact ? "json-tree-compact" : ""}`}>
-      {model.rows.map((row) => {
-        const container = row.value !== null && typeof row.value === "object";
-        const array = Array.isArray(row.value);
-        const type = row.value === null ? "null" : typeof row.value;
-        const valueText = container
-          ? `${array ? "[" : "{"}${row.childCount} ${array ? "items" : "keys"}${array ? "]" : "}"}`
-          : typeof row.value === "string"
-            ? JSON.stringify(summarizeValue(row.value, compact ? 500 : 4000))
-            : String(row.value);
-        return (
-          <div
-            className="json-line"
-            key={row.path}
-            style={{ paddingLeft: row.depth * 17 }}
-          >
-            {row.childCount > 0 && !row.depthLimited ? (
-              <button
-                className="json-toggle"
-                aria-label={`${row.expanded ? "Collapse" : "Expand"} ${row.path || "root"}`}
-                onClick={() => toggle(row.path)}
-              >
-                {row.expanded ? (
-                  <IconChevronDown size={13} />
-                ) : (
-                  <IconChevronRight size={13} />
-                )}
-              </button>
-            ) : (
-              <span className="json-toggle json-toggle-spacer" />
-            )}
-            <span className="json-key" title={row.path || "Root"}>
-              <HighlightText
-                text={row.label === "$" ? "$" : JSON.stringify(row.label)}
-                needle={highlight}
-              />
-            </span>
-            <span className="json-punctuation">: </span>
-            <span
-              className={`json-value json-${container ? "container" : type}`}
-            >
-              <HighlightText text={valueText} needle={highlight} />
-            </span>
-            {row.depthLimited && (
-              <span className="inspection-note"> depth limit</span>
-            )}
-            {onAddColumn && (
-              <button
-                className="json-add-column"
-                title={`Add ${row.path || "$"} as a column`}
-                aria-label={`Add ${row.path || "root"} column`}
-                onClick={() => onAddColumn(row.path)}
-              >
-                <IconColumns3 size={13} />
-              </button>
-            )}
-          </div>
-        );
-      })}
-      {model.truncated && (
-        <div className="inspection-note">
-          Inspection limited to {compact ? 120 : 800} visible nodes and 24
-          levels. Collapse branches to explore others. Raw copy and export
-          retain the complete event.
-        </div>
-      )}
-    </div>
-  );
-}
-
-function MessageContent({
-  row,
-  highlight,
-  compact = false,
-  onAddColumn,
-}: {
-  row: EventRow;
-  highlight: string;
-  compact?: boolean;
-  onAddColumn?: (path: string) => void;
-}) {
-  if (row.parsed.kind === "json")
-    return (
-      <JsonTree
-        value={row.parsed.value!}
-        highlight={highlight}
-        compact={compact}
-        onAddColumn={onAddColumn}
-      />
-    );
-  const displayLimit = compact ? 6000 : 200_000;
-  return (
-    <div className="raw-content">
-      {row.parsed.reason && (
-        <div className="inspection-note">{row.parsed.reason}</div>
-      )}
-      <pre>
-        <HighlightText
-          text={row.event.message.slice(0, displayLimit)}
-          needle={highlight}
-        />
-      </pre>
-      {row.event.message.length > displayLimit && (
-        <div className="inspection-note">
-          Preview shows the first {displayLimit.toLocaleString()} characters.
-          Copy raw or export for the complete message.
-        </div>
-      )}
-    </div>
-  );
+  return formatTimestamp(timestamp, timezone);
 }
 
 function pinStyle(column: Column<EventRow>): CSSProperties {
@@ -343,7 +191,10 @@ export function LogViewer({
   preferences,
   onContext,
   pagination,
+  loading = false,
+  renderStatus,
 }: LogViewerProps) {
+  const highlightText = view.highlightText ?? preferences.highlightText;
   const scrollRef = useRef<HTMLDivElement>(null);
   useScrollPagination(scrollRef, {
     scope: pagination?.scope ?? "no-query",
@@ -352,7 +203,6 @@ export function LogViewer({
       : [],
   });
   const expansion = useMessageExpansion(view.mode);
-  const [inspectedId, setInspectedId] = useState<string | null>(null);
   const [inspectorMode, setInspectorMode] = useState("structured");
   const [columnsOpened, setColumnsOpened] = useState(false);
   const [columnInput, setColumnInput] = useState("");
@@ -548,13 +398,25 @@ export function LogViewer({
             >
               <HighlightText
                 text={text || (value === undefined ? "—" : "")}
-                needle={preferences.highlightText}
+                needle={highlightText}
+                path={
+                  column.path === "@message" &&
+                  automatic &&
+                  row.parsed.kind === "json"
+                    ? typeof getPointer(row.parsed.value, "/message") ===
+                      "string"
+                      ? "/message"
+                      : typeof getPointer(row.parsed.value, "/msg") === "string"
+                        ? "/msg"
+                        : "@message"
+                    : column.path
+                }
               />
             </span>
           );
         },
       })),
-    [config, preferences.timezone, preferences.highlightText],
+    [config, preferences.timezone, highlightText],
   );
   // TanStack's sorted row model resets pagination when sorting changes.
   // Keep its reference stable so that reset cannot schedule another render loop.
@@ -610,6 +472,12 @@ export function LogViewer({
     },
   });
   const rows = table.getRowModel().rows;
+  const eventIds = useMemo(
+    () => rows.map((row) => row.original.event.id),
+    [rows],
+  );
+  const selection = useEventSelection(eventIds);
+  const viewerId = useId();
   const virtualizer = useVirtualizer({
     count: rows.length,
     getScrollElement: () => scrollRef.current,
@@ -634,17 +502,51 @@ export function LogViewer({
     expansion,
     virtualizer,
   ]);
-  const inspectedIndex = rows.findIndex(
-    (row) => row.original.event.id === inspectedId,
-  );
+  const inspectedIndex = selection.index;
+  useLayoutEffect(() => {
+    const scroll = scrollRef.current;
+    if (!loading || rows.length === 0 || !scroll) return;
+    const indicator = scroll.querySelector('[data-loading-position="more"]');
+    const addedHeight = indicator?.getBoundingClientRect().height ?? 0;
+    const distance =
+      scroll.scrollHeight - scroll.scrollTop - scroll.clientHeight;
+    // Pagination starts within 96px of the end. Include the newly appended indicator.
+    if (distance <= 96 + addedHeight) scroll.scrollTop = scroll.scrollHeight;
+  }, [loading, rows.length]);
   const inspected =
-    inspectedIndex >= 0
-      ? rows[inspectedIndex]!.original
-      : allRows.find((row) => row.event.id === inspectedId);
-  const jsonCount = allRows.filter((row) => row.parsed.kind === "json").length;
-  const limitedCount = allRows.filter(
-    (row) => row.parsed.kind === "limited",
-  ).length;
+    inspectedIndex >= 0 ? rows[inspectedIndex]?.original : undefined;
+  const visibleItems = virtualizer.getVirtualItems();
+  const highlightEvents = [
+    ...new Map(
+      [
+        ...visibleItems.map((item) => rows[item.index]!.original.event),
+        ...(selection.opened && inspected ? [inspected.event] : []),
+      ].map((event) => [event.id, event]),
+    ).values(),
+  ];
+  const highlighting = useEventHighlights(highlightEvents, preferences, config);
+  const navigateTo = (index: number) => {
+    const row = rows[index];
+    if (!row) return;
+    selection.select(row.original.event.id);
+    virtualizer.scrollToIndex(index, { align: "auto" });
+  };
+  const closeInspector = () => {
+    selection.close();
+    scrollRef.current?.focus({ preventScroll: true });
+  };
+  const addFilter = (path: string, value: JsonValue) => {
+    const term = propertyFilterTerm(path, value);
+    if (term.length > 10000) {
+      setNotice("This value is too long to use in a loaded-event filter.");
+      return;
+    }
+    onViewChange({
+      ...view,
+      localSearch: [view.localSearch.trim(), term].filter(Boolean).join(" "),
+    });
+    setNotice(`Added ${path || "root"} to the loaded-event filter.`);
+  };
   const toggleExpand = expansion.toggle;
   const moveColumn = (path: string, destination: number) => {
     const next = [...config];
@@ -714,6 +616,30 @@ export function LogViewer({
                 size="xs"
                 variant="subtle"
                 onClick={() => onViewChange({ ...view, localSearch: "" })}
+              >
+                <IconX size={12} />
+              </ActionIcon>
+            ) : undefined
+          }
+        />
+        <TextInput
+          className="quick-highlight"
+          aria-label="Highlight text in loaded events"
+          placeholder="Highlight text…"
+          size="xs"
+          leftSection={<IconHighlight size={14} />}
+          value={highlightText}
+          maxLength={200}
+          onChange={(event) =>
+            onViewChange({ ...view, highlightText: event.currentTarget.value })
+          }
+          rightSection={
+            highlightText ? (
+              <ActionIcon
+                aria-label="Clear text highlight"
+                size="xs"
+                variant="subtle"
+                onClick={() => onViewChange({ ...view, highlightText: "" })}
               >
                 <IconX size={12} />
               </ActionIcon>
@@ -859,21 +785,6 @@ export function LogViewer({
           </Menu.Dropdown>
         </Menu>
       </div>
-      <div className="viewer-meta">
-        <span>
-          <span className="local-indicator" /> LOCAL ·{" "}
-          {filtering
-            ? "Filtering…"
-            : `${rows.length.toLocaleString()} / ${events.length.toLocaleString()} loaded events`}
-        </span>
-        <span>
-          {jsonCount.toLocaleString()} JSON
-          {limitedCount > 0
-            ? ` · ${limitedCount} inspection limited`
-            : ""} · {preferences.timezone === "utc" ? "UTC" : "Local time"}
-          {view.sort ? ` · Sorted by ${titleFor(view.sort.path)}` : ""}
-        </span>
-      </div>
       {notice && (
         <div className="viewer-notice" role="status">
           <span>{notice}</span>
@@ -883,425 +794,701 @@ export function LogViewer({
         </div>
       )}
       <div
-        className="viewer-scroll"
-        ref={scrollRef}
-        role="region"
-        aria-label="Log events"
+        className="event-viewer-layout"
+        onKeyDown={(event) => {
+          if (
+            event.key === "Escape" &&
+            !event.defaultPrevented &&
+            selection.opened
+          ) {
+            event.preventDefault();
+            event.stopPropagation();
+            closeInspector();
+          }
+        }}
       >
-        {rows.length === 0 ? (
-          <div className="viewer-empty">
-            <IconSearch size={32} stroke={1.2} />
-            <Text size="sm" fw={600}>
-              {events.length
-                ? "No loaded events match this filter"
-                : "Ready to investigate"}
-            </Text>
-            <Text size="xs" c="dimmed">
-              {events.length
-                ? "Clear the local search or choose another level."
-                : "Choose a log group and run a query to see events here."}
-            </Text>
-            {events.length > 0 && (
-              <Button
-                size="xs"
-                variant="light"
-                onClick={() =>
-                  onViewChange({ ...view, localSearch: "", level: "all" })
-                }
-              >
-                Clear local filters
-              </Button>
-            )}
-          </div>
-        ) : (
-          <>
-            {view.mode !== "json" && (
-              <div
-                className="log-table-header"
-                role="row"
-                onClickCapture={headerDrag.onClickCapture}
-                style={{
-                  minWidth:
-                    table.getTotalSize() + (view.mode === "hybrid" ? 32 : 0),
-                }}
-              >
-                {view.mode === "hybrid" && <div className="hybrid-gutter" />}
-                {table.getHeaderGroups()[0]?.headers.map((header) => (
-                  <div
-                    className={`log-header-cell ${header.column.getIsPinned() ? "pinned" : ""}${headerDrag.visual?.sourcePath === columnPath(header.id) ? " is-reordering" : ""}${headerDrag.visual?.targetPath === columnPath(header.id) ? ` column-drop-${headerDrag.visual.edge}` : ""}`}
-                    key={header.id}
-                    data-column-path={columnPath(header.id)}
-                    style={{
-                      ...pinStyle(header.column),
-                      ...(header.column.getIsPinned() && view.mode === "hybrid"
-                        ? { left: header.column.getStart("left") + 32 }
-                        : {}),
-                    }}
-                    role="columnheader"
-                    aria-sort={
-                      header.column.getIsSorted() === "asc"
-                        ? "ascending"
-                        : header.column.getIsSorted() === "desc"
-                          ? "descending"
-                          : "none"
+        <div
+          className="viewer-scroll"
+          ref={scrollRef}
+          role="grid"
+          aria-label="Log events"
+          aria-rowcount={rows.length}
+          aria-activedescendant={
+            selection.index >= 0
+              ? `${viewerId}-event-${selection.index}`
+              : undefined
+          }
+          tabIndex={0}
+          onKeyDown={(event) => {
+            if (event.defaultPrevented) return;
+            const target = event.target as HTMLElement;
+            if (
+              target.closest(
+                'input,textarea,select,[contenteditable="true"]',
+              ) ||
+              (target.closest("button") && !target.closest(".inspect-cell"))
+            )
+              return;
+            const direction = (
+              {
+                ArrowDown: "next",
+                ArrowUp: "previous",
+                Home: "first",
+                End: "last",
+              } as const
+            )[event.key as "ArrowDown" | "ArrowUp" | "Home" | "End"];
+            if (direction) {
+              event.preventDefault();
+              const index = selection.move(direction);
+              if (index >= 0)
+                virtualizer.scrollToIndex(index, { align: "auto" });
+            } else if (event.key === "Enter" && selection.selectedId) {
+              event.preventDefault();
+              selection.inspect(selection.selectedId);
+            } else if (event.key === "Escape" && selection.opened) {
+              event.preventDefault();
+              event.stopPropagation();
+              selection.close();
+            }
+          }}
+        >
+          {rows.length === 0 ? (
+            loading ? (
+              <EventLoadingIndicator position="empty" />
+            ) : (
+              <div className="viewer-empty">
+                <IconSearch size={32} stroke={1.2} />
+                <Text size="sm" fw={600}>
+                  {events.length
+                    ? "No loaded events match this filter"
+                    : "Ready to investigate"}
+                </Text>
+                <Text size="xs" c="dimmed">
+                  {events.length
+                    ? "Clear the local search or choose another level."
+                    : "Choose a log group and run a query to see events here."}
+                </Text>
+                {events.length > 0 && (
+                  <Button
+                    size="xs"
+                    variant="light"
+                    onClick={() =>
+                      onViewChange({ ...view, localSearch: "", level: "all" })
                     }
                   >
-                    <button
-                      className="column-sort"
-                      title={`Sort by ${titleFor(columnPath(header.id))}`}
-                      onClick={header.column.getToggleSortingHandler()}
-                      draggable={false}
-                      onDragStart={(event) => event.preventDefault()}
-                      onPointerDown={(event) => {
-                        finishColumnResize(true);
-                        headerDrag.begin(columnPath(header.id), event);
-                      }}
-                      onPointerMove={headerDrag.move}
-                      onPointerUp={headerDrag.end}
-                      onPointerCancel={headerDrag.cancel}
-                      onLostPointerCapture={headerDrag.cancel}
-                    >
-                      {flexRender(
-                        header.column.columnDef.header,
-                        header.getContext(),
-                      )}
-                      {header.column.getIsPinned() && <IconPin size={11} />}
-                      {header.column.getIsSorted() === "asc" ? (
-                        <IconArrowUp size={12} />
-                      ) : header.column.getIsSorted() === "desc" ? (
-                        <IconArrowDown size={12} />
-                      ) : null}
-                    </button>
+                    Clear local filters
+                  </Button>
+                )}
+              </div>
+            )
+          ) : (
+            <>
+              {view.mode !== "json" && (
+                <div
+                  className="log-table-header"
+                  role="row"
+                  onClickCapture={headerDrag.onClickCapture}
+                  style={{
+                    minWidth:
+                      table.getTotalSize() + (view.mode === "hybrid" ? 32 : 0),
+                  }}
+                >
+                  {view.mode === "hybrid" && <div className="hybrid-gutter" />}
+                  {table.getHeaderGroups()[0]?.headers.map((header) => (
                     <div
-                      className={`column-resizer ${resizeSession.current?.id === header.id ? "resizing" : ""}`}
-                      role="separator"
-                      aria-label={`Resize ${titleFor(columnPath(header.id))}`}
-                      aria-orientation="vertical"
-                      aria-valuemin={70}
-                      aria-valuemax={1400}
-                      aria-valuenow={Math.round(header.getSize())}
-                      tabIndex={0}
-                      draggable={false}
-                      onDragStart={(event) => event.preventDefault()}
-                      onPointerDown={(event) => {
-                        if (!event.isPrimary || event.button !== 0) return;
-                        event.preventDefault();
-                        event.stopPropagation();
-                        headerDrag.cancel();
-                        finishColumnResize(true);
-                        window.getSelection()?.removeAllRanges();
-                        const element = event.currentTarget;
-                        element.setPointerCapture(event.pointerId);
-                        resizeSession.current = {
-                          pointerId: event.pointerId,
-                          element,
-                          path: columnPath(header.id),
-                          id: header.id,
-                          startX: event.clientX,
-                          startWidth: header.getSize(),
-                          width: header.getSize(),
-                        };
-                        document.body.classList.add("resizing-columns");
-                        setDraftSizing({ ...configuredSizing });
+                      className={`log-header-cell ${header.column.getIsPinned() ? "pinned" : ""}${headerDrag.visual?.sourcePath === columnPath(header.id) ? " is-reordering" : ""}${headerDrag.visual?.targetPath === columnPath(header.id) ? ` column-drop-${headerDrag.visual.edge}` : ""}`}
+                      key={header.id}
+                      data-column-path={columnPath(header.id)}
+                      style={{
+                        ...pinStyle(header.column),
+                        ...(header.column.getIsPinned() &&
+                        view.mode === "hybrid"
+                          ? { left: header.column.getStart("left") + 32 }
+                          : {}),
                       }}
-                      onPointerMove={(event) => {
-                        const session = resizeSession.current;
-                        if (!session || event.pointerId !== session.pointerId)
-                          return;
-                        event.preventDefault();
-                        const width = Math.round(
-                          Math.min(
+                      role="columnheader"
+                      aria-sort={
+                        header.column.getIsSorted() === "asc"
+                          ? "ascending"
+                          : header.column.getIsSorted() === "desc"
+                            ? "descending"
+                            : "none"
+                      }
+                    >
+                      <button
+                        className="column-sort"
+                        title={`Sort by ${titleFor(columnPath(header.id))}`}
+                        onClick={header.column.getToggleSortingHandler()}
+                        draggable={false}
+                        onDragStart={(event) => event.preventDefault()}
+                        onPointerDown={(event) => {
+                          finishColumnResize(true);
+                          headerDrag.begin(columnPath(header.id), event);
+                        }}
+                        onPointerMove={headerDrag.move}
+                        onPointerUp={headerDrag.end}
+                        onPointerCancel={headerDrag.cancel}
+                        onLostPointerCapture={headerDrag.cancel}
+                      >
+                        {flexRender(
+                          header.column.columnDef.header,
+                          header.getContext(),
+                        )}
+                        {header.column.getIsPinned() && <IconPin size={11} />}
+                        {header.column.getIsSorted() === "asc" ? (
+                          <IconArrowUp size={12} />
+                        ) : header.column.getIsSorted() === "desc" ? (
+                          <IconArrowDown size={12} />
+                        ) : null}
+                      </button>
+                      <div
+                        className={`column-resizer ${resizeSession.current?.id === header.id ? "resizing" : ""}`}
+                        role="separator"
+                        aria-label={`Resize ${titleFor(columnPath(header.id))}`}
+                        aria-orientation="vertical"
+                        aria-valuemin={70}
+                        aria-valuemax={1400}
+                        aria-valuenow={Math.round(header.getSize())}
+                        tabIndex={0}
+                        draggable={false}
+                        onDragStart={(event) => event.preventDefault()}
+                        onPointerDown={(event) => {
+                          if (!event.isPrimary || event.button !== 0) return;
+                          event.preventDefault();
+                          event.stopPropagation();
+                          headerDrag.cancel();
+                          finishColumnResize(true);
+                          window.getSelection()?.removeAllRanges();
+                          const element = event.currentTarget;
+                          element.setPointerCapture(event.pointerId);
+                          resizeSession.current = {
+                            pointerId: event.pointerId,
+                            element,
+                            path: columnPath(header.id),
+                            id: header.id,
+                            startX: event.clientX,
+                            startWidth: header.getSize(),
+                            width: header.getSize(),
+                          };
+                          document.body.classList.add("resizing-columns");
+                          setDraftSizing({ ...configuredSizing });
+                        }}
+                        onPointerMove={(event) => {
+                          const session = resizeSession.current;
+                          if (!session || event.pointerId !== session.pointerId)
+                            return;
+                          event.preventDefault();
+                          const width = Math.round(
+                            Math.min(
+                              1400,
+                              Math.max(
+                                70,
+                                session.startWidth +
+                                  event.clientX -
+                                  session.startX,
+                              ),
+                            ),
+                          );
+                          if (width === session.width) return;
+                          session.width = width;
+                          setDraftSizing({
+                            ...configuredSizing,
+                            [session.id]: width,
+                          });
+                        }}
+                        onPointerUp={(event) => {
+                          if (
+                            event.pointerId === resizeSession.current?.pointerId
+                          )
+                            finishColumnResize(true);
+                        }}
+                        onPointerCancel={(event) => {
+                          if (
+                            event.pointerId === resizeSession.current?.pointerId
+                          )
+                            finishColumnResize(false);
+                        }}
+                        onLostPointerCapture={(event) => {
+                          if (
+                            event.pointerId === resizeSession.current?.pointerId
+                          )
+                            finishColumnResize(true);
+                        }}
+                        onKeyDown={(event) => {
+                          if (
+                            event.key !== "ArrowLeft" &&
+                            event.key !== "ArrowRight"
+                          )
+                            return;
+                          event.preventDefault();
+                          const width = Math.min(
                             1400,
                             Math.max(
                               70,
-                              session.startWidth +
-                                event.clientX -
-                                session.startX,
+                              header.getSize() +
+                                (event.key === "ArrowRight" ? 10 : -10),
                             ),
-                          ),
-                        );
-                        if (width === session.width) return;
-                        session.width = width;
-                        setDraftSizing({
-                          ...configuredSizing,
-                          [session.id]: width,
-                        });
-                      }}
-                      onPointerUp={(event) => {
-                        if (
-                          event.pointerId === resizeSession.current?.pointerId
-                        )
-                          finishColumnResize(true);
-                      }}
-                      onPointerCancel={(event) => {
-                        if (
-                          event.pointerId === resizeSession.current?.pointerId
-                        )
-                          finishColumnResize(false);
-                      }}
-                      onLostPointerCapture={(event) => {
-                        if (
-                          event.pointerId === resizeSession.current?.pointerId
-                        )
-                          finishColumnResize(true);
-                      }}
-                      onKeyDown={(event) => {
-                        if (
-                          event.key !== "ArrowLeft" &&
-                          event.key !== "ArrowRight"
-                        )
-                          return;
-                        event.preventDefault();
-                        const width = Math.min(
-                          1400,
-                          Math.max(
-                            70,
-                            header.getSize() +
-                              (event.key === "ArrowRight" ? 10 : -10),
-                          ),
-                        );
-                        applyColumns(
-                          config.map((column) =>
-                            column.path === columnPath(header.id)
-                              ? { ...column, width }
-                              : column,
-                          ),
-                        );
-                      }}
-                      onDoubleClick={() =>
-                        applyColumns(
-                          config.map((column) =>
-                            column.path === columnPath(header.id)
-                              ? {
-                                  ...column,
-                                  width:
-                                    initialColumns.find(
-                                      (entry) => entry.path === column.path,
-                                    )?.width ?? 180,
-                                }
-                              : column,
-                          ),
-                        )
-                      }
-                    />
-                  </div>
-                ))}
-              </div>
-            )}
-            <div
-              className="virtual-events"
-              style={{
-                height: virtualizer.getTotalSize(),
-                minWidth:
-                  view.mode === "json"
-                    ? undefined
-                    : table.getTotalSize() + (view.mode === "hybrid" ? 32 : 0),
-              }}
-            >
-              {virtualizer.getVirtualItems().map((virtualRow) => {
-                const tableRow = rows[virtualRow.index]!;
-                const row = tableRow.original;
-                const expanded = expansion.isExpanded(row.event.id);
-                return (
-                  <div
-                    className={`virtual-event ${view.mode === "json" ? "json-event-card" : "table-event"} level-${row.level}`}
-                    key={tableRow.id}
-                    data-index={virtualRow.index}
-                    ref={virtualizer.measureElement}
-                    style={{
-                      position: "absolute",
-                      top: 0,
-                      left: 0,
-                      width: "100%",
-                      transform: `translateY(${virtualRow.start}px)`,
-                    }}
-                  >
-                    {view.mode === "json" ? (
-                      <>
-                        <div className="json-card-meta">
-                          <button
-                            type="button"
-                            className="event-action expand-event"
-                            aria-label={`${expanded ? "Collapse" : "Expand"} event details`}
-                            aria-expanded={expanded}
-                            onClick={() => toggleExpand(row.event.id)}
-                          >
-                            {expanded ? (
-                              <IconChevronDown size={13} />
-                            ) : (
-                              <IconChevronRight size={13} />
-                            )}
-                          </button>
-                          <Badge
-                            size="xs"
-                            color={levelColor[row.level]}
-                            variant="light"
-                          >
-                            {row.level}
-                          </Badge>
-                          <span className="event-timestamp">
-                            {timeLabel(
-                              row.event.timestamp,
-                              preferences.timezone,
-                            )}
-                          </span>
-                          <span
-                            className="event-source"
-                            title={`${row.event.logGroup} · ${row.event.logStream}`}
-                          >
-                            {row.event.logStream}
-                          </span>
-                          <span className="toolbar-spacer" />
-                          <button
-                            className="event-inspect"
-                            onClick={() => setInspectedId(row.event.id)}
-                          >
-                            Inspect <IconArrowRight size={12} />
-                          </button>
-                          <button
-                            className="event-action"
-                            aria-label="Copy raw event"
-                            onClick={() => copy(row.event.message)}
-                          >
-                            <IconCopy size={13} />
-                          </button>
-                        </div>
-                        {expanded ? (
-                          <div className="event-message-details">
-                            <MessageContent
-                              row={row}
-                              highlight={preferences.highlightText}
-                              compact
-                              onAddColumn={addColumn}
-                            />
-                          </div>
-                        ) : (
-                          <button
-                            type="button"
-                            className="message-summary"
-                            aria-label="Expand message"
-                            onClick={() => toggleExpand(row.event.id)}
-                          >
-                            <HighlightText
-                              text={row.event.message
-                                .slice(0, 600)
-                                .replace(/\s+/g, " ")}
-                              needle={preferences.highlightText}
-                            />
-                          </button>
+                          );
+                          applyColumns(
+                            config.map((column) =>
+                              column.path === columnPath(header.id)
+                                ? { ...column, width }
+                                : column,
+                            ),
+                          );
+                        }}
+                        onDoubleClick={() =>
+                          applyColumns(
+                            config.map((column) =>
+                              column.path === columnPath(header.id)
+                                ? {
+                                    ...column,
+                                    width:
+                                      initialColumns.find(
+                                        (entry) => entry.path === column.path,
+                                      )?.width ?? 180,
+                                  }
+                                : column,
+                            ),
+                          )
+                        }
+                      />
+                    </div>
+                  ))}
+                </div>
+              )}
+              <div
+                className="virtual-events"
+                style={{
+                  height: virtualizer.getTotalSize(),
+                  minWidth:
+                    view.mode === "json"
+                      ? undefined
+                      : table.getTotalSize() +
+                        (view.mode === "hybrid" ? 32 : 0),
+                }}
+              >
+                {visibleItems.map((virtualRow) => {
+                  const tableRow = rows[virtualRow.index]!;
+                  const row = tableRow.original;
+                  const expanded = expansion.isExpanded(row.event.id);
+                  const highlight = highlighting.results.get(row.event.id);
+                  return (
+                    <EventHighlightContext.Provider
+                      key={tableRow.id}
+                      value={highlight}
+                    >
+                      <div
+                        className={`virtual-event ${view.mode === "json" ? "json-event-card" : "table-event"} level-${row.level}${selection.selectedId === row.event.id ? " event-selected" : ""}`}
+                        key={tableRow.id}
+                        id={`${viewerId}-event-${virtualRow.index}`}
+                        role="row"
+                        aria-selected={selection.selectedId === row.event.id}
+                        data-event-id={row.event.id}
+                        data-selected={selection.selectedId === row.event.id}
+                        data-highlighted={Boolean(
+                          highlight?.row.background ||
+                          highlight?.row.foreground,
                         )}
-                      </>
-                    ) : (
-                      <>
-                        <div
-                          className="log-table-row"
-                          role="row"
-                          onDoubleClick={() => setInspectedId(row.event.id)}
-                        >
-                          {view.mode === "hybrid" && (
-                            <button
-                              className="hybrid-gutter expand-event"
-                              aria-label={`${expanded ? "Collapse" : "Expand"} event details`}
-                              aria-expanded={expanded}
-                              onClick={() => toggleExpand(row.event.id)}
-                            >
-                              {expanded ? (
-                                <IconChevronDown size={13} />
-                              ) : (
-                                <IconChevronRight size={13} />
-                              )}
-                            </button>
-                          )}
-                          {tableRow.getVisibleCells().map((cell) => (
-                            <div
-                              className={`log-cell ${cell.column.getIsPinned() ? "pinned" : ""}`}
-                              role="cell"
-                              key={cell.id}
-                              style={{
-                                ...pinStyle(cell.column),
-                                ...(cell.column.getIsPinned() &&
-                                view.mode === "hybrid"
-                                  ? { left: cell.column.getStart("left") + 32 }
-                                  : {}),
-                              }}
-                            >
+                        onClick={(event) => {
+                          selection.select(row.event.id);
+                          if (
+                            !(event.target as HTMLElement).closest(
+                              "button:not(.inspect-cell),input,select,textarea,a",
+                            )
+                          )
+                            scrollRef.current?.focus({ preventScroll: true });
+                        }}
+                        onDoubleClick={(event) => {
+                          if (
+                            (event.target as HTMLElement).closest(
+                              "button:not(.inspect-cell),input,select,textarea,a",
+                            )
+                          )
+                            return;
+                          selection.inspect(row.event.id);
+                        }}
+                        data-index={virtualRow.index}
+                        ref={virtualizer.measureElement}
+                        style={
+                          {
+                            "--event-highlight-bg": highlight?.row.background,
+                            "--event-highlight-fg": highlight?.row.foreground,
+                            position: "absolute",
+                            top: 0,
+                            left: 0,
+                            width: "100%",
+                            transform: `translateY(${virtualRow.start}px)`,
+                          } as CSSProperties
+                        }
+                      >
+                        {view.mode === "json" ? (
+                          <>
+                            <div className="json-card-meta">
                               <button
-                                className="inspect-cell"
-                                aria-label={`Inspect event ${row.event.id}`}
-                                onClick={() => setInspectedId(row.event.id)}
+                                type="button"
+                                className="event-action expand-event"
+                                aria-label={`${expanded ? "Collapse" : "Expand"} event details`}
+                                aria-expanded={expanded}
+                                onClick={() => toggleExpand(row.event.id)}
                               >
-                                {flexRender(
-                                  cell.column.columnDef.cell,
-                                  cell.getContext(),
+                                {expanded ? (
+                                  <IconChevronDown size={13} />
+                                ) : (
+                                  <IconChevronRight size={13} />
                                 )}
                               </button>
-                            </div>
-                          ))}
-                        </div>
-                        {expanded && (
-                          <div className="hybrid-detail event-message-details">
-                            <MessageContent
-                              row={row}
-                              highlight={preferences.highlightText}
-                              compact
-                              onAddColumn={addColumn}
-                            />
-                            <Group gap="xs" mt={6}>
-                              {view.mode === "hybrid" && (
-                                <Button
-                                  size="compact-xs"
-                                  variant="subtle"
-                                  onClick={() => toggleExpand(row.event.id)}
-                                >
-                                  Fold message
-                                </Button>
-                              )}
-                              <Button
-                                size="compact-xs"
-                                variant="subtle"
-                                onClick={() => setInspectedId(row.event.id)}
+                              <Badge
+                                size="xs"
+                                color={levelColor[row.level]}
+                                variant="light"
                               >
-                                Open inspector
-                              </Button>
-                              <Button
-                                size="compact-xs"
-                                variant="subtle"
-                                leftSection={<IconCopy size={12} />}
+                                {row.level}
+                              </Badge>
+                              <span className="event-timestamp">
+                                {timeLabel(
+                                  row.event.timestamp,
+                                  preferences.timezone,
+                                )}
+                              </span>
+                              <span
+                                className="event-source"
+                                title={`${row.event.logGroup} · ${row.event.logStream}`}
+                              >
+                                {row.event.logStream}
+                              </span>
+                              <span className="toolbar-spacer" />
+                              <button
+                                className="event-inspect"
+                                onClick={() => selection.inspect(row.event.id)}
+                              >
+                                Inspect <IconArrowRight size={12} />
+                              </button>
+                              <button
+                                className="event-action"
+                                aria-label="Copy raw event"
                                 onClick={() => copy(row.event.message)}
                               >
-                                Copy raw
-                              </Button>
-                              {onContext && (
-                                <Button
-                                  size="compact-xs"
-                                  variant="subtle"
-                                  onClick={() => onContext(row.event)}
+                                <IconCopy size={13} />
+                              </button>
+                            </div>
+                            {expanded ? (
+                              <div className="event-message-details">
+                                <MessageContent
+                                  row={row}
+                                  highlight={highlightText}
+                                  compact
+                                  onAddColumn={addColumn}
+                                />
+                              </div>
+                            ) : (
+                              <div className="message-summary">
+                                <HighlightText
+                                  text={row.event.message
+                                    .slice(0, 600)
+                                    .replace(/\s+/g, " ")}
+                                  needle={highlightText}
+                                />
+                              </div>
+                            )}
+                          </>
+                        ) : (
+                          <>
+                            <div className="log-table-row" role="presentation">
+                              {view.mode === "hybrid" && (
+                                <button
+                                  className="hybrid-gutter expand-event"
+                                  aria-label={`${expanded ? "Collapse" : "Expand"} event details`}
+                                  aria-expanded={expanded}
+                                  onClick={() => toggleExpand(row.event.id)}
                                 >
-                                  Surrounding context
-                                </Button>
+                                  {expanded ? (
+                                    <IconChevronDown size={13} />
+                                  ) : (
+                                    <IconChevronRight size={13} />
+                                  )}
+                                </button>
                               )}
-                            </Group>
-                          </div>
+                              {tableRow.getVisibleCells().map((cell) => (
+                                <div
+                                  className={`log-cell ${cell.column.getIsPinned() ? "pinned" : ""}`}
+                                  role="cell"
+                                  key={cell.id}
+                                  style={{
+                                    ...pinStyle(cell.column),
+                                    ...(cell.column.getIsPinned() &&
+                                    view.mode === "hybrid"
+                                      ? {
+                                          left:
+                                            cell.column.getStart("left") + 32,
+                                        }
+                                      : {}),
+                                  }}
+                                >
+                                  <button
+                                    className="inspect-cell"
+                                    aria-label={`Select event ${row.event.id}`}
+                                    onFocus={() =>
+                                      selection.select(row.event.id)
+                                    }
+                                    onClick={() =>
+                                      selection.select(row.event.id)
+                                    }
+                                  >
+                                    {flexRender(
+                                      cell.column.columnDef.cell,
+                                      cell.getContext(),
+                                    )}
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
+                            {expanded && (
+                              <div className="hybrid-detail event-message-details">
+                                <MessageContent
+                                  row={row}
+                                  highlight={highlightText}
+                                  compact
+                                  onAddColumn={addColumn}
+                                />
+                                <Group gap="xs" mt={6}>
+                                  {view.mode === "hybrid" && (
+                                    <Button
+                                      size="compact-xs"
+                                      variant="subtle"
+                                      onClick={() => toggleExpand(row.event.id)}
+                                    >
+                                      Fold message
+                                    </Button>
+                                  )}
+                                  <Button
+                                    size="compact-xs"
+                                    variant="subtle"
+                                    onClick={() =>
+                                      selection.inspect(row.event.id)
+                                    }
+                                  >
+                                    Open inspector
+                                  </Button>
+                                  <Button
+                                    size="compact-xs"
+                                    variant="subtle"
+                                    leftSection={<IconCopy size={12} />}
+                                    onClick={() => copy(row.event.message)}
+                                  >
+                                    Copy raw
+                                  </Button>
+                                  {onContext && (
+                                    <Button
+                                      size="compact-xs"
+                                      variant="subtle"
+                                      onClick={() => onContext(row.event)}
+                                    >
+                                      Surrounding context
+                                    </Button>
+                                  )}
+                                </Group>
+                              </div>
+                            )}
+                          </>
                         )}
-                      </>
-                    )}
+                      </div>
+                    </EventHighlightContext.Provider>
+                  );
+                })}
+              </div>
+            </>
+          )}
+          {loading && rows.length > 0 && (
+            <EventLoadingIndicator position="more" />
+          )}
+        </div>
+        <EventInspector
+          opened={selection.opened}
+          onClose={closeInspector}
+          eventId={inspected?.event.id}
+        >
+          {!inspected && (
+            <Text size="sm" c="dimmed">
+              Select an event to inspect.
+            </Text>
+          )}
+          <EventHighlightContext.Provider
+            value={
+              inspected
+                ? highlighting.results.get(inspected.event.id)
+                : undefined
+            }
+          >
+            {inspected && (
+              <>
+                <Group justify="space-between" mb="sm">
+                  <Group gap="xs">
+                    <Badge color={levelColor[inspected.level]} variant="light">
+                      {inspected.level}
+                    </Badge>
+                    <Text size="xs" ff="monospace">
+                      {timeLabel(
+                        inspected.event.timestamp,
+                        preferences.timezone,
+                      )}
+                    </Text>
+                  </Group>
+                  <Group gap={4}>
+                    <ActionIcon
+                      aria-label="Previous event"
+                      variant="default"
+                      disabled={inspectedIndex <= 0}
+                      onClick={() => navigateTo(inspectedIndex - 1)}
+                    >
+                      <IconArrowLeft size={15} />
+                    </ActionIcon>
+                    <Text size="xs" c="dimmed">
+                      {inspectedIndex >= 0
+                        ? `${inspectedIndex + 1} of ${rows.length}`
+                        : "Outside local filter"}
+                    </Text>
+                    <ActionIcon
+                      aria-label="Next event"
+                      variant="default"
+                      disabled={
+                        inspectedIndex < 0 || inspectedIndex >= rows.length - 1
+                      }
+                      onClick={() => navigateTo(inspectedIndex + 1)}
+                    >
+                      <IconArrowRight size={15} />
+                    </ActionIcon>
+                  </Group>
+                </Group>
+                <div className="inspector-source">
+                  <div>
+                    <span>GROUP</span>
+                    <code>{inspected.event.logGroup}</code>
                   </div>
-                );
-              })}
-            </div>
-          </>
-        )}
+                  <div>
+                    <span>STREAM</span>
+                    <code>
+                      {inspected.event.logStream || "Insights result"}
+                    </code>
+                  </div>
+                  <div>
+                    <span>EVENT</span>
+                    <code>{inspected.event.id}</code>
+                  </div>
+                  {inspected.event.ingestionTime !== undefined && (
+                    <div>
+                      <span>INGESTED</span>
+                      <code>
+                        {timeLabel(
+                          inspected.event.ingestionTime,
+                          preferences.timezone,
+                        )}
+                      </code>
+                    </div>
+                  )}
+                </div>
+                <Group justify="space-between" my="sm">
+                  <SegmentedControl
+                    size="xs"
+                    value={inspectorMode}
+                    onChange={setInspectorMode}
+                    data={[
+                      { value: "structured", label: "Structured" },
+                      { value: "raw", label: "Raw message" },
+                    ]}
+                  />
+                  <Group gap="xs">
+                    {onContext && (
+                      <Button
+                        size="xs"
+                        variant="default"
+                        onClick={() => {
+                          selection.close();
+                          onContext(inspected.event);
+                        }}
+                      >
+                        Surrounding context
+                      </Button>
+                    )}
+                    <Menu withinPortal>
+                      <Menu.Target>
+                        <Button
+                          size="xs"
+                          variant="light"
+                          leftSection={
+                            copied ? (
+                              <IconCheck size={13} />
+                            ) : (
+                              <IconCopy size={13} />
+                            )
+                          }
+                        >
+                          Copy
+                        </Button>
+                      </Menu.Target>
+                      <Menu.Dropdown>
+                        <Menu.Item
+                          onClick={() => copy(inspected.event.message)}
+                        >
+                          Raw message
+                        </Menu.Item>
+                        <Menu.Item
+                          disabled={inspected.parsed.kind !== "json"}
+                          onClick={() =>
+                            copy(
+                              JSON.stringify(inspected.parsed.value, null, 2),
+                            )
+                          }
+                        >
+                          Formatted JSON message
+                        </Menu.Item>
+                        <Menu.Item
+                          onClick={() =>
+                            copy(JSON.stringify(inspected.event, null, 2))
+                          }
+                        >
+                          Event with metadata
+                        </Menu.Item>
+                      </Menu.Dropdown>
+                    </Menu>
+                  </Group>
+                </Group>
+                <div
+                  className={`inspector-content ${view.wrap ? "inspector-wrap" : ""}`}
+                  style={{ fontSize: preferences.fontSize }}
+                >
+                  {inspectorMode === "structured" ? (
+                    <MessageContent
+                      row={inspected}
+                      highlight={highlightText}
+                      onAddColumn={addColumn}
+                      onAddFilter={addFilter}
+                      controls
+                      key={inspected.event.id}
+                    />
+                  ) : (
+                    <MessageContent
+                      row={{ ...inspected, parsed: { kind: "text" } }}
+                      highlight={highlightText}
+                    />
+                  )}
+                </div>
+                {notice && (
+                  <Text size="xs" c="cyan" mt="xs" role="status">
+                    {notice}
+                  </Text>
+                )}
+              </>
+            )}
+          </EventHighlightContext.Provider>
+        </EventInspector>
       </div>
-      <div className="viewer-footer">
-        <span>
-          {view.mode === "json"
-            ? "Expand JSON branches · Inspect for full details"
-            : view.mode === "hybrid"
-              ? "Expand a row for JSON · Click a cell to inspect"
-              : "Click a cell to inspect · Drag column edges to resize"}
-        </span>
-        <span>Export covers this loaded selection</span>
-      </div>
+      {highlighting.error && (
+        <Text size="xs" c="orange" role="status">
+          {highlighting.error}
+        </Text>
+      )}
+      {renderStatus?.(rows.length)}
 
       <Modal
         opened={columnsOpened}
@@ -1510,168 +1697,6 @@ export function LogViewer({
           <Text size="xs" c="cyan" mt="xs" role="status">
             {notice}
           </Text>
-        )}
-      </Modal>
-
-      <Modal
-        opened={Boolean(inspected)}
-        onClose={() => setInspectedId(null)}
-        title="Event inspector"
-        size="xl"
-        classNames={{ body: "inspector-modal-body" }}
-      >
-        {inspected && (
-          <>
-            <Group justify="space-between" mb="sm">
-              <Group gap="xs">
-                <Badge color={levelColor[inspected.level]} variant="light">
-                  {inspected.level}
-                </Badge>
-                <Text size="xs" ff="monospace">
-                  {timeLabel(inspected.event.timestamp, preferences.timezone)}
-                </Text>
-              </Group>
-              <Group gap={4}>
-                <ActionIcon
-                  aria-label="Previous event"
-                  variant="default"
-                  disabled={inspectedIndex <= 0}
-                  onClick={() =>
-                    setInspectedId(rows[inspectedIndex - 1]!.original.event.id)
-                  }
-                >
-                  <IconArrowLeft size={15} />
-                </ActionIcon>
-                <Text size="xs" c="dimmed">
-                  {inspectedIndex >= 0
-                    ? `${inspectedIndex + 1} of ${rows.length}`
-                    : "Outside local filter"}
-                </Text>
-                <ActionIcon
-                  aria-label="Next event"
-                  variant="default"
-                  disabled={
-                    inspectedIndex < 0 || inspectedIndex >= rows.length - 1
-                  }
-                  onClick={() =>
-                    setInspectedId(rows[inspectedIndex + 1]!.original.event.id)
-                  }
-                >
-                  <IconArrowRight size={15} />
-                </ActionIcon>
-              </Group>
-            </Group>
-            <div className="inspector-source">
-              <div>
-                <span>GROUP</span>
-                <code>{inspected.event.logGroup}</code>
-              </div>
-              <div>
-                <span>STREAM</span>
-                <code>{inspected.event.logStream || "Insights result"}</code>
-              </div>
-              <div>
-                <span>EVENT</span>
-                <code>{inspected.event.id}</code>
-              </div>
-              {inspected.event.ingestionTime !== undefined && (
-                <div>
-                  <span>INGESTED</span>
-                  <code>
-                    {timeLabel(
-                      inspected.event.ingestionTime,
-                      preferences.timezone,
-                    )}
-                  </code>
-                </div>
-              )}
-            </div>
-            <Group justify="space-between" my="sm">
-              <SegmentedControl
-                size="xs"
-                value={inspectorMode}
-                onChange={setInspectorMode}
-                data={[
-                  { value: "structured", label: "Structured" },
-                  { value: "raw", label: "Raw message" },
-                ]}
-              />
-              <Group gap="xs">
-                {onContext && (
-                  <Button
-                    size="xs"
-                    variant="default"
-                    onClick={() => onContext(inspected.event)}
-                  >
-                    Surrounding context
-                  </Button>
-                )}
-                <Menu withinPortal>
-                  <Menu.Target>
-                    <Button
-                      size="xs"
-                      variant="light"
-                      leftSection={
-                        copied ? (
-                          <IconCheck size={13} />
-                        ) : (
-                          <IconCopy size={13} />
-                        )
-                      }
-                    >
-                      Copy
-                    </Button>
-                  </Menu.Target>
-                  <Menu.Dropdown>
-                    <Menu.Item onClick={() => copy(inspected.event.message)}>
-                      Raw message
-                    </Menu.Item>
-                    <Menu.Item
-                      disabled={inspected.parsed.kind !== "json"}
-                      onClick={() =>
-                        copy(JSON.stringify(inspected.parsed.value, null, 2))
-                      }
-                    >
-                      Formatted JSON message
-                    </Menu.Item>
-                    <Menu.Item
-                      onClick={() =>
-                        copy(JSON.stringify(inspected.event, null, 2))
-                      }
-                    >
-                      Event with metadata
-                    </Menu.Item>
-                  </Menu.Dropdown>
-                </Menu>
-              </Group>
-            </Group>
-            <div
-              className={`inspector-content ${view.wrap ? "inspector-wrap" : ""}`}
-              style={{ fontSize: preferences.fontSize }}
-            >
-              {inspectorMode === "structured" ? (
-                <MessageContent
-                  row={inspected}
-                  highlight={preferences.highlightText}
-                  onAddColumn={addColumn}
-                />
-              ) : (
-                <MessageContent
-                  row={{ ...inspected, parsed: { kind: "text" } }}
-                  highlight={preferences.highlightText}
-                />
-              )}
-            </div>
-            <Text size="xs" c="dimmed" mt="sm">
-              Expand nested fields. Use the column icon beside a field to add
-              its exact JSON Pointer to the table.
-            </Text>
-            {notice && (
-              <Text size="xs" c="cyan" mt="xs" role="status">
-                {notice}
-              </Text>
-            )}
-          </>
         )}
       </Modal>
     </div>

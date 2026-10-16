@@ -1,0 +1,26 @@
+.explorer-empty {
+  padding: 18px 12px;
+  display: grid;
+  gap: 12px;
+}
+.explorer-error {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--mantine-color-red-5);
+}
+.configured-region {
+  border: 1px solid var(--mantine-color-default-border);
+  background: var(--surface-alt);
+  border-radius: var(--mantine-radius-sm);
+  padding: 7px 10px;
+}
+.advanced-connections {
+  border-top: 1px solid var(--mantine-color-default-border);
+  padding-top: 12px;
+}
+.advanced-connections summary {
+  cursor: pointer;
+  color: var(--mantine-color-dimmed);
+  font-size: 12px;
+}

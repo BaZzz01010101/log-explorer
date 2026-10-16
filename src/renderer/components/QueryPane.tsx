@@ -1,11 +1,10 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ActionIcon,
   Alert,
   Badge,
   Button,
   Group,
-  Loader,
   Menu,
   Modal,
   Select,
@@ -34,6 +33,11 @@ import type { TabRuntime } from "../useLogJobs";
 import { LogViewer } from "./LogViewer";
 import { requestMatchesTab } from "../query-state";
 import { TimeRangePicker } from "./TimeRangePicker";
+import { EventStatus } from "./EventStatus";
+import { SourcesEditor } from "./SourcesEditor";
+import { decodeResourceDrop, mergeSources } from "../source-management";
+import { SOURCE_DROP_EVENT } from "./ResourceDragLabel";
+import "./sources.css";
 
 interface Props {
   workspace: Workspace;
@@ -66,10 +70,45 @@ export function QueryPane({
   const [saveKind, setSaveKind] = useState<"query" | "preset" | null>(null);
   const [saveName, setSaveName] = useState("");
   const [sourcesOpen, setSourcesOpen] = useState(false);
-  const [sourceText, setSourceText] = useState("");
-  const [sourceConnectionId, setSourceConnectionId] = useState(
-    tab.connectionId,
-  );
+  const [sourceDrop, setSourceDrop] = useState(false);
+  const [sourceNotice, setSourceNotice] = useState("");
+  const paneRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const pane = paneRef.current;
+    if (!pane) return;
+    const enter = () => setSourceDrop(true),
+      leave = () => setSourceDrop(false);
+    const drop = (event: Event) => {
+      leave();
+      const payload = decodeResourceDrop(
+        JSON.stringify((event as CustomEvent).detail),
+      );
+      if (!payload) {
+        setSourceNotice("This resource drop is invalid.");
+        return;
+      }
+      if (payload.connectionId !== tab.connectionId) {
+        setSourceNotice(
+          "Sources must use the same connection and region. Change the tab connection in Edit sources first.",
+        );
+        return;
+      }
+      try {
+        onPatch({ sources: mergeSources(tab.sources, payload.sources) });
+        setSourceNotice("Sources updated. Run to query the current selection.");
+      } catch (error) {
+        setSourceNotice(error instanceof Error ? error.message : String(error));
+      }
+    };
+    pane.addEventListener("explorer:source-drag-enter", enter);
+    pane.addEventListener("explorer:source-drag-leave", leave);
+    pane.addEventListener(SOURCE_DROP_EVENT, drop);
+    return () => {
+      pane.removeEventListener("explorer:source-drag-enter", enter);
+      pane.removeEventListener("explorer:source-drag-leave", leave);
+      pane.removeEventListener(SOURCE_DROP_EVENT, drop);
+    };
+  }, [tab.connectionId, tab.sources, onPatch]);
   const running = runtime?.state === "queued" || runtime?.state === "running";
   const stale =
     runtime?.request && !requestMatchesTab(runtime.request, tab, connection);
@@ -94,11 +133,27 @@ export function QueryPane({
   );
   return (
     <div
-      className="query-pane"
+      className={`query-pane${sourceDrop ? " source-drop-active" : ""}`}
       id={`view-${tab.id}`}
       role="tabpanel"
       aria-label={tab.title}
+      ref={paneRef}
     >
+      {sourceDrop && (
+        <div className="source-drop-message">
+          Drop to add sources to {tab.title}
+        </div>
+      )}
+      {sourceNotice && (
+        <Alert
+          color="blue"
+          withCloseButton
+          onClose={() => setSourceNotice("")}
+          title="Log sources"
+        >
+          {sourceNotice}
+        </Alert>
+      )}
       <div className="query-toolbar">
         <Group gap={7} wrap="wrap" justify="space-between">
           <Group gap={7}>
@@ -131,10 +186,6 @@ export function QueryPane({
                   <Menu.Item
                     key={source.logGroup}
                     onClick={() => {
-                      setSourceText(
-                        tab.sources.map((s) => s.logGroup).join("\n"),
-                      );
-                      setSourceConnectionId(tab.connectionId);
                       setSourcesOpen(true);
                     }}
                   >
@@ -147,10 +198,6 @@ export function QueryPane({
                 <Menu.Divider />
                 <Menu.Item
                   onClick={() => {
-                    setSourceText(
-                      tab.sources.map((s) => s.logGroup).join("\n"),
-                    );
-                    setSourceConnectionId(tab.connectionId);
                     setSourcesOpen(true);
                   }}
                 >
@@ -388,6 +435,14 @@ export function QueryPane({
           onViewChange={patchView}
           preferences={workspace.preferences}
           onContext={onContext}
+          loading={running}
+          renderStatus={(eventsShown) => (
+            <EventStatus
+              runtime={runtime}
+              eventsShown={eventsShown}
+              eventsLoaded={runtime?.events.length ?? 0}
+            />
+          )}
           pagination={{
             scope: `${tab.id}:${paginationScope.current}`,
             pageKey: canPage
@@ -396,36 +451,6 @@ export function QueryPane({
             onLoad: () => onRun(false, true),
           }}
         />
-      </div>
-      <div className="query-status" role="status" aria-live="polite">
-        <Group gap={7}>
-          {running ? (
-            <Loader size={11} color={runtime?.live ? "teal" : "blue"} />
-          ) : (
-            <span
-              className={`status-dot ${runtime?.state === "error" ? "error" : ""}`}
-            />
-          )}
-          <Text size="xs" c="dimmed">
-            {runtime?.live ? "Live stream" : (runtime?.state ?? "Ready")} ·{" "}
-            {(runtime?.events.length ?? 0).toLocaleString()} loaded
-          </Text>
-          {runtime?.stats?.bytesScanned !== undefined && (
-            <Text size="xs" c="dimmed">
-              {(runtime.stats.bytesScanned / 1048576).toFixed(2)} MiB scanned
-            </Text>
-          )}
-          {runtime?.stats?.recordsScanned !== undefined && (
-            <Text size="xs" c="dimmed">
-              {runtime.stats.recordsScanned.toLocaleString()} scanned
-            </Text>
-          )}
-          {runtime?.stats?.elapsedMs !== undefined && (
-            <Text size="xs" c="dimmed">
-              {(runtime.stats.elapsedMs / 1000).toFixed(1)}s
-            </Text>
-          )}
-        </Group>
       </div>
       <Modal
         opened={saveKind !== null}
@@ -460,63 +485,14 @@ export function QueryPane({
           Save
         </Button>
       </Modal>
-      <Modal
-        opened={sourcesOpen}
-        onClose={() => setSourcesOpen(false)}
-        title="Log sources"
-        centered
-      >
-        <Select
-          label="Connection and region"
-          value={sourceConnectionId}
-          data={workspace.connections.map((c) => ({
-            value: c.id,
-            label: `${c.name} · ${c.region}`,
-          }))}
-          onChange={(value) => value && setSourceConnectionId(value)}
+      {sourcesOpen && (
+        <SourcesEditor
+          tab={tab}
+          connections={workspace.connections}
+          onClose={() => setSourcesOpen(false)}
+          onApply={onPatch}
         />
-        <Textarea
-          mt="sm"
-          label="Log groups, one per line"
-          autosize
-          minRows={4}
-          maxRows={12}
-          value={sourceText}
-          onChange={(e) => setSourceText(e.currentTarget.value)}
-        />
-        <Text mt="xs" size="xs" c="dimmed">
-          Up to 50 groups in one region. Existing stream selections are kept for
-          matching group names.
-        </Text>
-        <Button
-          mt="md"
-          disabled={!sourceText.trim()}
-          onClick={() => {
-            const names = [
-              ...new Set(
-                sourceText
-                  .split("\n")
-                  .map((s) => s.trim())
-                  .filter(Boolean),
-              ),
-            ].slice(0, 50);
-            onPatch({
-              connectionId: sourceConnectionId,
-              sources: names.map(
-                (name) =>
-                  (sourceConnectionId === tab.connectionId
-                    ? tab.sources.find((s) => s.logGroup === name)
-                    : undefined) ?? {
-                    logGroup: name,
-                  },
-              ),
-            });
-            setSourcesOpen(false);
-          }}
-        >
-          Apply sources
-        </Button>
-      </Modal>
+      )}
     </div>
   );
 }

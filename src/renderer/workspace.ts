@@ -14,6 +14,7 @@ import type {
   VisualizationPreset,
   Workspace,
 } from "../shared/contracts";
+import { parseHighlightProfiles } from "../shared/highlights";
 import {
   legacyLayout,
   normalizeLayout,
@@ -29,6 +30,7 @@ import {
   logTabLabel,
   type WorkspaceEntry,
 } from "./workspace-entries";
+import { parseRelativePreset } from "./query-state";
 
 export type WorkspaceAction =
   | { type: "tab/open"; tab: LogTab; paneId?: string }
@@ -90,8 +92,10 @@ const OFFLINE_CONNECTION: Connection = {
   mode: "offline",
 };
 const DEFAULT_PREFERENCES: Preferences = {
+  profileVisibility: {},
   theme: "dark",
   density: "compact",
+  tabBarLayout: "scroll",
   fontSize: 12,
   maxEvents: 10000,
   refreshSeconds: 0,
@@ -170,6 +174,7 @@ function defaultView(): ViewConfig {
       { path: "/request/id", width: 220 },
     ],
     localSearch: "",
+    highlightText: "",
     level: "",
     wrap: false,
   };
@@ -210,6 +215,9 @@ function parseView(value: unknown): ViewConfig {
         columns.findIndex((other) => other.path === column.path) === index,
     ),
     localSearch: string(raw.localSearch),
+    ...(typeof raw.highlightText === "string"
+      ? { highlightText: string(raw.highlightText, "", 200) }
+      : {}),
     level: string(raw.level, "", 40),
     wrap: raw.wrap === true,
     ...(typeof sort.path === "string"
@@ -291,21 +299,11 @@ function parseTab(
     kind: raw.kind === "insights" ? "insights" : "events",
     filterPattern: string(raw.filterPattern),
     query: string(raw.query, defaults.query, 10000),
-    timePreset: [
-      "clear",
-      "5m",
-      "15m",
-      "30m",
-      "1h",
-      "3h",
-      "6h",
-      "12h",
-      "24h",
-      "7d",
-      "custom",
-    ].includes(String(raw.timePreset))
-      ? String(raw.timePreset)
-      : "1h",
+    timePreset:
+      ["clear", "custom"].includes(String(raw.timePreset)) ||
+      parseRelativePreset(String(raw.timePreset))
+        ? String(raw.timePreset)
+        : "1h",
     ...(typeof raw.customStart === "string"
       ? { customStart: string(raw.customStart, "", 100) }
       : {}),
@@ -327,6 +325,7 @@ function parseConnection(value: unknown): Connection | null {
     profile: string(raw.profile, "default", 256) || "default",
     region: /^[a-z]{2}(?:-[a-z]+)+-\d+$/.test(region) ? region : "eu-west-1",
     mode: raw.mode === "aws" ? "aws" : "offline",
+    ...(typeof raw.enabled === "boolean" ? { enabled: raw.enabled } : {}),
   };
 }
 function parseGroup(value: unknown): TabGroup | null {
@@ -359,6 +358,7 @@ function parsePreferences(value: unknown): Preferences {
   return {
     theme: raw.theme === "light" ? "light" : "dark",
     density: raw.density === "comfortable" ? "comfortable" : "compact",
+    tabBarLayout: raw.tabBarLayout === "wrap" ? "wrap" : "scroll",
     fontSize: number(raw.fontSize, 12, 10, 20),
     maxEvents: Math.round(number(raw.maxEvents, 10000, 100, 100000)),
     refreshSeconds:
@@ -367,6 +367,15 @@ function parsePreferences(value: unknown): Preferences {
         : Math.round(number(raw.refreshSeconds, 30, 5, 3600)),
     timezone: raw.timezone === "utc" ? "utc" : "local",
     highlightText: string(raw.highlightText, "", 1000),
+    highlightProfiles: parseHighlightProfiles(raw.highlightProfiles),
+    profileVisibility: Object.fromEntries(
+      Object.entries(record(raw.profileVisibility))
+        .filter(
+          ([key, value]) =>
+            key.length > 0 && key.length <= 256 && typeof value === "boolean",
+        )
+        .slice(0, 50),
+    ) as Record<string, boolean>,
     shortcuts,
   };
 }

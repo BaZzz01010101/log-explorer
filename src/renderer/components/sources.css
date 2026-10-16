@@ -1,0 +1,101 @@
+.source-editor-columns {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 20px;
+}
+.source-choices {
+  max-height: 150px;
+  min-height: 32px;
+  overflow: auto;
+  border: 1px solid var(--mantine-color-default-border);
+  border-radius: 4px;
+  padding: 4px;
+}
+.source-choice {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 6px;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  font-size: 11px;
+}
+.source-choice span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.source-choice:hover {
+  background: var(--mantine-color-default-hover);
+}
+.source-selected-groups {
+  display: grid;
+  gap: 6px;
+  max-height: 260px;
+  overflow: auto;
+}
+.source-card-active {
+  border-color: var(--mantine-color-blue-5);
+}
+.source-card-title {
+  display: grid;
+  gap: 4px;
+  flex: 1;
+  min-width: 0;
+  color: inherit;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  text-align: left;
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+.source-card-title span {
+  color: var(--mantine-color-dimmed);
+}
+.query-pane.source-drop-active {
+  outline: 2px dashed var(--mantine-color-blue-5);
+  outline-offset: -4px;
+}
+.source-drop-message {
+  position: absolute;
+  inset: 12px;
+  z-index: 30;
+  display: grid;
+  place-items: center;
+  border: 2px dashed var(--mantine-color-blue-5);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--mantine-color-body) 90%, transparent);
+  color: var(--mantine-color-blue-5);
+  pointer-events: none;
+  font-weight: 600;
+}
+@media (max-width: 700px) {
+  .source-editor-columns {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.query-pane {
+  position: relative;
+}
+.resource-drag-preview {
+  position: fixed;
+  z-index: 10000;
+  pointer-events: none;
+  max-width: 400px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  border: 1px solid var(--mantine-color-blue-5);
+  background: var(--mantine-color-body);
+  color: var(--mantine-color-text);
+  box-shadow: 0 5px 16px #0005;
+  border-radius: 5px;
+  padding: 8px 12px;
+  font-size: 12px;
+}

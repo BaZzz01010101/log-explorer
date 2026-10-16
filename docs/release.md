@@ -18,6 +18,14 @@ npm run package
 
 `build` writes main/preload/renderer bundles to `out/`. `package` builds an unpacked host-platform application under `release/`. `npm run dist` builds the configured distributable: Windows NSIS installer, macOS DMG or Linux AppImage. Configuration is in `electron-builder.yml`. Packaging can download Electron or builder tools; it does not require AWS access.
 
+The 0.1.8 verification build uses `release/0.1.8/` to preserve a running older build. Build it with `node node_modules/electron-builder/out/cli/cli.js --win nsis --config.directories.output=release/0.1.8 --config.electronDist=node_modules/electron/dist`; the installed Electron distribution avoids another runtime download. After packaging exits successfully, run `python build/artifact_manifest.py --release-dir release/0.1.8` to record nonempty, stable artifact hashes. Do not hash an installer while packaging is still writing it.
+
+For the versioned packaged desktop checks, set `EXPLORER_DESKTOP_PACKAGED=1` and `EXPLORER_DESKTOP_APP_PATH` to the absolute path of `release/0.1.8/win-unpacked/AWS Log Explorer.exe` in the test runner's environment. Set `PLAYWRIGHT_JSON_OUTPUT_NAME` to an absolute report path under `.tmp`, then run `npx playwright test --workers=2 --reporter=list,json --output=.tmp/test-results-0.1.8-final-verified`. Use a fresh output directory to preserve previous evidence. The executable override is consumed only by the test helper; each app launch still receives an isolated environment and immutable offline/background flags.
+
+After versioned verification, update the normal `release/win-unpacked` launch folder when the application is closed. Retain the previous folder as a backup, copy the verified package, and compare executable/ASAR hashes. Also place the matching installer in `release/`. Keeping only a versioned build leaves users opening the older standard executable.
+
+For 0.1.8, the existing app was running from the standard folder. A hidden handoff helper staged and hash-checked the matching package, waited for the full passing desktop report and for that app to close naturally, then promoted the standard folder and retained a backup. The handoff completed; `.tmp/standard-build-update-0.1.8.json` records `updated`. The standard executable reports 0.1.8.0, and two additional hidden checks passed against that exact path in `.tmp/test-results-standard-0.1.8/report.json`. No user workspace was accessed or application installed. Installed copies require the new installer separately.
+
 ## Release requirements
 
 - **Windows:** build and test on Windows, configure Authenticode signing and validate installation/uninstallation, user-selected paths, shortcuts and upgrades. The checked-in NSIS configuration supports an installation-directory choice. Signing credentials and a signed release are not supplied.
@@ -40,4 +48,4 @@ For packaged verification, launch `AWS Log Explorer.exe --offline-verification`.
 
 Workspace configuration lives in Electron's per-user application-data directory as `workspace.json`, with a previous-file backup. Log payloads are kept in memory and exported only through an explicit local save dialog. Back up configuration before distributing an incompatible workspace migration. Preserve the original file and surface recovery warnings when loading fails.
 
-The current implementation is version `0.1.4`. The release configuration and offline tests provide a starting point for distribution; they do not establish a signed, security-audited or commercially validated production release.
+The current implementation is version `0.1.8`. The release configuration and offline tests provide a starting point for distribution; they do not establish a signed, security-audited or commercially validated production release.

@@ -58,6 +58,10 @@ it("starts new tabs with a clear date filter without narrowing available history
   expect(restoreWorkspace(saved).tabs[0].timePreset).toBe("15m");
 });
 it.each([
+  ["1m", 60000],
+  ["42h", 42 * 3600000],
+  ["3d", 3 * 86400000],
+  ["2w", 14 * 86400000],
   ["30m", 30 * 60000],
   ["3h", 3 * 3600000],
   ["12h", 12 * 3600000],
@@ -67,6 +71,18 @@ it.each([
     startTime: now - Number(duration),
     endTime: now,
   });
+});
+it("restores arbitrary valid relative ranges and rejects malformed persisted durations", () => {
+  const saved = createWorkspace();
+  for (const preset of ["1m", "42h", "3d", "9999w"]) {
+    saved.tabs[0].timePreset = preset;
+    expect(restoreWorkspace(saved).tabs[0].timePreset).toBe(preset);
+  }
+  for (const preset of ["0m", "10000w", "01h", "NaNm", "1y"]) {
+    saved.tabs[0].timePreset = preset;
+    expect(restoreWorkspace(saved).tabs[0].timePreset).toBe("1h");
+    expect(() => resolveTimeRange(preset)).toThrow(/supported/);
+  }
 });
 it("uses the actual local timezone for custom inputs and preserves explicit offsets", () => {
   vi.stubEnv("TZ", "Europe/Madrid");

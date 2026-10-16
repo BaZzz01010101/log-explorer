@@ -1,3 +1,4 @@
+import { desktopExecutablePath } from "./desktop-app";
 import {
   _electron as electron,
   expect,
@@ -63,9 +64,7 @@ test.beforeEach(async () => {
   });
   const packaged = process.env.EXPLORER_DESKTOP_PACKAGED === "1";
   app = await electron.launch({
-    executablePath: packaged
-      ? join(process.cwd(), "release/win-unpacked/AWS Log Explorer.exe")
-      : undefined,
+    executablePath: packaged ? desktopExecutablePath() : undefined,
     args: [
       ...(packaged ? ["--offline-verification"] : [process.cwd()]),
       "--background-verification",
@@ -93,7 +92,9 @@ test.beforeEach(async () => {
       throw new Error("Unexpected native dialog in hidden column-order test");
     };
   });
-  await expect(page.locator(".query-status")).toContainText("complete");
+  await expect(
+    page.locator('.query-status[data-query-state="complete"]'),
+  ).toBeAttached();
   await page.evaluate(() => {
     (window as unknown as { nativeColumnDrags: number }).nativeColumnDrags = 0;
     document.addEventListener(

@@ -25,6 +25,8 @@ import type {
 } from "../../shared/contracts";
 import type { WorkspaceAction } from "../workspace";
 import { parseWorkspaceInput } from "../../main/workspace-input";
+import { HighlightProfilesEditor } from "./HighlightProfilesEditor";
+import { ProfileConnectionsEditor } from "./ProfileConnectionsEditor";
 
 function NumericPreference({
   value,
@@ -136,6 +138,7 @@ export function Settings({
         <Tabs.List>
           <Tabs.Tab value="connections">Connections</Tabs.Tab>
           <Tabs.Tab value="appearance">Preferences</Tabs.Tab>
+          <Tabs.Tab value="highlights">Highlights</Tabs.Tab>
           <Tabs.Tab value="shortcuts">Shortcuts</Tabs.Tab>
           <Tabs.Tab value="workspace">Workspace</Tabs.Tab>
         </Tabs.List>
@@ -161,131 +164,153 @@ export function Settings({
               disabled={!environment?.canEnableAws}
               onChange={(e) => void setAws(e.currentTarget.checked)}
             />
-            <Group align="end">
-              <Select
-                style={{ flex: 1 }}
-                label="Connection"
-                value={selected.id}
-                data={workspace.connections.map((c) => ({
-                  value: c.id,
-                  label: c.name,
-                }))}
-                onChange={(value) => value && setSelectedId(value)}
-              />
-              <Button
-                variant="light"
-                leftSection={<IconPlus size={16} />}
-                onClick={() => {
-                  const connection: Connection = {
-                    id: crypto.randomUUID(),
-                    name: "New connection",
-                    profile: "default",
-                    region: "eu-west-1",
-                    mode: "offline",
-                  };
-                  dispatch({
-                    type: "connections/set",
-                    connections: [...workspace.connections, connection],
-                  });
-                  setSelectedId(connection.id);
-                }}
-              >
-                Add
-              </Button>
-              <ActionIcon
-                aria-label="Remove connection"
-                size="lg"
-                color="red"
-                variant="subtle"
-                disabled={
-                  workspace.connections.length < 2 ||
-                  workspace.tabs.some((t) => t.connectionId === selected.id)
-                }
-                onClick={() =>
-                  dispatch({
-                    type: "connections/set",
-                    connections: workspace.connections.filter(
-                      (c) => c.id !== selected.id,
-                    ),
-                  })
-                }
-              >
-                <IconTrash size={17} />
-              </ActionIcon>
-            </Group>
-            <TextInput
-              label="Display name"
-              value={draft.name}
-              maxLength={120}
-              onChange={(e) =>
-                setDraft({ ...draft, name: e.currentTarget.value })
+            <ProfileConnectionsEditor
+              connections={workspace.connections}
+              preferences={preferences}
+              knownProfiles={profiles}
+              discoveryEnabled={environment?.awsEnabled ?? false}
+              onConnections={(connections) =>
+                dispatch({ type: "connections/set", connections })
               }
-            />
-            <Group grow>
-              <TextInput
-                label="AWS profile"
-                value={draft.profile}
-                maxLength={256}
-                onChange={(e) =>
-                  setDraft({ ...draft, profile: e.currentTarget.value })
-                }
-              />
-              <TextInput
-                label="AWS region"
-                value={draft.region}
-                maxLength={40}
-                onChange={(e) =>
-                  setDraft({ ...draft, region: e.currentTarget.value })
-                }
-              />
-            </Group>
-            {profiles.length > 0 && (
-              <Select
-                label="Configured profiles"
-                placeholder="Select a profile"
-                searchable
-                data={profiles}
-                value={profiles.includes(draft.profile) ? draft.profile : null}
-                onChange={(value) =>
-                  value && setDraft({ ...draft, profile: value })
-                }
-              />
-            )}
-            <Select
-              label="Data source"
-              value={draft.mode}
-              data={[
-                { value: "offline", label: "Offline fixtures" },
-                { value: "aws", label: "AWS CloudWatch Logs" },
-              ]}
-              onChange={(value) =>
-                value &&
-                setDraft({ ...draft, mode: value as Connection["mode"] })
-              }
-            />
-            <Text size="xs" c="dimmed">
-              Profiles support IAM Identity Center / SSO and role assumption
-              through the official AWS credential provider. Establish your SSO
-              session outside this application. Credentials remain in the main
-              process and are never stored in a workspace.
-            </Text>
-            <Button
-              disabled={
-                !draft.name.trim() ||
-                !draft.profile.trim() ||
-                !/^[a-z]{2}(?:-[a-z]+)+-\d+$/.test(draft.region)
-              }
-              onClick={() =>
-                updateConnection({
-                  name: draft.name.trim(),
-                  profile: draft.profile.trim(),
-                  region: draft.region,
-                  mode: draft.mode,
+              onVisibility={(profileVisibility) =>
+                dispatch({
+                  type: "preferences/update",
+                  patch: { profileVisibility },
                 })
               }
-            >
-              Apply connection
-            </Button>
+            />
+            <details className="advanced-connections">
+              <summary>Advanced connection settings</summary>
+              <Stack gap="sm" mt="sm">
+                <Group align="end">
+                  <Select
+                    style={{ flex: 1 }}
+                    label="Connection"
+                    value={selected.id}
+                    data={workspace.connections.map((c) => ({
+                      value: c.id,
+                      label: c.name,
+                    }))}
+                    onChange={(value) => value && setSelectedId(value)}
+                  />
+                  <Button
+                    variant="light"
+                    leftSection={<IconPlus size={16} />}
+                    onClick={() => {
+                      const connection: Connection = {
+                        id: crypto.randomUUID(),
+                        name: "New connection",
+                        profile: "default",
+                        region: "eu-west-1",
+                        mode: "offline",
+                      };
+                      dispatch({
+                        type: "connections/set",
+                        connections: [...workspace.connections, connection],
+                      });
+                      setSelectedId(connection.id);
+                    }}
+                  >
+                    Add
+                  </Button>
+                  <ActionIcon
+                    aria-label="Remove connection"
+                    size="lg"
+                    color="red"
+                    variant="subtle"
+                    disabled={
+                      workspace.connections.length < 2 ||
+                      workspace.tabs.some((t) => t.connectionId === selected.id)
+                    }
+                    onClick={() =>
+                      dispatch({
+                        type: "connections/set",
+                        connections: workspace.connections.filter(
+                          (c) => c.id !== selected.id,
+                        ),
+                      })
+                    }
+                  >
+                    <IconTrash size={17} />
+                  </ActionIcon>
+                </Group>
+                <TextInput
+                  label="Display name"
+                  value={draft.name}
+                  maxLength={120}
+                  onChange={(e) =>
+                    setDraft({ ...draft, name: e.currentTarget.value })
+                  }
+                />
+                <Group grow>
+                  <TextInput
+                    label="AWS profile"
+                    value={draft.profile}
+                    maxLength={256}
+                    onChange={(e) =>
+                      setDraft({ ...draft, profile: e.currentTarget.value })
+                    }
+                  />
+                  <TextInput
+                    label="AWS region"
+                    value={draft.region}
+                    maxLength={40}
+                    onChange={(e) =>
+                      setDraft({ ...draft, region: e.currentTarget.value })
+                    }
+                  />
+                </Group>
+                {profiles.length > 0 && (
+                  <Select
+                    label="Configured profiles"
+                    placeholder="Select a profile"
+                    searchable
+                    data={profiles}
+                    value={
+                      profiles.includes(draft.profile) ? draft.profile : null
+                    }
+                    onChange={(value) =>
+                      value && setDraft({ ...draft, profile: value })
+                    }
+                  />
+                )}
+                <Select
+                  label="Data source"
+                  value={draft.mode}
+                  data={[
+                    { value: "offline", label: "Offline fixtures" },
+                    { value: "aws", label: "AWS CloudWatch Logs" },
+                  ]}
+                  onChange={(value) =>
+                    value &&
+                    setDraft({ ...draft, mode: value as Connection["mode"] })
+                  }
+                />
+                <Text size="xs" c="dimmed">
+                  Profiles support IAM Identity Center / SSO and role assumption
+                  through the official AWS credential provider. Establish your
+                  SSO session outside this application. Credentials remain in
+                  the main process and are never stored in a workspace.
+                </Text>
+                <Button
+                  disabled={
+                    !draft.name.trim() ||
+                    !draft.profile.trim() ||
+                    !/^[a-z]{2}(?:-[a-z]+)+-\d+$/.test(draft.region)
+                  }
+                  onClick={() =>
+                    updateConnection({
+                      name: draft.name.trim(),
+                      profile: draft.profile.trim(),
+                      region: draft.region,
+                      mode: draft.mode,
+                    })
+                  }
+                >
+                  Apply connection
+                </Button>
+              </Stack>
+            </details>
           </Stack>
         </Tabs.Panel>
         <Tabs.Panel value="appearance" pt="md">
@@ -314,6 +339,22 @@ export function Settings({
                 }
               />
             </Group>
+            <Select
+              label="Tab layout"
+              value={preferences.tabBarLayout}
+              data={[
+                { value: "scroll", label: "Scroll" },
+                { value: "wrap", label: "Multiple rows" },
+              ]}
+              allowDeselect={false}
+              onChange={(value) => {
+                if (value === "scroll" || value === "wrap")
+                  dispatch({
+                    type: "preferences/update",
+                    patch: { tabBarLayout: value },
+                  });
+              }}
+            />
             <Group grow>
               <NumericPreference
                 label="Log font size"
@@ -369,19 +410,18 @@ export function Settings({
                 })
               }
             />
-            <TextInput
-              label="Highlight text"
-              description="Literal text to emphasize in log messages"
-              value={preferences.highlightText}
-              maxLength={1000}
-              onChange={(e) =>
-                dispatch({
-                  type: "preferences/update",
-                  patch: { highlightText: e.currentTarget.value },
-                })
-              }
-            />
           </Stack>
+        </Tabs.Panel>
+        <Tabs.Panel value="highlights" pt="md">
+          <HighlightProfilesEditor
+            preferences={preferences}
+            onChange={(highlightProfiles) =>
+              dispatch({
+                type: "preferences/update",
+                patch: { highlightProfiles },
+              })
+            }
+          />
         </Tabs.Panel>
         <Tabs.Panel value="shortcuts" pt="md">
           <Text size="sm" c="dimmed" mb="sm">
