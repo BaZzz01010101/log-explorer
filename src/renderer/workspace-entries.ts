@@ -1,6 +1,12 @@
 import type { LogTab, Workspace } from "../shared/contracts";
 
-export const logTabLabel = (tab: LogTab) => tab.customTitle ?? tab.title;
+import { sourceCount } from "../shared/source-labels";
+
+export const logTabLabel = (tab: LogTab) =>
+  tab.customTitle ??
+  (sourceCount(tab.sources) > 1
+    ? `Mixed Sources (${sourceCount(tab.sources)})`
+    : tab.title);
 
 export interface WorkspaceEntry {
   id: string;
@@ -33,16 +39,15 @@ export function workspaceEntries(workspace: Workspace): WorkspaceEntry[] {
     const tabIds = split.panes.flatMap((pane) =>
       pane.tabId ? [pane.tabId] : [],
     );
+    const count = tabIds.reduce(
+      (count, id) =>
+        count +
+        sourceCount(workspace.tabs.find((tab) => tab.id === id)?.sources ?? []),
+      0,
+    );
     entries.push({
       id: split.id,
-      title:
-        split.title ??
-        tabIds
-          .map((id) => {
-            const tab = workspace.tabs.find((tab) => tab.id === id);
-            return tab ? logTabLabel(tab) : "Log view";
-          })
-          .join(" + "),
+      title: split.title ?? `Mixed Sources (${count})`,
       groupId: split.groupId,
       kind: "split",
       tabIds,

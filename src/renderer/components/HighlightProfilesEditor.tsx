@@ -2,9 +2,9 @@ import { useState } from "react";
 import {
   ActionIcon,
   Button,
+  Collapse,
   ColorInput,
   Group,
-  Paper,
   Select,
   Stack,
   Switch,
@@ -15,9 +15,28 @@ import {
 import {
   IconArrowDown,
   IconArrowUp,
+  IconChevronDown,
+  IconGripVertical,
   IconPlus,
   IconTrash,
 } from "@tabler/icons-react";
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+} from "@dnd-kit/core";
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
+import "./highlight-profiles.css";
 import {
   regexError,
   type HighlightColors,
@@ -43,6 +62,117 @@ const newRule = (): HighlightRule => ({
   colors: { background: "#713f12", foreground: "#ffffff" },
   separateThemeColors: false,
 });
+
+function RuleRow({
+  rule,
+  index,
+  selected,
+  onSelect,
+  onToggle,
+}: {
+  rule: HighlightRule;
+  index: number;
+  selected: boolean;
+  onSelect(): void;
+  onToggle(enabled: boolean): void;
+}) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    setActivatorNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: rule.id });
+  const colors = rule.separateThemeColors
+    ? ([
+        ["Light", rule.lightColors ?? rule.colors],
+        ["Dark", rule.darkColors ?? rule.colors],
+      ] as const)
+    : ([["Shared", rule.colors]] as const);
+  return (
+    <tr
+      ref={setNodeRef}
+      data-rule-id={rule.id}
+      data-highlight-rule={index}
+      data-dragging={isDragging}
+      aria-selected={selected}
+      tabIndex={0}
+      style={{
+        transform: CSS.Transform.toString(transform),
+        transition,
+        position: "relative",
+        zIndex: isDragging ? 2 : undefined,
+      }}
+      onClick={onSelect}
+      onKeyDown={(event) => {
+        if (
+          event.target === event.currentTarget &&
+          (event.key === "Enter" || event.key === " ")
+        ) {
+          event.preventDefault();
+          onSelect();
+        }
+      }}
+    >
+      <td>
+        <button
+          ref={setActivatorNodeRef}
+          {...attributes}
+          {...listeners}
+          className="highlight-rule-handle"
+          data-mantine-stop-propagation={isDragging ? "true" : undefined}
+          aria-label={`Reorder rule ${index + 1}`}
+        >
+          <IconGripVertical size={15} />
+        </button>
+      </td>
+      <td>{index + 1}</td>
+      <td onClick={(event) => event.stopPropagation()}>
+        <input
+          type="checkbox"
+          className="highlight-rule-enabled"
+          aria-label={`Rule ${index + 1} enabled`}
+          checked={rule.enabled}
+          onChange={(event) => onToggle(event.currentTarget.checked)}
+        />
+      </td>
+      <td
+        title={
+          rule.scope === "structured"
+            ? `Structured property: ${rule.path || "(root)"}`
+            : "Entire message"
+        }
+      >
+        <span className="highlight-rule-ellipsis">
+          {rule.scope === "structured" ? rule.path || "Root object" : "Message"}
+        </span>
+      </td>
+      <td>{rule.target === "row" ? "Entire row" : "Match text"}</td>
+      <td title={rule.pattern + (rule.ignoreCase ? " (ignore case)" : "")}>
+        <code className="highlight-rule-ellipsis">{rule.pattern || "—"}</code>
+      </td>
+      <td>
+        <div className="highlight-rule-colors">
+          {colors.map(([label, value]) => (
+            <span
+              key={label}
+              className="highlight-rule-color-pair"
+              role="img"
+              aria-label={`${label} foreground ${value.foreground || "inherited"}, background ${value.background || "inherited"}`}
+              title={`${label}: ${value.foreground || "inherit"} / ${value.background || "inherit"}`}
+            >
+              {rule.separateThemeColors && <small>{label[0]}</small>}
+              <i style={{ backgroundColor: value.foreground }} />
+              <i style={{ backgroundColor: value.background }} />
+            </span>
+          ))}
+        </div>
+      </td>
+    </tr>
+  );
+}
 function Colors({
   value,
   onChange,
@@ -116,22 +246,21 @@ function Preview({
   const match = result.results.get("preview");
   return (
     <Stack gap="xs">
-      <Text fw={600} size="sm">
-        Try this profile
-      </Text>
-      <TextInput
-        size="xs"
-        label="Preview log group"
-        value={group}
-        onChange={(event) => setGroup(event.currentTarget.value)}
-      />
-      <Textarea
-        size="xs"
-        label="Preview event"
-        value={message}
-        maxLength={20000}
-        onChange={(event) => setMessage(event.currentTarget.value)}
-      />
+      <div className="highlight-preview-inputs">
+        <TextInput
+          size="xs"
+          label="Preview log group"
+          value={group}
+          onChange={(event) => setGroup(event.currentTarget.value)}
+        />
+        <Textarea
+          size="xs"
+          label="Preview event"
+          value={message}
+          maxLength={20000}
+          onChange={(event) => setMessage(event.currentTarget.value)}
+        />
+      </div>
       <EventHighlightContext.Provider value={match}>
         <div
           aria-label="Highlight preview"
@@ -178,8 +307,24 @@ export function HighlightProfilesEditor({
 }) {
   const profiles = preferences.highlightProfiles ?? [];
   const [selected, setSelected] = useState(profiles[0]?.id);
-  const profile =
-    profiles.find((profile) => profile.id === selected) ?? profiles[0];
+  const [selectedRules, setSelectedRules] = useState<Record<string, string>>(
+    {},
+  );
+  const [previewOpened, setPreviewOpened] = useState(false);
+  const profile = profiles.find((item) => item.id === selected) ?? profiles[0];
+  const rule =
+    profile?.rules.find((item) => item.id === selectedRules[profile.id]) ??
+    profile?.rules[0];
+  const index = rule && profile ? profile.rules.indexOf(rule) : -1;
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    }),
+  );
+  const selectRule = (id: string) =>
+    profile &&
+    setSelectedRules((previous) => ({ ...previous, [profile.id]: id }));
   const patch = (change: Partial<HighlightProfile>) =>
     profile &&
     onChange(
@@ -190,306 +335,464 @@ export function HighlightProfilesEditor({
   const patchRule = (id: string, change: Partial<HighlightRule>) =>
     profile &&
     patch({
-      rules: profile.rules.map((rule) =>
-        rule.id === id ? { ...rule, ...change } : rule,
+      rules: profile.rules.map((item) =>
+        item.id === id ? { ...item, ...change } : item,
       ),
     });
-  const reorder = (id: string, direction: number) => {
+  const reorder = (id: string, target: number) => {
+    if (!profile || target < 0 || target >= profile.rules.length) return;
+    const source = profile.rules.findIndex((item) => item.id === id);
+    if (source < 0 || source === target) return;
+    patch({ rules: arrayMove(profile.rules, source, target) });
+  };
+  const moveProfile = (direction: number) => {
     if (!profile) return;
-    const rules = [...profile.rules],
-      index = rules.findIndex((rule) => rule.id === id),
-      target = index + direction;
-    if (target < 0 || target >= rules.length) return;
-    rules.splice(target, 0, rules.splice(index, 1)[0]);
-    patch({ rules });
+    const source = profiles.indexOf(profile),
+      target = source + direction;
+    if (target >= 0 && target < profiles.length)
+      onChange(arrayMove(profiles, source, target));
   };
   return (
-    <Stack gap="md">
-      <Text size="sm" c="dimmed">
-        Profiles match each event's log group. An empty group pattern applies to
-        all events. Rules run in order; the first matching colors and text spans
-        take priority.
-      </Text>
-      <Group align="end">
-        <Select
-          style={{ flex: 1 }}
-          label="Highlight profile"
-          placeholder="No profiles"
-          value={profile?.id ?? null}
-          data={profiles.map((item) => ({
-            value: item.id,
-            label:
-              (item.name || "Untitled profile") +
-              (item.enabled ? "" : " (disabled)"),
-          }))}
-          onChange={(value) => value && setSelected(value)}
-        />
-        <Button
-          size="xs"
-          disabled={profiles.length >= 20}
-          leftSection={<IconPlus size={14} />}
-          onClick={() => {
-            const created: HighlightProfile = {
-              id: crypto.randomUUID(),
-              name: "New profile",
-              enabled: true,
-              groupPattern: "",
-              groupIgnoreCase: false,
-              rules: [newRule()],
-            };
-            onChange([...profiles, created]);
-            setSelected(created.id);
-          }}
-        >
-          Add profile
-        </Button>
-      </Group>
-      {profile && (
-        <>
-          <Group align="end">
+    <div className="highlight-editor" data-preview-open={previewOpened}>
+      <section
+        className="highlight-profile-config"
+        aria-label="Profile configuration"
+      >
+        <div className="highlight-profile-top">
+          <Select
+            size="xs"
+            label="Highlight profile"
+            placeholder="No profiles"
+            value={profile?.id ?? null}
+            data={profiles.map((item) => ({
+              value: item.id,
+              label:
+                (item.name || "Untitled profile") +
+                (item.enabled ? "" : " (disabled)"),
+            }))}
+            onChange={(value) => value && setSelected(value)}
+          />
+          <Button
+            size="xs"
+            variant="default"
+            disabled={profiles.length >= 20}
+            leftSection={<IconPlus size={14} />}
+            onClick={() => {
+              const created: HighlightProfile = {
+                id: crypto.randomUUID(),
+                name: "New profile",
+                enabled: true,
+                groupPattern: "",
+                groupIgnoreCase: false,
+                rules: [newRule()],
+              };
+              onChange([...profiles, created]);
+              setSelected(created.id);
+            }}
+          >
+            Add profile
+          </Button>
+          {profile && (
+            <>
+              <TextInput
+                size="xs"
+                label="Profile name"
+                maxLength={120}
+                value={profile.name}
+                onChange={(event) => patch({ name: event.currentTarget.value })}
+              />
+              <Switch
+                size="xs"
+                label="Profile enabled"
+                checked={profile.enabled}
+                onChange={(event) =>
+                  patch({ enabled: event.currentTarget.checked })
+                }
+              />
+              <Group
+                gap={2}
+                wrap="nowrap"
+                className="highlight-profile-actions"
+              >
+                <ActionIcon
+                  size="sm"
+                  variant="subtle"
+                  aria-label="Move profile up"
+                  disabled={profiles.indexOf(profile) === 0}
+                  onClick={() => moveProfile(-1)}
+                >
+                  <IconArrowUp size={14} />
+                </ActionIcon>
+                <ActionIcon
+                  size="sm"
+                  variant="subtle"
+                  aria-label="Move profile down"
+                  disabled={profiles.indexOf(profile) === profiles.length - 1}
+                  onClick={() => moveProfile(1)}
+                >
+                  <IconArrowDown size={14} />
+                </ActionIcon>
+                <ActionIcon
+                  size="sm"
+                  color="red"
+                  variant="subtle"
+                  aria-label="Delete profile"
+                  onClick={() =>
+                    onChange(profiles.filter((item) => item.id !== profile.id))
+                  }
+                >
+                  <IconTrash size={15} />
+                </ActionIcon>
+              </Group>
+            </>
+          )}
+        </div>
+        {profile && (
+          <div className="highlight-profile-pattern">
             <TextInput
-              style={{ flex: 1 }}
-              label="Profile name"
-              maxLength={120}
-              value={profile.name}
-              onChange={(event) => patch({ name: event.currentTarget.value })}
+              size="xs"
+              label="Log group regex"
+              placeholder="All log groups · e.g. ^/aws/lambda/.*-prod$"
+              maxLength={500}
+              value={profile.groupPattern}
+              error={regexError(profile.groupPattern)}
+              onChange={(event) =>
+                patch({ groupPattern: event.currentTarget.value })
+              }
             />
             <Switch
-              label="Profile enabled"
-              checked={profile.enabled}
+              size="xs"
+              label="Ignore case in log group pattern"
+              checked={profile.groupIgnoreCase}
               onChange={(event) =>
-                patch({ enabled: event.currentTarget.checked })
+                patch({ groupIgnoreCase: event.currentTarget.checked })
               }
             />
-            <ActionIcon
-              variant="subtle"
-              aria-label="Move profile up"
-              disabled={profiles.indexOf(profile) === 0}
-              onClick={() => {
-                const next = [...profiles],
-                  index = next.indexOf(profile);
-                next.splice(index - 1, 0, next.splice(index, 1)[0]);
-                onChange(next);
-              }}
-            >
-              <IconArrowUp size={14} />
-            </ActionIcon>
-            <ActionIcon
-              variant="subtle"
-              aria-label="Move profile down"
-              disabled={profiles.indexOf(profile) === profiles.length - 1}
-              onClick={() => {
-                const next = [...profiles],
-                  index = next.indexOf(profile);
-                next.splice(index + 1, 0, next.splice(index, 1)[0]);
-                onChange(next);
-              }}
-            >
-              <IconArrowDown size={14} />
-            </ActionIcon>
-            <ActionIcon
-              color="red"
-              variant="subtle"
-              aria-label="Delete profile"
-              onClick={() =>
-                onChange(profiles.filter((item) => item.id !== profile.id))
-              }
-            >
-              <IconTrash size={16} />
-            </ActionIcon>
-          </Group>
-          <TextInput
-            label="Log group regex"
-            placeholder="All log groups"
-            description="For example: ^/aws/lambda/.*-prod$"
-            maxLength={500}
-            value={profile.groupPattern}
-            error={regexError(profile.groupPattern)}
-            onChange={(event) =>
-              patch({ groupPattern: event.currentTarget.value })
-            }
-          />
-          <Switch
-            size="xs"
-            label="Ignore case in log group pattern"
-            checked={profile.groupIgnoreCase}
-            onChange={(event) =>
-              patch({ groupIgnoreCase: event.currentTarget.checked })
-            }
-          />
-          {profile.rules.map((rule, index) => (
-            <Paper withBorder p="sm" key={rule.id} data-highlight-rule={index}>
-              <Stack gap="xs">
-                <Group justify="space-between">
-                  <Switch
-                    label={`Rule ${index + 1} enabled`}
-                    checked={rule.enabled}
-                    onChange={(event) =>
-                      patchRule(rule.id, {
-                        enabled: event.currentTarget.checked,
-                      })
-                    }
-                  />
-                  <Group gap={3}>
-                    <ActionIcon
-                      variant="subtle"
-                      aria-label={`Move rule ${index + 1} up`}
-                      disabled={index === 0}
-                      onClick={() => reorder(rule.id, -1)}
+          </div>
+        )}
+      </section>
+      {profile ? (
+        <>
+          <div className="highlight-master-detail">
+            <section className="highlight-rule-list" aria-label="Rules">
+              <header className="highlight-panel-heading">
+                <Text size="sm" fw={600}>
+                  Rules ({profile.rules.length})
+                </Text>
+                <div className="toolbar-spacer" />
+                <ActionIcon
+                  size="sm"
+                  variant="subtle"
+                  aria-label={`Move rule ${index + 1} up`}
+                  disabled={index <= 0}
+                  onClick={() => rule && reorder(rule.id, index - 1)}
+                >
+                  <IconArrowUp size={14} />
+                </ActionIcon>
+                <ActionIcon
+                  size="sm"
+                  variant="subtle"
+                  aria-label={`Move rule ${index + 1} down`}
+                  disabled={index < 0 || index >= profile.rules.length - 1}
+                  onClick={() => rule && reorder(rule.id, index + 1)}
+                >
+                  <IconArrowDown size={14} />
+                </ActionIcon>
+                <Button
+                  size="xs"
+                  leftSection={<IconPlus size={14} />}
+                  disabled={profile.rules.length >= 20}
+                  onClick={() => {
+                    const created = newRule();
+                    patch({ rules: [...profile.rules, created] });
+                    selectRule(created.id);
+                  }}
+                >
+                  Add rule
+                </Button>
+              </header>
+              <div className="highlight-rules-scroll">
+                <DndContext
+                  sensors={sensors}
+                  collisionDetection={closestCenter}
+                  onDragStart={({ active }) => selectRule(String(active.id))}
+                  onDragEnd={({ active, over }) => {
+                    if (over)
+                      reorder(
+                        String(active.id),
+                        profile.rules.findIndex((item) => item.id === over.id),
+                      );
+                  }}
+                >
+                  <table
+                    className="highlight-rules-table"
+                    aria-label="Highlight rules"
+                  >
+                    <colgroup>
+                      <col style={{ width: 28 }} />
+                      <col style={{ width: 30 }} />
+                      <col style={{ width: 60 }} />
+                      <col style={{ width: 94 }} />
+                      <col style={{ width: 80 }} />
+                      <col />
+                      <col style={{ width: 70 }} />
+                    </colgroup>
+                    <thead>
+                      <tr>
+                        <th />
+                        <th title="Priority">#</th>
+                        <th>Enabled</th>
+                        <th>Search in</th>
+                        <th>Highlight</th>
+                        <th>Regex</th>
+                        <th>Colors</th>
+                      </tr>
+                    </thead>
+                    <SortableContext
+                      items={profile.rules.map((item) => item.id)}
+                      strategy={verticalListSortingStrategy}
                     >
-                      <IconArrowUp size={14} />
-                    </ActionIcon>
-                    <ActionIcon
-                      variant="subtle"
-                      aria-label={`Move rule ${index + 1} down`}
-                      disabled={index === profile.rules.length - 1}
-                      onClick={() => reorder(rule.id, 1)}
-                    >
-                      <IconArrowDown size={14} />
-                    </ActionIcon>
-                    <ActionIcon
-                      color="red"
-                      variant="subtle"
-                      aria-label={`Delete rule ${index + 1}`}
-                      onClick={() =>
-                        patch({
-                          rules: profile.rules.filter(
-                            (item) => item.id !== rule.id,
-                          ),
+                      <tbody>
+                        {profile.rules.map((item, position) => (
+                          <RuleRow
+                            key={item.id}
+                            rule={item}
+                            index={position}
+                            selected={item.id === rule?.id}
+                            onSelect={() => selectRule(item.id)}
+                            onToggle={(enabled) =>
+                              patchRule(item.id, { enabled })
+                            }
+                          />
+                        ))}
+                      </tbody>
+                    </SortableContext>
+                  </table>
+                </DndContext>
+                {!profile.rules.length && (
+                  <Text size="sm" c="dimmed" p="md">
+                    No rules in this profile.
+                  </Text>
+                )}
+              </div>
+              <footer className="highlight-rule-footer">
+                Drag to change priority · Space and arrow keys also reorder
+              </footer>
+            </section>
+            <section
+              className="highlight-rule-detail"
+              role="region"
+              aria-label="Edit rule"
+            >
+              <header className="highlight-panel-heading">
+                <Text size="sm" fw={600}>
+                  {rule ? `Edit rule · ${index + 1}` : "Edit rule"}
+                </Text>
+                <div className="toolbar-spacer" />
+                <ActionIcon
+                  size="sm"
+                  color="red"
+                  variant="subtle"
+                  aria-label="Delete selected rule"
+                  disabled={!rule}
+                  onClick={() => {
+                    if (!rule) return;
+                    const remaining = profile.rules.filter(
+                      (item) => item.id !== rule.id,
+                    );
+                    patch({ rules: remaining });
+                    if (remaining.length)
+                      selectRule(
+                        remaining[Math.min(index, remaining.length - 1)].id,
+                      );
+                  }}
+                >
+                  <IconTrash size={15} />
+                </ActionIcon>
+              </header>
+              {rule ? (
+                <div
+                  className="highlight-detail-fields"
+                  key={profile.id + ":" + rule.id}
+                >
+                  <div className="highlight-detail-priority">
+                    <Switch
+                      size="xs"
+                      label="Rule enabled"
+                      checked={rule.enabled}
+                      onChange={(event) =>
+                        patchRule(rule.id, {
+                          enabled: event.currentTarget.checked,
                         })
                       }
-                    >
-                      <IconTrash size={14} />
-                    </ActionIcon>
-                  </Group>
-                </Group>
-                <Group grow>
-                  <Select
-                    size="xs"
-                    label="Search in"
-                    value={rule.scope}
-                    data={[
-                      { value: "text", label: "Entire message" },
-                      { value: "structured", label: "Structured property" },
-                    ]}
-                    onChange={(value) =>
-                      patchRule(rule.id, {
-                        scope: value as HighlightRule["scope"],
-                      })
-                    }
-                  />
-                  <Select
-                    size="xs"
-                    label="Highlight"
-                    value={rule.target}
-                    data={[
-                      { value: "row", label: "Entire event row" },
-                      { value: "text", label: "Matching text" },
-                    ]}
-                    onChange={(value) =>
-                      patchRule(rule.id, {
-                        target: value as HighlightRule["target"],
-                      })
-                    }
-                  />
-                </Group>
-                {rule.scope === "structured" && (
+                    />
+                    <TextInput
+                      size="xs"
+                      type="number"
+                      label="Priority"
+                      min={1}
+                      max={profile.rules.length}
+                      step={1}
+                      value={index + 1}
+                      onChange={(event) => {
+                        const value = Number(event.currentTarget.value);
+                        if (Number.isInteger(value))
+                          reorder(rule.id, value - 1);
+                      }}
+                    />
+                  </div>
+                  <div className="highlight-detail-columns">
+                    <Select
+                      size="xs"
+                      label="Search in"
+                      value={rule.scope}
+                      data={[
+                        { value: "text", label: "Entire message" },
+                        { value: "structured", label: "Structured property" },
+                      ]}
+                      onChange={(value) =>
+                        value &&
+                        patchRule(rule.id, {
+                          scope: value as HighlightRule["scope"],
+                        })
+                      }
+                    />
+                    <Select
+                      size="xs"
+                      label="Highlight"
+                      value={rule.target}
+                      data={[
+                        { value: "row", label: "Entire event row" },
+                        { value: "text", label: "Matching text" },
+                      ]}
+                      onChange={(value) =>
+                        value &&
+                        patchRule(rule.id, {
+                          target: value as HighlightRule["target"],
+                        })
+                      }
+                    />
+                  </div>
+                  {rule.scope === "structured" && (
+                    <TextInput
+                      size="xs"
+                      label="JSON Pointer path"
+                      placeholder="/request/status"
+                      description="Empty = root. Escape / as ~1 and ~ as ~0."
+                      value={rule.path}
+                      maxLength={512}
+                      error={
+                        rule.path && !rule.path.startsWith("/")
+                          ? "Start a JSON Pointer with /"
+                          : undefined
+                      }
+                      onChange={(event) =>
+                        patchRule(rule.id, { path: event.currentTarget.value })
+                      }
+                    />
+                  )}
                   <TextInput
                     size="xs"
-                    label="JSON Pointer path"
-                    placeholder="/request/status"
-                    description="Empty means the root object. Escape / as ~1 and ~ as ~0."
-                    value={rule.path}
-                    maxLength={512}
-                    error={
-                      rule.path && !rule.path.startsWith("/")
-                        ? "Start a JSON Pointer with /"
-                        : undefined
-                    }
+                    label="Match regex"
+                    placeholder="ERROR|failed|timeout"
+                    value={rule.pattern}
+                    maxLength={500}
+                    error={regexError(rule.pattern)}
                     onChange={(event) =>
-                      patchRule(rule.id, { path: event.currentTarget.value })
+                      patchRule(rule.id, { pattern: event.currentTarget.value })
                     }
                   />
-                )}
-                <TextInput
-                  size="xs"
-                  label="Match regex"
-                  placeholder="ERROR|failed|timeout"
-                  value={rule.pattern}
-                  maxLength={500}
-                  error={regexError(rule.pattern)}
-                  onChange={(event) =>
-                    patchRule(rule.id, { pattern: event.currentTarget.value })
-                  }
-                />
-                <Switch
-                  size="xs"
-                  label="Ignore case"
-                  checked={rule.ignoreCase}
-                  onChange={(event) =>
-                    patchRule(rule.id, {
-                      ignoreCase: event.currentTarget.checked,
-                    })
-                  }
-                />
-                <Switch
-                  size="xs"
-                  label="Separate light and dark colors"
-                  checked={rule.separateThemeColors}
-                  onChange={(event) =>
-                    patchRule(rule.id, {
-                      separateThemeColors: event.currentTarget.checked,
-                      lightColors: rule.lightColors ?? {
-                        foreground: "#111827",
-                        background: "#fef08a",
-                      },
-                      darkColors: rule.darkColors ?? rule.colors,
-                    })
-                  }
-                />
-                {rule.separateThemeColors ? (
-                  <>
-                    <Colors
-                      label="Light"
-                      value={rule.lightColors ?? rule.colors}
-                      onChange={(lightColors) =>
-                        patchRule(rule.id, { lightColors })
-                      }
-                    />
-                    <Colors
-                      label="Dark"
-                      value={rule.darkColors ?? rule.colors}
-                      onChange={(darkColors) =>
-                        patchRule(rule.id, { darkColors })
-                      }
-                    />
-                  </>
-                ) : (
-                  <Colors
-                    label="Shared"
-                    value={rule.colors}
-                    onChange={(colors) => patchRule(rule.id, { colors })}
+                  <Switch
+                    size="xs"
+                    label="Ignore case"
+                    checked={rule.ignoreCase}
+                    onChange={(event) =>
+                      patchRule(rule.id, {
+                        ignoreCase: event.currentTarget.checked,
+                      })
+                    }
                   />
-                )}
-              </Stack>
-            </Paper>
-          ))}
-          <Button
-            variant="light"
-            size="xs"
-            disabled={profile.rules.length >= 20}
-            onClick={() => patch({ rules: [...profile.rules, newRule()] })}
-          >
-            Add rule
-          </Button>
-          <Preview profile={profile} preferences={preferences} />
+                  <Switch
+                    size="xs"
+                    label="Separate light and dark colors"
+                    checked={rule.separateThemeColors}
+                    onChange={(event) =>
+                      patchRule(rule.id, {
+                        separateThemeColors: event.currentTarget.checked,
+                        lightColors: rule.lightColors ?? {
+                          foreground: "#111827",
+                          background: "#fef08a",
+                        },
+                        darkColors: rule.darkColors ?? rule.colors,
+                      })
+                    }
+                  />
+                  {rule.separateThemeColors ? (
+                    <>
+                      <Colors
+                        label="Light"
+                        value={rule.lightColors ?? rule.colors}
+                        onChange={(lightColors) =>
+                          patchRule(rule.id, { lightColors })
+                        }
+                      />
+                      <Colors
+                        label="Dark"
+                        value={rule.darkColors ?? rule.colors}
+                        onChange={(darkColors) =>
+                          patchRule(rule.id, { darkColors })
+                        }
+                      />
+                    </>
+                  ) : (
+                    <Colors
+                      label="Shared"
+                      value={rule.colors}
+                      onChange={(colors) => patchRule(rule.id, { colors })}
+                    />
+                  )}
+                  <Text size="xs" c="dimmed">
+                    Earlier rules take priority for overlapping colors and text.
+                  </Text>
+                </div>
+              ) : (
+                <Text size="sm" c="dimmed" p="md">
+                  Add a rule to start highlighting.
+                </Text>
+              )}
+            </section>
+          </div>
+          <section className="highlight-preview-section">
+            <button
+              className="highlight-preview-toggle"
+              aria-expanded={previewOpened}
+              onClick={() => setPreviewOpened((value) => !value)}
+            >
+              Test and preview{" "}
+              <IconChevronDown
+                size={16}
+                style={{
+                  transform: previewOpened ? "rotate(180deg)" : undefined,
+                }}
+              />
+            </button>
+            <Collapse expanded={previewOpened} transitionDuration={0}>
+              <div className="highlight-preview-body">
+                <Preview profile={profile} preferences={preferences} />
+              </div>
+            </Collapse>
+          </section>
         </>
+      ) : (
+        <Text size="sm" c="dimmed" p="sm">
+          Add a profile to configure highlight rules.
+        </Text>
       )}
       <Text size="xs" c="dimmed">
-        Up to 20 profiles and 20 rules per profile. Matching uses the first
-        200,000 message characters and bounded structured fields. Slow patterns
-        are stopped without blocking the viewer.
+        Up to 20 profiles and 20 rules each. Empty group pattern matches all
+        groups. Matching is bounded; slow regex patterns are stopped without
+        blocking the viewer.
       </Text>
-    </Stack>
+    </div>
   );
 }

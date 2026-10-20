@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ownValue } from "../shared/records";
+import { matchGroupNames } from "./group-regex";
 import type {
   Connection,
   LogGroup,
@@ -17,51 +18,78 @@ export interface RegionResources {
   groups: ResourcePage<LogGroup>;
   streams: Record<string, ResourcePage<LogStream>>;
 }
-export const resourceScope = (connection: Connection, search: string) =>
+export const resourceScope = (
+  connection: Connection,
+  search: string,
+  regex = false,
+) =>
   JSON.stringify([
     connection.id,
     connection.profile,
     connection.region,
     connection.mode,
     search,
+    ...(regex ? ["regex"] : []),
   ]);
 export function useExplorerResources(
   connections: Connection[],
   visibleRegions: string[],
   search: string,
+  refreshKey = 0,
+  regex = false,
 ) {
   const [cache, setCache] = useState<Record<string, RegionResources>>({});
-  const refs = useRef({ connections, search, cache });
-  refs.current = { connections, search, cache };
+  const refs = useRef({ connections, search, cache, regex, visibleRegions });
+  refs.current = { connections, search, cache, regex, visibleRegions };
   const mounted = useRef(true),
     sequence = useRef(0),
     pending = useRef(new Map<string, number>()),
-    cursors = useRef(new Map<string, Set<string>>());
+    cursors = useRef(new Map<string, Set<string>>()),
+    regexTasks = useRef(new Map<string, AbortController>());
   const identities = JSON.stringify(
-    connections.map((connection) => resourceScope(connection, search)),
+    connections.map((connection) => resourceScope(connection, search, regex)),
   );
   const visible = JSON.stringify(visibleRegions);
+  const observedRefresh = useRef(refreshKey);
+  useEffect(() => {
+    if (observedRefresh.current === refreshKey) return;
+    observedRefresh.current = refreshKey;
+    for (const task of regexTasks.current.values()) task.abort();
+    regexTasks.current.clear();
+    pending.current.clear();
+    cursors.current.clear();
+    refs.current.cache = {};
+    setCache({});
+  }, [refreshKey]);
   useEffect(() => {
     mounted.current = true;
     return () => {
       mounted.current = false;
+      for (const task of regexTasks.current.values()) task.abort();
+      regexTasks.current.clear();
       pending.current.clear();
       cursors.current.clear();
     };
   }, []);
   const current = (connection: Connection, scope: string) =>
     mounted.current &&
+    (!refs.current.regex ||
+      refs.current.visibleRegions.includes(connection.id)) &&
     refs.current.connections.some(
       (item) =>
         item.id === connection.id &&
-        resourceScope(item, refs.current.search) === scope,
+        resourceScope(item, refs.current.search, refs.current.regex) === scope,
     );
   const loadGroups = useCallback(async (connectionId: string, more = false) => {
     const connection = refs.current.connections.find(
       (item) => item.id === connectionId,
     );
     if (!connection) return;
-    const scope = resourceScope(connection, refs.current.search),
+    const scope = resourceScope(
+        connection,
+        refs.current.search,
+        refs.current.regex,
+      ),
       key = JSON.stringify([scope, "groups"]);
     const prior =
       ownValue(refs.current.cache, connectionId)?.scope === scope
@@ -95,6 +123,65 @@ export function useExplorerResources(
       },
     }));
     try {
+      if (refs.current.regex && refs.current.search) {
+        const task = new AbortController();
+        regexTasks.current.set(key, task);
+        const pattern = refs.current.search;
+        // Validate before making any enumeration requests.
+        await matchGroupNames(pattern, [], task.signal);
+        const items = new Map<string, LogGroup>();
+        const seen = new Set<string>();
+        let cursor: string | undefined;
+        do {
+          if (
+            !current(connection, scope) ||
+            pending.current.get(key) !== request
+          )
+            return;
+          const page = await window.explorer.listGroups(connection, "", cursor);
+          if (
+            !current(connection, scope) ||
+            pending.current.get(key) !== request
+          )
+            return;
+          const matches = new Set(
+            await matchGroupNames(
+              pattern,
+              page.items.map((item) => item.name),
+              task.signal,
+            ),
+          );
+          if (
+            !current(connection, scope) ||
+            pending.current.get(key) !== request
+          )
+            return;
+          for (const item of page.items)
+            if (matches.has(item.name)) items.set(item.name, item);
+          if (page.cursor && seen.has(page.cursor))
+            throw new Error(
+              "Regex scan received a repeated continuation; refresh to retry",
+            );
+          cursor = page.cursor;
+          if (cursor) seen.add(cursor);
+          setCache((previous) => {
+            const entry = ownValue(previous, connectionId);
+            if (entry?.scope !== scope) return previous;
+            return {
+              ...previous,
+              [connectionId]: {
+                ...entry,
+                groups: {
+                  items: [...items.values()],
+                  loaded: true,
+                  loading: Boolean(cursor),
+                },
+              },
+            };
+          });
+        } while (cursor);
+        return;
+      }
       const page = await window.explorer.listGroups(
         connection,
         refs.current.search,
@@ -149,7 +236,10 @@ export function useExplorerResources(
               };
         });
     } finally {
-      if (pending.current.get(key) === request) pending.current.delete(key);
+      if (pending.current.get(key) === request) {
+        pending.current.delete(key);
+        regexTasks.current.delete(key);
+      }
     }
   }, []);
   const loadStreams = useCallback(
@@ -158,7 +248,11 @@ export function useExplorerResources(
         (item) => item.id === connectionId,
       );
       if (!connection) return;
-      const scope = resourceScope(connection, refs.current.search),
+      const scope = resourceScope(
+          connection,
+          refs.current.search,
+          refs.current.regex,
+        ),
         key = JSON.stringify([scope, "streams", group]);
       const entry = ownValue(refs.current.cache, connectionId);
       if (entry?.scope !== scope) return;
@@ -220,7 +314,11 @@ export function useExplorerResources(
                         ...page.items,
                       ].map((item) => [item.name, item]),
                     ).values(),
-                  ],
+                  ].sort(
+                    (a, b) =>
+                      (b.lastEventTime ?? -1) - (a.lastEventTime ?? -1) ||
+                      a.name.localeCompare(b.name),
+                  ),
                   cursor,
                   loaded: true,
                   loading: false,
@@ -262,10 +360,18 @@ export function useExplorerResources(
   );
   useEffect(() => {
     const valid = new Set(
-      connections.map((connection) => resourceScope(connection, search)),
+      connections
+        .filter(
+          (connection) => !regex || visibleRegions.includes(connection.id),
+        )
+        .map((connection) => resourceScope(connection, search, regex)),
     );
     for (const key of pending.current.keys())
-      if (!valid.has(JSON.parse(key)[0])) pending.current.delete(key);
+      if (!valid.has(JSON.parse(key)[0])) {
+        pending.current.delete(key);
+        regexTasks.current.get(key)?.abort();
+        regexTasks.current.delete(key);
+      }
     for (const key of cursors.current.keys())
       if (!valid.has(JSON.parse(key)[0])) cursors.current.delete(key);
     setCache((previous) =>
@@ -274,12 +380,13 @@ export function useExplorerResources(
           connections.some(
             (connection) =>
               connection.id === id &&
-              entry.scope === resourceScope(connection, search),
+              entry.scope === resourceScope(connection, search, regex) &&
+              (!regex || visibleRegions.includes(id) || !entry.groups.loading),
           ),
         ),
       ),
     );
-  }, [identities]);
+  }, [identities, visible]);
   useEffect(() => {
     for (const id of visibleRegions) {
       const connection = connections.find((connection) => connection.id === id);
@@ -287,7 +394,7 @@ export function useExplorerResources(
       if (
         connection &&
         (!entry ||
-          entry.scope !== resourceScope(connection, search) ||
+          entry.scope !== resourceScope(connection, search, regex) ||
           (!entry.groups.loaded &&
             !entry.groups.loading &&
             !entry.groups.error))

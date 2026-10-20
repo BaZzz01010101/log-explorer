@@ -38,3 +38,20 @@ it("validates drag payloads and refuses limits without truncating sources", () =
     ),
   ).toThrow(/50/);
 });
+
+it("normalizes an explicit primary connection and preserves whole-group scope", () => {
+  expect(
+    mergeSources(
+      [{ connectionId: "west", logGroup: "a", logStreams: ["one"] }],
+      [{ logGroup: "a", logStreams: ["two"] }],
+      "west",
+    ),
+  ).toEqual([{ logGroup: "a", logStreams: ["one", "two"] }]);
+  expect(
+    mergeSources(
+      [{ connectionId: "east", logGroup: "a" }],
+      [{ connectionId: "east", logGroup: "a", logStreams: ["two"] }],
+      "west",
+    ),
+  ).toEqual([{ connectionId: "east", logGroup: "a" }]);
+});

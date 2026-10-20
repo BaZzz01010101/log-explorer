@@ -12,13 +12,11 @@ import { pathToFileURL } from "node:url";
 import { randomUUID } from "node:crypto";
 import { writeFile } from "node:fs/promises";
 import { z } from "zod";
+import { COPY_TEXT_LIMIT } from "../shared/event-copy";
 import { createLogService } from "./log-service";
-import {
-  AwsAccessGate,
-  connectionSchema,
-  querySchema,
-  workspaceSchema,
-} from "./security";
+import { connectionSchema, querySchema, workspaceSchema } from "./security";
+import { AwsAccessPreference } from "./aws-access-preference";
+import { setAwsAccess } from "./aws-access-toggle";
 import { WorkspaceStore } from "./persistence";
 import { createCloseCoordinator } from "./close-coordinator";
 import { parseWorkspaceInput } from "./workspace-input";
@@ -28,7 +26,7 @@ import {
   saveWindowState,
 } from "./window-state";
 
-// No AWS environment variables, shared profiles or tokens are inspected at startup.
+// Isolate verification storage before reading local application preferences.
 if (process.env.EXPLORER_TEST_USER_DATA)
   app.setPath("userData", process.env.EXPLORER_TEST_USER_DATA);
 app.setAppUserModelId("dev.awslogexplorer.desktop");
@@ -39,7 +37,10 @@ const canEnableAws =
   app.isPackaged &&
   !process.argv.includes("--offline-verification") &&
   !backgroundVerification;
-const gate = new AwsAccessGate(canEnableAws);
+const gate = new AwsAccessPreference(
+  canEnableAws,
+  join(app.getPath("userData"), "access-settings.json"),
+);
 let window: BrowserWindow | null = null;
 let quitting = false;
 let allowWindowClose = false;
@@ -177,13 +178,7 @@ const cursorSchema = z.string().max(100000).optional();
 handle("explorer:environment", environment);
 handle("explorer:enable-aws", async (enabled) => {
   const requested = z.boolean().parse(enabled);
-  if (!requested) {
-    try {
-      await service.shutdown();
-    } finally {
-      gate.setEnabled(false);
-    }
-  } else gate.setEnabled(true);
+  await setAwsAccess(gate, requested, () => service.shutdown());
   return environment();
 });
 handle("explorer:profiles", async () => {
@@ -223,7 +218,7 @@ handle("explorer:save", (workspace) =>
   store.save(workspaceSchema.parse(workspace)),
 );
 handle("explorer:copy", (text) =>
-  clipboard.writeText(z.string().max(50_000_000).parse(text)),
+  clipboard.writeText(z.string().max(COPY_TEXT_LIMIT).parse(text)),
 );
 handle("explorer:export", async (content, extension) => {
   const data = z.string().max(50_000_000).parse(content);

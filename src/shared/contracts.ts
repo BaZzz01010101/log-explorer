@@ -23,10 +23,12 @@ export interface Page<T> {
   cursor?: string;
 }
 export interface LogSource {
+  connectionId?: string;
   logGroup: string;
   logStreams?: string[];
 }
 export interface LogEvent {
+  connectionId?: string;
   id: string;
   timestamp: number;
   ingestionTime?: number;
@@ -37,6 +39,7 @@ export interface LogEvent {
 export interface QueryRequest {
   requestId: string;
   connection: Connection;
+  connections?: Connection[];
   sources: LogSource[];
   startTime: number;
   endTime: number;
@@ -52,6 +55,7 @@ export interface QueryStats {
   bytesScanned?: number;
   elapsedMs?: number;
 }
+export type LiveState = "connecting" | "streaming" | "stopped";
 export interface QueryUpdate {
   requestId: string;
   state: "queued" | "running" | "complete" | "cancelled" | "error";
@@ -62,6 +66,7 @@ export interface QueryUpdate {
   error?: string;
   sampled?: boolean;
   truncated?: boolean;
+  liveState?: LiveState;
 }
 export type ViewMode = "hybrid" | "table" | "json";
 export interface ColumnConfig {
@@ -77,6 +82,7 @@ export interface ViewConfig {
   columns: ColumnConfig[];
   localSearch: string;
   level: string;
+  levels?: string[];
   wrap: boolean;
   sort?: { path: string; desc: boolean };
 }
@@ -136,6 +142,16 @@ export interface Favorite {
   logGroup: string;
   logStream?: string;
 }
+
+/** An independent, configuration-only snapshot of one normal or combined tab. */
+export interface ViewFavorite {
+  id: string;
+  title: string;
+  tabs: LogTab[];
+  connections: Connection[];
+  split?: SplitTab;
+  timezone: "local" | "utc";
+}
 export interface VisualizationPreset {
   id: string;
   name: string;
@@ -172,7 +188,7 @@ export interface Workspace {
   sidebarWidth: number;
   sidebarVisible: boolean;
   splitSizes?: { horizontal: number; vertical: number };
-  favorites: Favorite[];
+  favorites: ViewFavorite[];
   recents: Favorite[];
   savedQueries: SavedQuery[];
   history: SavedQuery[];

@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState, type MouseEvent } from "react";
 import { ownValue } from "../../shared/records";
 import {
   ActionIcon,
@@ -24,13 +24,13 @@ import {
   IconRefresh,
   IconSearch,
   IconSettings,
-  IconStar,
-  IconStarFilled,
+  IconX,
 } from "@tabler/icons-react";
 import { defaultRangeExtractor, useVirtualizer } from "@tanstack/react-virtual";
 import type {
   Connection,
   Favorite,
+  ViewFavorite,
   LogGroup,
   LogSource,
   Preferences,
@@ -47,6 +47,13 @@ import {
   type ScrollPageTarget,
 } from "../useScrollPagination";
 import { ResourceDragLabel } from "./ResourceDragLabel";
+import { ViewFavorites } from "./ViewFavorites";
+import type { ResourceActionMode, ResourcePayload } from "../resource-drag";
+import {
+  changeExplorerSelection,
+  selectionPayload,
+  type SelectedResource,
+} from "../explorer-selection";
 import "./explorer.css";
 
 interface Props {
@@ -54,14 +61,18 @@ interface Props {
   activeConnectionId: string;
   preferences?: Pick<Preferences, "profileVisibility">;
   onConnectionChange?(id: string): void;
-  favorites: Favorite[];
+  onResourceAction?(payload: ResourcePayload, mode: ResourceActionMode): void;
+  favorites: ViewFavorite[];
+  refreshKey?: number;
   recents: Favorite[];
   onOpen(
     id: string,
     sources: LogSource[],
     mode?: "preview" | "permanent",
   ): void;
-  onFavorite(favorite: Favorite): void;
+  onOpenFavorite?(id: string): void;
+  onRemoveFavorite?(id: string): void;
+  onRenameFavorite?(id: string, title: string): void;
   onManage(): void;
 }
 function description(group: LogGroup) {
@@ -71,10 +82,11 @@ export function ExplorerSidebar(props: Props) {
   const [connectionId, setConnectionId] = useState(props.activeConnectionId);
   const [search, setSearch] = useState(""),
     [debounced, setDebounced] = useState("");
+  const [regex, setRegex] = useState(false);
   const [groups, setGroups] = useState(new Set<string>());
-  const [selected, setSelected] = useState(
-    new Map<string, { connectionId: string; logGroup: string }>(),
-  );
+  const [selected, setSelected] = useState(new Map<string, SelectedResource>());
+  const selectionAnchor = useRef<string | null>(null);
+  const [contextKey, setContextKey] = useState<string | null>(null);
   const [activeKey, setActiveKey] = useState<string | null>(null),
     [focused, setFocused] = useState(false),
     [notice, setNotice] = useState("");
@@ -99,12 +111,15 @@ export function ExplorerSidebar(props: Props) {
     connections,
     visibleRegions,
     debounced,
+    props.refreshKey,
+    regex,
   );
   const rows = buildExplorerRows(
     selectedConnection,
     groups,
     resources.cache,
     debounced,
+    regex,
   );
   const missingStreams = rows.flatMap((row) =>
     row.kind === "group" &&
@@ -125,6 +140,30 @@ export function ExplorerSidebar(props: Props) {
   const selectedSources = [...selected.values()].filter(
     (source) => source.connectionId === selectedConnection?.id,
   );
+  const selectable = (row: ExplorerRow): SelectedResource | undefined =>
+    row.kind === "group" || row.kind === "stream"
+      ? {
+          key: row.key,
+          connectionId: row.connection.id,
+          logGroup: row.group.name,
+          ...(row.kind === "stream" ? { logStream: row.stream.name } : {}),
+        }
+      : undefined;
+  const selectableRows = rows.flatMap((row) => {
+    const resource = selectable(row);
+    return resource ? [resource] : [];
+  });
+  const payloadFor = (row: ExplorerRow) =>
+    selectionPayload(
+      selected.has(row.key) ? selected.values() : [selectable(row)!],
+      row.connection.id,
+    );
+  const performAction = (row: ExplorerRow, mode: ResourceActionMode) => {
+    const payload = payloadFor(row);
+    if (props.onResourceAction) props.onResourceAction(payload, mode);
+    else if (mode === "new-multisource" || mode === "new-split")
+      props.onOpen(payload.connectionId, payload.sources, "permanent");
+  };
   const allowed = new Set(
     props.connections
       .filter(
@@ -163,6 +202,8 @@ export function ExplorerSidebar(props: Props) {
     setConnectionId(id);
     setActiveKey(null);
     setSelected(new Map());
+    selectionAnchor.current = null;
+    setContextKey(null);
     props.onConnectionChange?.(id);
   };
   useEffect(() => {
@@ -175,9 +216,11 @@ export function ExplorerSidebar(props: Props) {
   }, [search]);
   useEffect(() => {
     setSelected(new Map());
+    selectionAnchor.current = null;
+    setContextKey(null);
     setActiveKey(null);
     if (tree.current) tree.current.scrollTop = 0;
-  }, [debounced, selectedConnection?.id]);
+  }, [debounced, regex, selectedConnection?.id]);
   const toggleSet = (setter: typeof setGroups, key: string) =>
     setter((previous) => {
       const next = new Set(previous);
@@ -197,21 +240,32 @@ export function ExplorerSidebar(props: Props) {
         void resources.loadStreams(row.connection.id, row.group.name);
     }
   };
-  const select = (row: Extract<ExplorerRow, { kind: "group" }>) =>
-    setSelected((previous) => {
-      const next = new Map(previous);
-      if (next.has(row.key)) next.delete(row.key);
-      else if (
-        [...next.values()].filter(
-          (item) => item.connectionId === row.connection.id,
-        ).length < 50
-      )
-        next.set(row.key, {
-          connectionId: row.connection.id,
-          logGroup: row.group.name,
-        });
-      return next;
-    });
+  const select = (
+    row: ExplorerRow,
+    mode: "toggle" | "range" | "add-range" | "context" | "single" = "toggle",
+  ) => {
+    const resource = selectable(row);
+    if (!resource) return;
+    setActiveKey(row.key);
+    const anchor = selectionAnchor.current;
+    if (mode !== "range" && mode !== "add-range")
+      selectionAnchor.current = row.key;
+    setSelected((previous) =>
+      changeExplorerSelection(previous, selectableRows, resource, anchor, mode),
+    );
+  };
+  const clickResource = (
+    row: ExplorerRow,
+    event?: MouseEvent<HTMLButtonElement>,
+  ) => {
+    if (event?.shiftKey)
+      select(row, event.ctrlKey || event.metaKey ? "add-range" : "range");
+    else if (event?.ctrlKey || event?.metaKey) select(row);
+    else {
+      select(row, "single");
+      open(row);
+    }
+  };
   const open = (
     row: ExplorerRow,
     mode: "preview" | "permanent" = "preview",
@@ -250,7 +304,7 @@ export function ExplorerSidebar(props: Props) {
         {
           key: JSON.stringify([
             row.connection.id,
-            resourceScope(row.connection, debounced),
+            resourceScope(row.connection, debounced, regex),
             "groups",
             page?.cursor,
           ]),
@@ -268,7 +322,7 @@ export function ExplorerSidebar(props: Props) {
         {
           key: JSON.stringify([
             row.connection.id,
-            resourceScope(row.connection, debounced),
+            resourceScope(row.connection, debounced, regex),
             row.group.name,
             page?.cursor,
           ]),
@@ -283,7 +337,10 @@ export function ExplorerSidebar(props: Props) {
   useScrollPagination(tree, {
     scope: JSON.stringify([
       debounced,
-      connections.map((connection) => resourceScope(connection, debounced)),
+      regex,
+      connections.map((connection) =>
+        resourceScope(connection, debounced, regex),
+      ),
     ]),
     targets,
   });
@@ -300,13 +357,6 @@ export function ExplorerSidebar(props: Props) {
         },
       ],
       mode,
-    );
-  const favorite = (id: string, group: string, stream?: string) =>
-    props.favorites.some(
-      (favorite) =>
-        favorite.connectionId === id &&
-        favorite.logGroup === group &&
-        favorite.logStream === stream,
     );
   const copy = (value: string) =>
     void window.explorer
@@ -354,7 +404,6 @@ export function ExplorerSidebar(props: Props) {
           label="Profile"
           aria-label="Explorer profile"
           size="xs"
-          searchable
           placeholder="Add a profile in Connections"
           value={selectedProfile?.key ?? null}
           data={profiles.map((profile) => ({
@@ -378,7 +427,6 @@ export function ExplorerSidebar(props: Props) {
           label="Region"
           aria-label="Explorer region"
           size="xs"
-          searchable
           mt={7}
           placeholder="Add a region in Connections"
           value={selectedConnection?.id ?? null}
@@ -400,35 +448,87 @@ export function ExplorerSidebar(props: Props) {
         <TextInput
           aria-label="Search log groups"
           placeholder="Search log groups…"
-          description="Group name contains · case-sensitive"
+          description={
+            regex
+              ? "Regular expression · case-sensitive · searches all groups"
+              : "Group name contains · case-sensitive"
+          }
+          error={
+            regex && search === debounced
+              ? ownValue(resources.cache, selectedConnection?.id ?? "")?.groups
+                  .error
+              : undefined
+          }
           size="xs"
           leftSection={<IconSearch size={14} />}
           value={search}
           onChange={(event) => setSearch(event.currentTarget.value)}
+          rightSectionWidth={search ? 56 : 30}
+          rightSectionPointerEvents="all"
+          rightSection={
+            <Group gap={2} wrap="nowrap">
+              {search && (
+                <ActionIcon
+                  size={22}
+                  variant="subtle"
+                  aria-label="Clear log group search"
+                  onClick={() => {
+                    setSearch("");
+                    setDebounced("");
+                  }}
+                >
+                  <IconX size={13} />
+                </ActionIcon>
+              )}
+              <Tooltip
+                label="Use regular expression"
+                styles={{
+                  tooltip: {
+                    background: "var(--mantine-color-body)",
+                    color: "var(--mantine-color-text)",
+                    border: "1px solid var(--mantine-color-default-border)",
+                    boxShadow: "0 4px 16px #0002",
+                  },
+                }}
+              >
+                <ActionIcon
+                  size={22}
+                  variant={regex ? "light" : "subtle"}
+                  aria-label="Use regular expression"
+                  aria-pressed={regex}
+                  onClick={() => setRegex((value) => !value)}
+                >
+                  <svg
+                    width={15}
+                    height={15}
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth={2}
+                    strokeLinecap="round"
+                    aria-hidden="true"
+                  >
+                    <circle
+                      cx={6}
+                      cy={18}
+                      r={2}
+                      fill="currentColor"
+                      stroke="none"
+                    />
+                    <path d="M17 4v8m-3.5-6 7 4m-7 0 7-4" />
+                  </svg>
+                </ActionIcon>
+              </Tooltip>
+            </Group>
+          }
         />
       </div>
-      {props.favorites.some((item) => allowed.has(item.connectionId)) && (
-        <div className="sidebar-quick">
-          <Text size="xs" c="dimmed" fw={600}>
-            FAVORITES
-          </Text>
-          {props.favorites
-            .filter((item) => allowed.has(item.connectionId))
-            .slice(0, 8)
-            .map((item) => (
-              <button
-                className="quick-resource"
-                key={JSON.stringify(item)}
-                title={`${item.logGroup}${item.logStream ? " / " + item.logStream : ""}`}
-                onClick={() => openFavorite(item)}
-                onDoubleClick={() => openFavorite(item, "permanent")}
-              >
-                <IconStarFilled size={13} color="#e8b85c" />
-                <span>{item.logStream ?? item.logGroup.split("/").at(-1)}</span>
-              </button>
-            ))}
-        </div>
-      )}
+      <ViewFavorites
+        favorites={props.favorites}
+        onOpen={props.onOpenFavorite}
+        onRemove={props.onRemoveFavorite}
+        onRename={props.onRenameFavorite}
+      />
       <div
         className="resource-tree"
         ref={tree}
@@ -450,7 +550,53 @@ export function ExplorerSidebar(props: Props) {
             setActiveKey(rows[activeIndex].key);
         }}
         onKeyDown={(event) => {
-          if (event.ctrlKey || event.metaKey || event.altKey || event.shiftKey)
+          if (
+            event.target instanceof Element &&
+            event.target.closest('[role="menu"]')
+          )
+            return;
+          if (
+            event.key === "ContextMenu" ||
+            (event.shiftKey && event.key === "F10")
+          ) {
+            const row = rows[activeIndex];
+            if (!row || !selectable(row)) return;
+            event.preventDefault();
+            event.stopPropagation();
+            const element = document.getElementById(rowId(activeIndex));
+            if (!element || !tree.current) return;
+            const bounds = element.getBoundingClientRect(),
+              viewport = tree.current.getBoundingClientRect();
+            element.dispatchEvent(
+              new window.MouseEvent("contextmenu", {
+                bubbles: true,
+                cancelable: true,
+                clientX: Math.max(
+                  viewport.left + 4,
+                  Math.min(bounds.left + 32, viewport.right - 4),
+                ),
+                clientY: Math.max(
+                  viewport.top + 4,
+                  Math.min(bounds.bottom, viewport.bottom - 4),
+                ),
+              }),
+            );
+            return;
+          }
+          if (
+            event.altKey ||
+            ((event.ctrlKey || event.metaKey) && event.key !== " ") ||
+            (event.shiftKey &&
+              ![
+                "ArrowUp",
+                "ArrowDown",
+                "Home",
+                "End",
+                "PageUp",
+                "PageDown",
+                " ",
+              ].includes(event.key))
+          )
             return;
           const own = event.target === event.currentTarget;
           if (
@@ -478,11 +624,15 @@ export function ExplorerSidebar(props: Props) {
           event.preventDefault();
           if (!own) tree.current?.focus({ preventScroll: true });
           const row = rows[next.index];
+          if (event.shiftKey && selectable(row)) {
+            if (!selectionAnchor.current)
+              selectionAnchor.current = rows[activeIndex]?.key ?? row.key;
+            select(row, event.ctrlKey || event.metaKey ? "add-range" : "range");
+          }
           setActiveKey(row.key);
           virtualizer.scrollToIndex(next.index, { align: "auto" });
           if (next.action === "toggle") toggle(row);
-          else if (next.action === "select" && row.kind === "group")
-            select(row);
+          else if (next.action === "select" && !event.shiftKey) select(row);
           else if (next.action === "open" || next.action === "load") open(row);
         }}
       >
@@ -530,197 +680,223 @@ export function ExplorerSidebar(props: Props) {
                       : undefined,
                 }}
               >
-                <div
-                  className={`resource-row ${row.kind === "stream" ? "stream-row" : ""} explorer-${row.kind}`}
-                  role={
-                    row.kind === "loading" || row.kind === "empty"
-                      ? "presentation"
-                      : "treeitem"
+                <Menu
+                  width={240}
+                  withinPortal
+                  position="bottom-start"
+                  opened={contextKey === row.key}
+                  onChange={(opened) =>
+                    setContextKey((previous) =>
+                      opened ? row.key : previous === row.key ? null : previous,
+                    )
                   }
-                  id={rowId(item.index)}
-                  aria-label={label}
-                  aria-level={row.level}
-                  aria-expanded={branch ? expanded.has(row.key) : undefined}
-                  aria-selected={
-                    row.kind === "group" ? selected.has(row.key) : undefined
-                  }
-                  data-connection-id={connection?.id}
-                  data-node-kind={row.kind}
-                  style={{ paddingLeft: 8 + (row.level - 1) * 14 }}
+                  transitionProps={{ duration: 0 }}
                 >
-                  {row.kind === "group" ? (
-                    <>
-                      <button
-                        className="tree-toggle"
-                        aria-label={`Expand ${row.group.name}`}
-                        onClick={() => toggle(row)}
-                      >
-                        {expanded.has(row.key) ? (
-                          <IconChevronDown size={13} />
-                        ) : (
-                          <IconChevronRight size={13} />
-                        )}
-                      </button>
-                      <input
-                        type="checkbox"
-                        aria-label={`Select ${row.group.name}`}
-                        checked={selected.has(row.key)}
-                        onChange={() => select(row)}
-                      />
-                      <ResourceDragLabel
-                        title={row.group.name + "\n" + description(row.group)}
-                        payload={{
-                          connectionId: row.connection.id,
-                          sources: selected.has(row.key)
-                            ? selectedSources
-                                .filter(
-                                  (source) =>
-                                    source.connectionId === row.connection.id,
-                                )
-                                .map((source) => ({
-                                  logGroup: source.logGroup,
-                                }))
-                            : [{ logGroup: row.group.name }],
-                        }}
-                        onClick={() => open(row)}
-                        onDoubleClick={() => open(row, "permanent")}
-                      >
-                        <IconFolder size={14} />
-                        <span>{row.group.name}</span>
-                      </ResourceDragLabel>
-                      <button
-                        className="favorite-button"
-                        aria-label={`Favorite ${row.group.name}`}
-                        onClick={() =>
-                          props.onFavorite({
-                            connectionId: row.connection.id,
-                            logGroup: row.group.name,
-                          })
+                  <Menu.ContextMenu disabled={!selectable(row)}>
+                    <div
+                      className={`resource-row ${row.kind === "stream" ? "stream-row" : ""} explorer-${row.kind}`}
+                      role={
+                        row.kind === "loading" || row.kind === "empty"
+                          ? "presentation"
+                          : "treeitem"
+                      }
+                      id={rowId(item.index)}
+                      aria-label={label}
+                      aria-level={row.level}
+                      aria-expanded={branch ? expanded.has(row.key) : undefined}
+                      aria-selected={
+                        selectable(row) ? selected.has(row.key) : undefined
+                      }
+                      aria-haspopup={selectable(row) ? "menu" : undefined}
+                      onContextMenu={() => {
+                        if (selectable(row)) {
+                          select(row, "context");
+                          setContextKey(row.key);
                         }
-                      >
-                        {favorite(row.connection.id, row.group.name) ? (
-                          <IconStarFilled size={13} />
-                        ) : (
-                          <IconStar size={13} />
-                        )}
-                      </button>
-                      <Menu position="right-start" width={260}>
-                        <Menu.Target>
-                          <button
-                            className="favorite-button"
-                            aria-label={`Details for ${row.group.name}`}
-                          >
-                            <IconInfoCircle size={13} />
-                          </button>
-                        </Menu.Target>
-                        <Menu.Dropdown>
-                          <Menu.Label>Log group details</Menu.Label>
-                          <Text
-                            size="xs"
-                            px="xs"
-                            pb="xs"
-                            style={{ overflowWrap: "anywhere" }}
-                          >
-                            {row.group.name}
-                          </Text>
-                          <Text
-                            size="xs"
-                            c="dimmed"
-                            px="xs"
-                            pb="xs"
-                            style={{ whiteSpace: "pre-line" }}
-                          >
-                            {description(row.group)}
-                          </Text>
-                          <Text size="xs" c="dimmed" px="xs" pb="xs">
-                            {row.connection.name} · {row.connection.region}
-                          </Text>
-                          <Menu.Divider />
-                          <Menu.Item
-                            leftSection={<IconCopy size={13} />}
-                            onClick={() => copy(row.group.name)}
-                          >
-                            Copy group name
-                          </Menu.Item>
-                          {row.group.arn && (
-                            <Menu.Item
-                              leftSection={<IconCopy size={13} />}
-                              onClick={() => copy(row.group.arn!)}
-                            >
-                              Copy ARN
-                            </Menu.Item>
-                          )}
-                        </Menu.Dropdown>
-                      </Menu>
-                    </>
-                  ) : row.kind === "stream" ? (
-                    <>
-                      <ResourceDragLabel
-                        title={row.stream.name}
-                        payload={{
-                          connectionId: row.connection.id,
-                          sources: [
-                            {
-                              logGroup: row.group.name,
-                              logStreams: [row.stream.name],
-                            },
-                          ],
-                        }}
-                        onClick={() => open(row)}
-                        onDoubleClick={() => open(row, "permanent")}
-                      >
-                        <IconList size={13} />
-                        <span>{row.stream.name}</span>
-                      </ResourceDragLabel>
-                      <button
-                        className="favorite-button"
-                        aria-label={`Favorite ${row.stream.name}`}
-                        onClick={() =>
-                          props.onFavorite({
-                            connectionId: row.connection.id,
-                            logGroup: row.group.name,
-                            logStream: row.stream.name,
-                          })
-                        }
-                      >
-                        {favorite(
-                          row.connection.id,
-                          row.group.name,
-                          row.stream.name,
-                        ) ? (
-                          <IconStarFilled size={13} />
-                        ) : (
-                          <IconStar size={13} />
-                        )}
-                      </button>
-                    </>
-                  ) : row.kind === "loading" ? (
-                    <Group gap="xs">
-                      <Loader size={12} />
-                      <Text size="xs" c="dimmed" role="status">
-                        {row.message}
-                      </Text>
-                    </Group>
-                  ) : row.kind === "error-groups" ||
-                    row.kind === "error-streams" ? (
-                    <button
-                      className="tree-more explorer-error"
-                      title={row.message}
-                      onClick={() => open(row)}
+                      }}
+                      data-connection-id={connection?.id}
+                      data-node-kind={row.kind}
+                      style={{ paddingLeft: 8 + (row.level - 1) * 14 }}
                     >
-                      Retry {row.kind === "error-groups" ? "groups" : "streams"}
-                      : {row.message}
-                    </button>
-                  ) : (
-                    <Text size="xs" c="dimmed">
-                      {row.kind === "empty"
-                        ? row.message
-                        : row.kind === "more-groups"
-                          ? "More groups load as you scroll"
-                          : "More streams load as you scroll"}
-                    </Text>
+                      {row.kind === "group" ? (
+                        <>
+                          <button
+                            className="tree-toggle"
+                            aria-label={`Expand ${row.group.name}`}
+                            onClick={() => toggle(row)}
+                          >
+                            {expanded.has(row.key) ? (
+                              <IconChevronDown size={13} />
+                            ) : (
+                              <IconChevronRight size={13} />
+                            )}
+                          </button>
+                          <input
+                            type="checkbox"
+                            aria-label={`Select ${row.group.name}`}
+                            checked={selected.has(row.key)}
+                            onChange={() => {}}
+                            onClick={(event) =>
+                              select(
+                                row,
+                                event.shiftKey
+                                  ? event.ctrlKey || event.metaKey
+                                    ? "add-range"
+                                    : "range"
+                                  : "toggle",
+                              )
+                            }
+                          />
+                          <ResourceDragLabel
+                            title={
+                              row.group.name + "\n" + description(row.group)
+                            }
+                            payload={payloadFor(row)}
+                            onClick={(event) => clickResource(row, event)}
+                            onDoubleClick={() => open(row, "permanent")}
+                          >
+                            <IconFolder size={14} />
+                            <span>{row.group.name}</span>
+                          </ResourceDragLabel>
+                          <Menu position="right-start" width={260}>
+                            <Menu.Target>
+                              <button
+                                className="favorite-button"
+                                aria-label={`Details for ${row.group.name}`}
+                              >
+                                <IconInfoCircle size={13} />
+                              </button>
+                            </Menu.Target>
+                            <Menu.Dropdown>
+                              <Menu.Label>Log group details</Menu.Label>
+                              <Text
+                                size="xs"
+                                px="xs"
+                                pb="xs"
+                                style={{ overflowWrap: "anywhere" }}
+                              >
+                                {row.group.name}
+                              </Text>
+                              <Text
+                                size="xs"
+                                c="dimmed"
+                                px="xs"
+                                pb="xs"
+                                style={{ whiteSpace: "pre-line" }}
+                              >
+                                {description(row.group)}
+                              </Text>
+                              <Text size="xs" c="dimmed" px="xs" pb="xs">
+                                {row.connection.name} · {row.connection.region}
+                              </Text>
+                              <Menu.Divider />
+                              <Menu.Item
+                                leftSection={<IconCopy size={13} />}
+                                onClick={() => copy(row.group.name)}
+                              >
+                                Copy group name
+                              </Menu.Item>
+                              {row.group.arn && (
+                                <Menu.Item
+                                  leftSection={<IconCopy size={13} />}
+                                  onClick={() => copy(row.group.arn!)}
+                                >
+                                  Copy ARN
+                                </Menu.Item>
+                              )}
+                            </Menu.Dropdown>
+                          </Menu>
+                        </>
+                      ) : row.kind === "stream" ? (
+                        <>
+                          <input
+                            type="checkbox"
+                            aria-label={`Select ${row.stream.name}`}
+                            checked={selected.has(row.key)}
+                            onChange={() => {}}
+                            onClick={(event) =>
+                              select(
+                                row,
+                                event.shiftKey
+                                  ? event.ctrlKey || event.metaKey
+                                    ? "add-range"
+                                    : "range"
+                                  : "toggle",
+                              )
+                            }
+                          />
+                          <ResourceDragLabel
+                            title={row.stream.name}
+                            payload={payloadFor(row)}
+                            onClick={(event) => clickResource(row, event)}
+                            onDoubleClick={() => open(row, "permanent")}
+                          >
+                            <IconList size={13} />
+                            <span>{row.stream.name}</span>
+                          </ResourceDragLabel>
+                        </>
+                      ) : row.kind === "loading" ? (
+                        <Group gap="xs">
+                          <Loader size={12} />
+                          <Text size="xs" c="dimmed" role="status">
+                            {row.message}
+                          </Text>
+                        </Group>
+                      ) : row.kind === "error-groups" ||
+                        row.kind === "error-streams" ? (
+                        <button
+                          className="tree-more explorer-error"
+                          title={row.message}
+                          onClick={() => open(row)}
+                        >
+                          Retry{" "}
+                          {row.kind === "error-groups" ? "groups" : "streams"}:{" "}
+                          {row.message}
+                        </button>
+                      ) : (
+                        <Text size="xs" c="dimmed">
+                          {row.kind === "empty"
+                            ? row.message
+                            : row.kind === "more-groups"
+                              ? "More groups load as you scroll"
+                              : "More streams load as you scroll"}
+                        </Text>
+                      )}
+                    </div>
+                  </Menu.ContextMenu>
+                  {selectable(row) && (
+                    <Menu.Dropdown>
+                      <Menu.Label>
+                        {selected.has(row.key) && selectedSources.length > 1
+                          ? `${selectedSources.length} selected resources`
+                          : "Resource actions"}
+                      </Menu.Label>
+                      <Menu.Item
+                        onClick={() => performAction(row, "new-multisource")}
+                      >
+                        Open in new multi-source tab
+                      </Menu.Item>
+                      <Menu.Item
+                        onClick={() => performAction(row, "new-split")}
+                      >
+                        Open in new split tab
+                      </Menu.Item>
+                      <Menu.Divider />
+                      <Menu.Item
+                        disabled={!props.onResourceAction}
+                        onClick={() => performAction(row, "add-sources")}
+                      >
+                        Add sources to current tab
+                      </Menu.Item>
+                      <Menu.Item
+                        disabled={!props.onResourceAction}
+                        onClick={() => performAction(row, "add-splits")}
+                      >
+                        Add splits to current tab
+                      </Menu.Item>
+                    </Menu.Dropdown>
                   )}
-                </div>
+                </Menu>
               </div>
             );
           })}
@@ -733,14 +909,14 @@ export function ExplorerSidebar(props: Props) {
           mb="xs"
           leftSection={<IconPlus size={14} />}
           onClick={() => {
-            const byConnection = new Map<string, LogSource[]>();
-            for (const source of selectedSources)
-              byConnection.set(source.connectionId, [
-                ...(byConnection.get(source.connectionId) ?? []),
-                { logGroup: source.logGroup },
-              ]);
-            for (const [id, sources] of byConnection)
-              props.onOpen(id, sources, "permanent");
+            const payload = selectionPayload(
+              selectedSources,
+              selectedConnection!.id,
+            );
+            if (props.onResourceAction)
+              props.onResourceAction(payload, "new-multisource");
+            else
+              props.onOpen(payload.connectionId, payload.sources, "permanent");
           }}
         >
           Open {selectedSources.length} selected sources
@@ -749,7 +925,8 @@ export function ExplorerSidebar(props: Props) {
       <div className="sidebar-footer">
         <Text size="xs" c="dimmed" id={treeId + "-help"}>
           Arrow keys navigate · Enter previews · Double-click keeps · Space
-          selects
+          selects · Ctrl/Cmd toggles · Shift selects a range · Right-click for
+          actions
         </Text>
         {notice && (
           <Text size="xs" role="status" aria-live="polite">

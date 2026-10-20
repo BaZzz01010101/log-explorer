@@ -1,0 +1,16 @@
+# Explorer drops and mixed-source presentation (0.1.12)
+
+Explorer resource drags reuse the existing projected pane-drop geometry. A drop on the sources control adds sources to that view; a drop on the pane creates a new independent view beside it and creates/extends the active combined tab. Edges choose placement, while the center uses the pane's normal split direction. Hovering another tab reveals its layout without committing a view; cancelling restores the original entry. Preview drafts do not start queries. Invalid/full layouts leave no extra tab. Existing view IDs/configuration and profile/region identity remain intact.
+
+The source control has a prominent `N Sources` label with no frame or shared background. Each badge has its own rounded border and spacing. One source hides the entire control during normal viewing; dragging temporarily reveals it so a second source can still be added. Zero sources retain the empty drop affordance. A whole group counts as one source and individually selected streams each count as one. Split counts sum the source counts of all member panes, including repeated sources in independent views.
+
+Generated multi-source and combined-tab labels use `Mixed Sources (N)`. Explicit user names retain priority. Pane titles and restored views use the same generated-label function. Inactive pane headers get a dedicated theme-aware background that is distinct from event status bars, query tools and active headers; retain normal foreground and button contrast.
+
+- [x] Add regressions for resource projection, counts, labels and hidden single-source controls.
+- [x] Implement atomic resource drops and reuse tab/pane preview mechanisms.
+- [x] Update badges and theme-aware header styling.
+- [ ] Review, test hidden native interactions and colors in both themes/modes, package and verify the normal launch path. Keep evidence under `.tmp`.
+
+Focused verification reproduced the missing single-source visibility and insufficient secondary header contrast before correction. Independent review found two hover lifecycle issues: newly mounted source controls needed shared active-drag state, and hover activation needed to preserve the Explorer connection to keep the drag owner mounted. Both were corrected and the cross-region hover/cancel/source-drop regression passed. Pane titles, region labels and pane numbers meet a 4.5:1 contrast threshold in both themes and JSON/table/hybrid modes; backgrounds differ from event statuses and query controls. Final packaged-suite evidence and handoff status are recorded after verification below.
+
+Final package: all 466 unit/integration tests in 59 files and all 84 hidden desktop cases passed, with zero skipped/flaky cases. Reports: `.tmp/unit-0.1.12-verified.json` and `.tmp/test-results-0.1.12-final-verified/report.json`. Build, formatting, whitespace and artifact hashes passed. The current standard-path app remains running, so the last handoff/path checkbox stays pending: a hidden helper waits for natural exit, retains a backup, promotes the verified copy and queues four hidden path checks. See `.tmp/standard-build-update-0.1.12.json` and `.tmp/final-verification-0.1.12.json`. No AWS, user workspace access, installation or commits.

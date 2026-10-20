@@ -1,7 +1,9 @@
 import { ExplorerSidebar } from "./ExplorerSidebar";
+import type { ResourceActionMode, ResourcePayload } from "../resource-drag";
 import type {
   Connection,
   Favorite,
+  ViewFavorite,
   LogGroup,
   LogSource,
   LogStream,
@@ -13,14 +15,18 @@ interface Props {
   connections: Connection[];
   activeConnectionId: string;
   onConnectionChange?(connectionId: string): void;
-  favorites: Favorite[];
+  onResourceAction?(payload: ResourcePayload, mode: ResourceActionMode): void;
+  favorites: ViewFavorite[];
+  refreshKey?: number;
   recents: Favorite[];
   onOpen(
     connectionId: string,
     sources: LogSource[],
     mode?: "preview" | "permanent",
   ): void;
-  onFavorite(favorite: Favorite): void;
+  onOpenFavorite?(id: string): void;
+  onRemoveFavorite?(id: string): void;
+  onRenameFavorite?(id: string, title: string): void;
   onManage(): void;
 }
 export type ResourceRow =

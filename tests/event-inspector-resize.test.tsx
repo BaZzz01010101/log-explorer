@@ -91,6 +91,20 @@ function divider() {
   });
 }
 
+it("defaults to 30 percent of its event area and follows parent resizing until manually resized", async () => {
+  await mount();
+  expect(divider().props["aria-valuenow"]).toBe(300);
+  await resizeParent(1500);
+  expect(divider().props["aria-valuenow"]).toBe(450);
+  await resizeParent(500);
+  expect(divider().props["aria-valuenow"]).toBe(150);
+  await resizeParent(1000);
+  await act(async () => divider().props.onKeyDown(key("ArrowLeft")));
+  expect(divider().props["aria-valuenow"]).toBe(320);
+  await resizeParent(1500);
+  expect(divider().props["aria-valuenow"]).toBe(320);
+});
+
 function pointer(clientX = 500, pointerId = 7) {
   return {
     pointerId,
@@ -117,10 +131,10 @@ it("exposes a nonmodal inspector with an accessible resize handle and hide actio
   expect(region.props.role).toBe("region");
   expect(region.props["aria-label"]).toBe("Event inspector");
   expect(region.props["data-event-id"]).toBe("event-two");
-  expect(region.props.style.width).toBe(400);
+  expect(region.props.style.width).toBe(300);
   expect(renderer!.root.findAllByProps({ role: "dialog" })).toHaveLength(0);
   expect(divider().props["aria-orientation"]).toBe("vertical");
-  expect(divider().props["aria-valuenow"]).toBe(400);
+  expect(divider().props["aria-valuenow"]).toBe(300);
   expect(divider().props["aria-valuemin"]).toBe(260);
   expect(divider().props["aria-valuemax"]).toBe(860);
   const close = vi.fn();
@@ -140,9 +154,9 @@ it("resizes the right dock live under pointer capture and restores selection on 
   expect(style.userSelect).toBe("none");
   expect(style.cursor).toBe("col-resize");
   await act(async () => divider().props.onPointerMove(pointer(300)));
-  expect(divider().props["aria-valuenow"]).toBe(600);
+  expect(divider().props["aria-valuenow"]).toBe(500);
   await act(async () => divider().props.onPointerUp(pointer(280)));
-  expect(divider().props["aria-valuenow"]).toBe(620);
+  expect(divider().props["aria-valuenow"]).toBe(520);
   expect(target.releasePointerCapture).toHaveBeenCalledWith(7);
   expect(style.userSelect).toBe("text");
   expect(style.cursor).toBe("default");
@@ -152,7 +166,7 @@ it("clamps live dragging to parent bounds and ignores other pointers", async () 
   await mount();
   await act(async () => divider().props.onPointerDown(pointer()));
   await act(async () => divider().props.onPointerMove(pointer(300, 8)));
-  expect(divider().props["aria-valuenow"]).toBe(400);
+  expect(divider().props["aria-valuenow"]).toBe(300);
   await act(async () => divider().props.onPointerMove(pointer(-2000)));
   expect(divider().props["aria-valuenow"]).toBe(860);
   await act(async () => divider().props.onPointerMove(pointer(2000)));
@@ -165,7 +179,7 @@ it.each(["Escape", "pointercancel", "blur", "lostcapture"])(
     await mount();
     await act(async () => divider().props.onPointerDown(pointer()));
     await act(async () => divider().props.onPointerMove(pointer(300)));
-    expect(divider().props["aria-valuenow"]).toBe(600);
+    expect(divider().props["aria-valuenow"]).toBe(500);
     await act(async () => {
       if (reason === "Escape") divider().props.onKeyDown(key("Escape"));
       if (reason === "pointercancel")
@@ -174,7 +188,7 @@ it.each(["Escape", "pointercancel", "blur", "lostcapture"])(
       if (reason === "lostcapture")
         divider().props.onLostPointerCapture(pointer(300));
     });
-    expect(divider().props["aria-valuenow"]).toBe(400);
+    expect(divider().props["aria-valuenow"]).toBe(300);
     expect(style.userSelect).toBe("text");
     expect(style.cursor).toBe("default");
     expect(capture).toBe(false);
@@ -184,9 +198,9 @@ it.each(["Escape", "pointercancel", "blur", "lostcapture"])(
 it("supports keyboard resizing and Home/End bounds", async () => {
   await mount();
   await act(async () => divider().props.onKeyDown(key("ArrowLeft")));
-  expect(divider().props["aria-valuenow"]).toBe(420);
+  expect(divider().props["aria-valuenow"]).toBe(320);
   await act(async () => divider().props.onKeyDown(key("ArrowRight")));
-  expect(divider().props["aria-valuenow"]).toBe(400);
+  expect(divider().props["aria-valuenow"]).toBe(300);
   await act(async () => divider().props.onKeyDown(key("Home")));
   expect(divider().props["aria-valuenow"]).toBe(260);
   await act(async () => divider().props.onKeyDown(key("End")));
@@ -197,15 +211,15 @@ it("retains the chosen width when hidden and restores it after temporary parent 
   await mount();
   await act(async () => divider().props.onKeyDown(key("ArrowLeft")));
   await resizeParent(500);
-  expect(divider().props["aria-valuenow"]).toBe(360);
+  expect(divider().props["aria-valuenow"]).toBe(320);
   await resizeParent(300);
-  expect(divider().props["aria-valuenow"]).toBe(195);
-  expect(divider().props["aria-valuemin"]).toBe(195);
+  expect(divider().props["aria-valuenow"]).toBe(160);
+  expect(divider().props["aria-valuemin"]).toBe(90);
   await act(async () => renderer!.update(content(false)));
   expect(renderer!.root.findAllByType("aside")).toHaveLength(0);
   parentWidth = 1000;
   await act(async () => renderer!.update(content()));
-  expect(divider().props["aria-valuenow"]).toBe(420);
+  expect(divider().props["aria-valuenow"]).toBe(320);
 });
 
 it.each(["hide", "unmount"])(
@@ -227,7 +241,7 @@ it.each(["hide", "unmount"])(
     expect(disconnect).toHaveBeenCalledOnce();
     if (reason === "hide") {
       await act(async () => renderer!.update(content()));
-      expect(divider().props["aria-valuenow"]).toBe(400);
+      expect(divider().props["aria-valuenow"]).toBe(300);
     }
   },
 );

@@ -1,4 +1,4 @@
-import { createContext, useEffect, useState } from "react";
+import { createContext, useEffect, useRef, useState } from "react";
 import type { ColumnConfig, LogEvent, Preferences } from "../shared/contracts";
 import type { EventHighlights } from "./highlight-engine";
 
@@ -9,20 +9,47 @@ export function useEventHighlights(
   events: LogEvent[],
   preferences: Preferences,
   columns: ColumnConfig[],
+  options?: { overview: true; needle: string },
 ) {
+  const overview = options?.overview ?? false;
+  const needle = options?.needle ?? "";
+  const stableEvents = useRef(events);
+  if (
+    events.length !== stableEvents.current.length ||
+    events.some((event, index) => {
+      const previous = stableEvents.current[index];
+      return (
+        !previous ||
+        event.id !== previous.id ||
+        event.message !== previous.message ||
+        event.logGroup !== previous.logGroup ||
+        event.timestamp !== previous.timestamp ||
+        event.logStream !== previous.logStream
+      );
+    })
+  )
+    stableEvents.current = events;
   const config = JSON.stringify([
     preferences.highlightProfiles ?? [],
     preferences.theme,
+    overview,
+    needle,
     preferences.timezone,
-    columns.map(({ path, format, hidden }) => ({ path, format, hidden })),
+    columns.map(({ path, format, hidden }) => ({
+      path,
+      format,
+      hidden,
+    })),
   ]);
-  const ids = JSON.stringify(
-    events.map((event) => [
-      event.id,
-      event.logGroup,
-      event.message.slice(0, 200_000),
-    ]),
-  );
+  const ids = overview
+    ? stableEvents.current
+    : JSON.stringify(
+        events.map((event) => [
+          event.id,
+          event.logGroup,
+          event.message.slice(0, 200_000),
+        ]),
+      );
   const [state, setState] = useState<{
     config: string;
     results: Map<string, EventHighlights>;
@@ -31,6 +58,7 @@ export function useEventHighlights(
   useEffect(() => {
     const profiles = preferences.highlightProfiles ?? [];
     if (
+      !(overview && needle.length > 0 && needle.length <= 200) &&
       !profiles.some(
         (profile) =>
           profile.enabled &&
@@ -63,24 +91,55 @@ export function useEventHighlights(
         ms,
       );
     };
+    const eventIds = new Set(events.map((event) => event.id));
+    let offset = 0;
+    const postBatch = () => {
+      const batch = overview ? events.slice(offset, offset + 100) : events;
+      offset += batch.length;
+      worker.postMessage({
+        events: batch.map((event) => ({
+          ...event,
+          message: event.message.slice(0, 200_000),
+        })),
+        profiles,
+        theme: preferences.theme,
+        columns,
+        timezone: preferences.timezone,
+        overview,
+        needle,
+      });
+    };
     setState((previous) => ({
       config,
       results:
-        previous.config === config
-          ? new Map(
-              [...previous.results].filter(([id]) =>
-                events.some((event) => event.id === id),
-              ),
-            )
+        !overview && previous.config === config
+          ? new Map([...previous.results].filter(([id]) => eventIds.has(id)))
           : new Map(),
     }));
     worker.onmessage = ({ data }) => {
       if (stopped) return;
       if (data.done) {
+        if (overview && offset < events.length) {
+          deadline(500);
+          postBatch();
+          return;
+        }
         stop();
         return;
       }
       deadline(500);
+      if (Array.isArray(data.batch)) {
+        setState((previous) => ({
+          config,
+          results: new Map([
+            ...previous.results,
+            ...data.batch.map(
+              ({ id, result }: { id: string; result: EventHighlights }) =>
+                [id, result] as const,
+            ),
+          ]),
+        }));
+      }
       if (typeof data.id === "string")
         setState((previous) => ({
           config,
@@ -90,16 +149,7 @@ export function useEventHighlights(
     worker.onerror = () =>
       stop("Highlighting is unavailable. Edit a rule to retry.");
     deadline(2000);
-    worker.postMessage({
-      events: events.map((event) => ({
-        ...event,
-        message: event.message.slice(0, 200_000),
-      })),
-      profiles,
-      theme: preferences.theme,
-      columns,
-      timezone: preferences.timezone,
-    });
+    postBatch();
     return () => stop();
     // Serialized keys intentionally avoid restarting for equivalent table/virtualizer arrays.
   }, [config, ids]);

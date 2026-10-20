@@ -46,14 +46,26 @@ const event = {
 };
 let result: ReturnType<typeof useEventHighlights>;
 let renderer: ReactTestRenderer;
-function Probe({ enabled = true }: { enabled?: boolean }) {
+function Probe({
+  enabled = true,
+  overview = false,
+  count = 1,
+}: {
+  enabled?: boolean;
+  overview?: boolean;
+  count?: number;
+}) {
   result = useEventHighlights(
-    [event],
+    Array.from({ length: count }, (_, index) => ({
+      ...event,
+      id: index ? String(index) : event.id,
+    })),
     {
       ...createWorkspace().preferences,
       highlightProfiles: [{ ...profile, enabled }],
     },
     [],
+    overview ? { overview: true, needle: "aaa" } : undefined,
   );
   return null;
 }
@@ -67,6 +79,32 @@ beforeEach(() => {
     if (!String(args[0]).includes("react-test-renderer is deprecated"))
       error(...args);
   });
+});
+it("batches overview work, retains offscreen results and discards stale worker responses", async () => {
+  await act(async () => {
+    renderer = create(<Probe overview count={250} />);
+  });
+  const worker = workers[0];
+  expect(worker.postMessage.mock.calls[0][0].events).toHaveLength(100);
+  await act(async () =>
+    worker.send({
+      batch: [{ id: "one", result: { row: {}, text: {}, overview: ["red"] } }],
+    }),
+  );
+  expect(result.results.get("one")?.overview).toEqual(["red"]);
+  await act(async () => renderer.update(<Probe overview count={250} />));
+  expect(workers).toHaveLength(1);
+  await act(async () => worker.send({ done: true }));
+  expect(worker.terminate).not.toHaveBeenCalled();
+  expect(worker.postMessage.mock.calls[1][0].events).toHaveLength(100);
+  await act(async () => worker.send({ done: true }));
+  expect(worker.postMessage.mock.calls[2][0].events).toHaveLength(50);
+  await act(async () => renderer.update(<Probe enabled={false} />));
+  expect(worker.terminate).toHaveBeenCalledOnce();
+  await act(async () =>
+    worker.send({ batch: [{ id: "one", result: { overview: ["blue"] } }] }),
+  );
+  expect(result.results.size).toBe(0);
 });
 afterEach(async () => {
   await act(async () => renderer?.unmount());

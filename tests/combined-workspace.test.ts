@@ -401,24 +401,26 @@ describe("combined split workspace entries", () => {
     valid(state);
   });
 
-  it("rejects over-capacity merges without losing either entry or its views", () => {
+  it("merges five panes without losing either entry's views", () => {
     let state = combine(views(5), []);
     const ids = state.tabs.map((tab) => tab.id);
     state = combine(state, ids.slice(0, 3));
     const dragged = activeEntryId(state)!;
     state = combine(state, ids.slice(3));
     expect(
-      projectWorkspaceDrop(state, dragged, state.panes[0].id, "top"),
-    ).toBeNull();
-    expect(
-      workspaceReducer(state, {
-        type: "pane/drop-tab",
-        tabId: dragged,
-        paneId: state.panes[0].id,
-        edge: "top",
-      }),
-    ).toBe(state);
-    valid(state);
+      projectWorkspaceDrop(state, dragged, state.panes[0].id, "top")?.panes,
+    ).toHaveLength(5);
+    const merged = workspaceReducer(state, {
+      type: "pane/drop-tab",
+      tabId: dragged,
+      paneId: state.panes[0].id,
+      edge: "top",
+    });
+    expect(merged.panes).toHaveLength(5);
+    expect(merged.tabs.map((tab) => tab.id)).toEqual(
+      state.tabs.map((tab) => tab.id),
+    );
+    valid(merged);
   });
 
   it("swaps pane positions without changing layout proportions, membership or query state", () => {

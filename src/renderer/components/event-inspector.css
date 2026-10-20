@@ -47,10 +47,11 @@
 
 .event-inspector-resizer {
   position: absolute;
-  z-index: 3;
+  z-index: 7;
   top: 0;
   bottom: 0;
-  left: -3px;
+  left: -0.5px;
+  transform: translateX(-50%);
   width: 6px;
   cursor: col-resize;
   touch-action: none;

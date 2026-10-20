@@ -20,6 +20,7 @@ export interface HighlightSpan {
 }
 export interface EventHighlights {
   row: HighlightColors;
+  overview?: string[];
   text: Record<string, HighlightSpan[]>;
 }
 export const textHighlightKey = (path: string, text: string) =>
@@ -50,9 +51,17 @@ export function highlightEvent(
   theme: Preferences["theme"],
   columns: ColumnConfig[],
   timezone: Preferences["timezone"],
+  overviewOnly = false,
+  needle = "",
 ): EventHighlights {
   const result: EventHighlights = { row: {}, text: Object.create(null) };
+  if (overviewOnly) result.overview = [];
   const raw = event.message.slice(0, 200_000);
+  const quickNeedle =
+    needle.length > 0 && needle.length <= 200 ? needle.toLowerCase() : "";
+  let quickMatch = Boolean(
+    quickNeedle && raw.toLowerCase().includes(quickNeedle),
+  );
   const parsed = parseLogMessage(raw);
   const fields = new Map<string, { path: string; text: string }>();
   let budget = 100_000;
@@ -60,45 +69,51 @@ export function highlightEvent(
     if (!text || (!required && (budget -= text.length) < 0)) return;
     fields.set(textHighlightKey(path, text), { path, text });
   };
-  add("@message", raw, true);
-  add("@message", raw.slice(0, 600).replace(/\s+/g, " "), true);
-  add("@message", raw.slice(0, 6000), true);
-  if (parsed.kind === "json") {
-    for (const [path, value] of Object.entries(
-      flattenJson(parsed.value!, { maxFields: 256, maxNodes: 800 }).fields,
-    )) {
-      for (const limit of [500, 4000])
-        add(
-          path,
-          typeof value === "string"
-            ? JSON.stringify(summarizeValue(value, limit))
-            : String(value),
-        );
-    }
-  }
-  for (const column of columns.filter((column) => !column.hidden)) {
-    let path = column.path;
-    let text = formatColumnValue(
-      eventColumnValue(event, parsed, path),
-      column.format,
-      timezone,
-    );
-    if (
-      path === "@message" &&
-      (!column.format || column.format === "auto") &&
-      parsed.kind === "json"
-    ) {
-      for (const candidate of ["/message", "/msg"]) {
-        const value = getPointer(parsed.value, candidate);
-        if (typeof value === "string") {
-          path = candidate;
-          text = summarizeValue(value, 1500);
-          break;
-        }
+  if (!overviewOnly || (quickNeedle && !quickMatch)) {
+    add("@message", raw, true);
+    add("@message", raw.slice(0, 600).replace(/\s+/g, " "), true);
+    add("@message", raw.slice(0, 6000), true);
+    if (parsed.kind === "json") {
+      for (const [path, value] of Object.entries(
+        flattenJson(parsed.value!, { maxFields: 256, maxNodes: 800 }).fields,
+      )) {
+        for (const limit of [500, 4000])
+          add(
+            path,
+            typeof value === "string"
+              ? JSON.stringify(summarizeValue(value, limit))
+              : String(value),
+          );
       }
     }
-    add(path, text);
+    for (const column of columns.filter((column) => !column.hidden)) {
+      let path = column.path;
+      let text = formatColumnValue(
+        eventColumnValue(event, parsed, path),
+        column.format,
+        timezone,
+      );
+      if (
+        path === "@message" &&
+        (!column.format || column.format === "auto") &&
+        parsed.kind === "json"
+      ) {
+        for (const candidate of ["/message", "/msg"]) {
+          const value = getPointer(parsed.value, candidate);
+          if (typeof value === "string") {
+            path = candidate;
+            text = summarizeValue(value, 1500);
+            break;
+          }
+        }
+      }
+      add(path, text);
+    }
   }
+  if (overviewOnly && quickNeedle && !quickMatch)
+    quickMatch = [...fields.values()].some(({ text }) =>
+      text.toLowerCase().includes(quickNeedle),
+    );
   let spanCount = 0;
   for (const profile of profiles) {
     if (!profile.enabled) continue;
@@ -126,6 +141,25 @@ export function highlightEvent(
       }
       if (!matches(regex, search)) continue;
       const colors = ruleColors(rule, theme);
+      if (overviewOnly && rule.target === "text") {
+        regex.lastIndex = 0;
+        let visible = false;
+        for (let count = 0; count < 100; count++) {
+          const match = regex.exec(search);
+          if (!match) break;
+          if (match[0].length) {
+            visible = true;
+            break;
+          }
+          regex.lastIndex +=
+            (search.codePointAt(regex.lastIndex) ?? 0) > 0xffff ? 2 : 1;
+        }
+        if (!visible) continue;
+        const color = colors.background || colors.foreground;
+        if (color && !result.overview!.includes(color))
+          result.overview!.push(color);
+        continue;
+      }
       if (rule.target === "row") {
         result.row.foreground ??= colors.foreground;
         result.row.background ??= colors.background;
@@ -180,6 +214,13 @@ export function highlightEvent(
         }
       }
     }
+  }
+  if (overviewOnly) {
+    const rowColor = result.row.background || result.row.foreground;
+    if (rowColor && !result.overview!.includes(rowColor))
+      result.overview!.unshift(rowColor);
+    if (quickMatch) result.overview!.push("var(--mantine-color-yellow-5)");
+    result.overview = [...new Set(result.overview)].slice(0, 4);
   }
   for (const spans of Object.values(result.text))
     spans.sort((a, b) => a.start - b.start);

@@ -32,12 +32,15 @@ export function buildExplorerRows(
   groups: ReadonlySet<string>,
   cache: Record<string, RegionResources>,
   search: string,
+  regex = false,
 ): ExplorerRow[] {
   if (!connection) return [];
   const rows: ExplorerRow[] = [];
   const cached = ownValue(cache, connection.id);
   const data =
-    cached?.scope === resourceScope(connection, search) ? cached : undefined;
+    cached?.scope === resourceScope(connection, search, regex)
+      ? cached
+      : undefined;
   const state = data?.groups;
   for (const group of state?.items ?? []) {
     const key = groupKey(connection.id, group.name);
@@ -113,7 +116,9 @@ export function buildExplorerRows(
       key: prefix + "-empty",
       level: 1,
       connection,
-      message: "No log groups contain this text.",
+      message: regex
+        ? "No log groups match this expression."
+        : "No log groups contain this text.",
     });
   return rows;
 }
@@ -152,7 +157,7 @@ export function navigateExplorer(
   if (key === " ")
     return {
       index,
-      ...(row.kind === "group"
+      ...(row.kind === "group" || row.kind === "stream"
         ? { action: "select" as const }
         : branch
           ? { action: "toggle" as const }

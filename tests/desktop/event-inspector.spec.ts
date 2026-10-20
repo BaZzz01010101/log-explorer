@@ -175,6 +175,10 @@ async function openInspector(index = 1) {
 }
 
 test("single click selects a row while double click docks an inspector that follows navigation", async () => {
+  await expect(inspector()).toBeVisible();
+  await page
+    .getByRole("button", { name: "Hide event inspector", exact: true })
+    .click();
   const row = rows().nth(1);
   const cell = row.locator(".inspect-cell").first();
   await cell.click();

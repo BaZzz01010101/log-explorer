@@ -8,6 +8,7 @@ import {
 import type { Workspace } from "../src/shared/contracts";
 import { eventColumnValue, parseLogMessage } from "../src/shared/log-data";
 import { workspaceSchema } from "../src/main/security";
+import { MAX_SPLIT_PANES } from "../src/shared/pane-layout";
 
 function expectValid(state: Workspace) {
   const tabs = new Set(state.tabs.map((tab) => tab.id));
@@ -17,7 +18,7 @@ function expectValid(state: Workspace) {
   );
   expect(tabs.size).toBe(state.tabs.length);
   expect(state.panes.length).toBeGreaterThanOrEqual(1);
-  expect(state.panes.length).toBeLessThanOrEqual(4);
+  expect(state.panes.length).toBeLessThanOrEqual(MAX_SPLIT_PANES);
   expect(state.panes.some((pane) => pane.id === state.activePaneId)).toBe(true);
   expect(
     new Set(state.panes.filter((pane) => pane.tabId).map((pane) => pane.tabId))
@@ -97,11 +98,11 @@ describe("workspace state", () => {
     expectValid(state);
   });
 
-  it("caps splits at four, swaps internal views, and closes a member with its pane", () => {
+  it("supports six splits, swaps internal views, and closes a member with its pane", () => {
     let state = createWorkspace();
     for (let index = 0; index < 5; index++)
       state = workspaceReducer(state, { type: "pane/split" });
-    expect(state.panes).toHaveLength(4);
+    expect(state.panes).toHaveLength(6);
     const tabId = state.tabs[0].id;
     const target = state.panes[2].id;
     const previous = state.panes[2].tabId;
@@ -201,12 +202,17 @@ describe("workspace state", () => {
     expect(restoreWorkspace(JSON.parse(JSON.stringify(empty)))).toEqual(empty);
   });
 
-  it("bounds histories, toggles favorites, and cleans up removed connections", () => {
+  it("bounds histories, saves and removes favorite views, and cleans up removed connections", () => {
     let state = createWorkspace();
-    const favorite = { connectionId: "offline", logGroup: "/group" };
-    state = workspaceReducer(state, { type: "favorites/toggle", favorite });
-    expect(state.favorites).toEqual([favorite]);
-    state = workspaceReducer(state, { type: "favorites/toggle", favorite });
+    state = workspaceReducer(state, {
+      type: "favorites/save",
+      tabId: state.tabs[0].id,
+    });
+    expect(state.favorites).toHaveLength(1);
+    state = workspaceReducer(state, {
+      type: "favorites/remove",
+      favoriteId: state.favorites[0].id,
+    });
     expect(state.favorites).toEqual([]);
     for (let i = 0; i < 120; i++)
       state = workspaceReducer(state, {
@@ -411,10 +417,16 @@ describe("workspace state", () => {
       id: "closed-" + index,
     }));
     state.favorites = Array.from({ length: 500 }, (_, index) => ({
+      id: "favorite-" + index,
+      title: "View " + index,
+      connections: [state.connections[0]],
+      tabs: [state.tabs[0]],
+      timezone: "local",
+    }));
+    state.recents = Array.from({ length: 100 }, (_, index) => ({
       connectionId: "offline",
       logGroup: "group-" + index,
     }));
-    state.recents = state.favorites.slice(0, 100);
     state.savedQueries = Array.from({ length: 500 }, (_, index) => ({
       id: "query-" + index,
       name: "q".repeat(256),

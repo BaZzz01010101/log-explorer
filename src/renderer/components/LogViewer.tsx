@@ -40,6 +40,7 @@ import {
   IconFold,
   IconGripVertical,
   IconHighlight,
+  IconLayoutSidebarRight,
   IconPin,
   IconSearch,
   IconTable,
@@ -59,7 +60,10 @@ import {
 import { useVirtualizer } from "@tanstack/react-virtual";
 import type {
   ColumnConfig,
+  Connection,
   LogEvent,
+  LiveState,
+  LogSource,
   Preferences,
   ViewConfig,
 } from "../../shared/contracts";
@@ -81,12 +85,25 @@ import {
   type ParsedMessage,
 } from "../../shared/log-data";
 import "./viewer.css";
+import {
+  serializeSelectedEvents,
+  type SelectedEventCopyFormat,
+} from "../../shared/event-copy";
+import { sourceColumnConfig } from "../source-column";
+import { applyColumnAction } from "../column-actions";
+import {
+  ColumnHeaderMenu,
+  type ColumnHeaderMenuTarget,
+} from "./ColumnHeaderMenu";
+import { eventSourceDisplay, sourceCount } from "../../shared/source-labels";
 import { useColumnHeaderDrag } from "../useColumnHeaderDrag";
 import { useScrollPagination } from "../useScrollPagination";
 import { useMessageExpansion } from "../useMessageExpansion";
 import { HighlightText, MessageContent } from "./EventMessage";
 import { EventInspector } from "./EventInspector";
+import { EventOverview } from "./EventOverview";
 import { EventLoadingIndicator } from "./EventLoadingIndicator";
+import { LevelFilter } from "./LevelFilter";
 import { formatTimestamp } from "../timestamp-format";
 import { useEventSelection } from "../useEventSelection";
 import {
@@ -101,12 +118,20 @@ interface EventRow {
 }
 export interface LogViewerProps {
   events: LogEvent[];
+  sourceContext?: {
+    sources: LogSource[];
+    connections: Connection[];
+    connectionId: string;
+  };
   view: ViewConfig;
   onViewChange: (view: ViewConfig) => void;
   preferences: Preferences;
   onContext?: (event: LogEvent) => void;
   pagination?: { scope: string; pageKey?: string; onLoad(): void };
   loading?: boolean;
+  liveState?: LiveState;
+  followLive?: boolean;
+  onPauseLiveFollow?(): void;
   renderStatus?: (eventsShown: number) => React.ReactNode;
 }
 const levelColor: Record<LogLevel, string> = {
@@ -124,6 +149,7 @@ const columnNames: Record<string, string> = {
   "@message": "Message",
   "@logGroup": "Log group",
   "@logStream": "Log stream",
+  "@source": "Source",
 };
 const initialColumns: ColumnConfig[] = [
   { path: "@timestamp", width: 194, pinned: true },
@@ -186,12 +212,16 @@ interface ColumnResizeSession {
 
 export function LogViewer({
   events,
+  sourceContext,
   view,
   onViewChange,
   preferences,
   onContext,
   pagination,
   loading = false,
+  liveState,
+  followLive = false,
+  onPauseLiveFollow,
   renderStatus,
 }: LogViewerProps) {
   const highlightText = view.highlightText ?? preferences.highlightText;
@@ -210,6 +240,13 @@ export function LogViewer({
   const [notice, setNotice] = useState("");
   const [exporting, setExporting] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [contextPosition, setContextPosition] = useState<{
+    x: number;
+    y: number;
+  } | null>(null);
+  const [columnMenu, setColumnMenu] = useState<ColumnHeaderMenuTarget | null>(
+    null,
+  );
   const [draftSizing, setDraftSizing] = useState<Record<string, number> | null>(
     null,
   );
@@ -220,17 +257,25 @@ export function LogViewer({
   const filteredRows = useMemo(
     () =>
       allRows.filter((row) =>
-        matchesLocalFilter(row.event, row.parsed, localSearch, view.level),
+        matchesLocalFilter(
+          row.event,
+          row.parsed,
+          localSearch,
+          view.levels ?? view.level,
+        ),
       ),
-    [allRows, localSearch, view.level],
+    [allRows, localSearch, view.level, view.levels],
   );
   const config = useMemo(
     () =>
-      (view.columns.length ? view.columns : initialColumns).map((column) => ({
+      sourceColumnConfig(
+        view.columns.length ? view.columns : initialColumns,
+        sourceCount(sourceContext?.sources ?? []) > 1,
+      ).map((column) => ({
         ...column,
         width: Math.min(1400, Math.max(70, column.width || 180)),
       })),
-    [view.columns],
+    [view.columns, sourceContext?.sources],
   );
   const configuredSizing = useMemo(
     () =>
@@ -363,6 +408,19 @@ export function LogViewer({
           const row = context.row.original;
           const value = context.getValue<JsonValue | undefined>();
           const automatic = !column.format || column.format === "auto";
+          if (column.path === "@source" && automatic) {
+            const source = eventSourceDisplay(
+              row.event,
+              sourceContext?.sources ?? [],
+              sourceContext?.connections ?? [],
+              sourceContext?.connectionId ?? "",
+            );
+            return (
+              <span className="event-source-label" title={source.detail}>
+                {source.label}
+              </span>
+            );
+          }
           if (column.path === "@timestamp" && automatic)
             return (
               <span className="event-timestamp">
@@ -416,7 +474,7 @@ export function LogViewer({
           );
         },
       })),
-    [config, preferences.timezone, highlightText],
+    [config, preferences.timezone, highlightText, sourceContext],
   );
   // TanStack's sorted row model resets pagination when sorting changes.
   // Keep its reference stable so that reset cannot schedule another render loop.
@@ -477,6 +535,7 @@ export function LogViewer({
     [rows],
   );
   const selection = useEventSelection(eventIds);
+  const selectedEventIds = new Set(selection.selectedIds);
   const viewerId = useId();
   const virtualizer = useVirtualizer({
     count: rows.length,
@@ -504,6 +563,17 @@ export function LogViewer({
   ]);
   const inspectedIndex = selection.index;
   useLayoutEffect(() => {
+    if (!followLive || liveState !== "streaming" || !rows.length) return;
+    let latest = 0;
+    for (let index = 1; index < rows.length; index++)
+      if (
+        rows[index]!.original.event.timestamp >=
+        rows[latest]!.original.event.timestamp
+      )
+        latest = index;
+    virtualizer.scrollToIndex(latest, { align: "end" });
+  }, [events, rows, followLive, liveState, virtualizer]);
+  useLayoutEffect(() => {
     const scroll = scrollRef.current;
     if (!loading || rows.length === 0 || !scroll) return;
     const indicator = scroll.querySelector('[data-loading-position="more"]');
@@ -525,6 +595,23 @@ export function LogViewer({
     ).values(),
   ];
   const highlighting = useEventHighlights(highlightEvents, preferences, config);
+  const overviewEvents = useMemo(
+    () => allRows.map((row) => row.event),
+    [allRows],
+  );
+  const overview = useEventHighlights(overviewEvents, preferences, config, {
+    overview: true,
+    needle: highlightText,
+  });
+  const overviewRows = useMemo(
+    () =>
+      rows.map(({ original: row }) => ({
+        id: row.event.id,
+        level: row.level,
+        colors: overview.results.get(row.event.id)?.overview ?? [],
+      })),
+    [rows, overview.results],
+  );
   const navigateTo = (index: number) => {
     const row = rows[index];
     if (!row) return;
@@ -561,6 +648,24 @@ export function LogViewer({
       setCopied(true);
       setNotice("Copied to clipboard.");
       setTimeout(() => setCopied(false), 1800);
+    } catch (error) {
+      setNotice(
+        error instanceof Error ? error.message : "Clipboard copy failed.",
+      );
+    }
+  };
+  const copySelected = async (format: SelectedEventCopyFormat = "messages") => {
+    if (filtering || selection.selectedIds.length === 0) return;
+    try {
+      const selected = rows
+        .filter((row) => selectedEventIds.has(row.original.event.id))
+        .map((row) => row.original.event);
+      const columns = [
+        ...table.getLeftVisibleLeafColumns(),
+        ...table.getCenterVisibleLeafColumns(),
+        ...table.getRightVisibleLeafColumns(),
+      ].map((column) => columnPath(column.id));
+      await copy(serializeSelectedEvents(selected, format, columns));
     } catch (error) {
       setNotice(
         error instanceof Error ? error.message : "Clipboard copy failed.",
@@ -646,26 +751,16 @@ export function LogViewer({
             ) : undefined
           }
         />
-        <Select
-          className="level-filter"
-          aria-label="Local level filter"
-          size="xs"
-          data={[
-            "all",
-            "trace",
-            "debug",
-            "info",
-            "warn",
-            "error",
-            "fatal",
-            "unknown",
-          ].map((value) => ({
-            value,
-            label: value === "all" ? "All levels" : value.toUpperCase(),
-          }))}
-          value={view.level || "all"}
-          onChange={(value) => onViewChange({ ...view, level: value ?? "all" })}
-          allowDeselect={false}
+        <LevelFilter
+          level={view.level}
+          levels={view.levels}
+          onChange={(levels) =>
+            onViewChange({
+              ...view,
+              level: levels.length === 1 ? levels[0] : "all",
+              levels,
+            })
+          }
         />
         <Tooltip
           label="Local filter only. Use @/request/id=42 for a property, @/request/id for existence, and quotes for spaces. JSON Pointer preserves dotted keys and arrays."
@@ -756,6 +851,76 @@ export function LogViewer({
             )}
           </ActionIcon>
         </Tooltip>
+        <Button.Group>
+          <Tooltip label="Copy selected raw messages (Ctrl/Cmd+C)">
+            <Button
+              size="xs"
+              variant="default"
+              aria-label="Copy selected messages"
+              disabled={selection.selectedIds.length === 0 || filtering}
+              leftSection={<IconCopy size={14} />}
+              onClick={() => void copySelected("messages")}
+            >
+              {selection.selectedIds.length.toLocaleString()} selected
+            </Button>
+          </Tooltip>
+          <Menu withinPortal transitionProps={{ duration: 0 }}>
+            <Menu.Target>
+              <Button
+                size="xs"
+                variant="default"
+                px={6}
+                aria-label="Copy selected events as"
+                disabled={selection.selectedIds.length === 0 || filtering}
+              >
+                <IconChevronDown size={14} />
+              </Button>
+            </Menu.Target>
+            <Menu.Dropdown onKeyDown={(event) => event.stopPropagation()}>
+              <Menu.Item
+                leftSection={<IconCopy size={14} />}
+                rightSection={
+                  <Text size="xs" c="dimmed">
+                    Ctrl/Cmd+C
+                  </Text>
+                }
+                onClick={() => void copySelected("messages")}
+              >
+                Copy selected messages
+              </Menu.Item>
+              <Menu.Item
+                leftSection={<IconBraces size={14} />}
+                rightSection={
+                  <Text size="xs" c="dimmed">
+                    Ctrl/Cmd+Shift+C
+                  </Text>
+                }
+                onClick={() => void copySelected("records")}
+              >
+                Copy selected records
+              </Menu.Item>
+            </Menu.Dropdown>
+          </Menu>
+        </Button.Group>
+        <Tooltip
+          label={
+            selection.opened ? "Hide event inspector" : "Show event inspector"
+          }
+        >
+          <ActionIcon
+            aria-label={
+              selection.opened ? "Hide event inspector" : "Show event inspector"
+            }
+            aria-pressed={selection.opened}
+            variant={selection.opened ? "light" : "default"}
+            onClick={() => {
+              if (selection.opened) closeInspector();
+              else selection.toggle();
+            }}
+          >
+            <IconLayoutSidebarRight size={16} />
+          </ActionIcon>
+        </Tooltip>
         <Menu position="bottom-end" withinPortal>
           <Menu.Target>
             <Button
@@ -796,6 +961,15 @@ export function LogViewer({
       <div
         className="event-viewer-layout"
         onKeyDown={(event) => {
+          if (columnMenu) {
+            if (event.key === "Escape") {
+              event.preventDefault();
+              event.stopPropagation();
+              columnMenu.origin?.focus({ preventScroll: true });
+              setColumnMenu(null);
+            }
+            return;
+          }
           if (
             event.key === "Escape" &&
             !event.defaultPrevented &&
@@ -807,397 +981,478 @@ export function LogViewer({
           }
         }}
       >
-        <div
-          className="viewer-scroll"
-          ref={scrollRef}
-          role="grid"
-          aria-label="Log events"
-          aria-rowcount={rows.length}
-          aria-activedescendant={
-            selection.index >= 0
-              ? `${viewerId}-event-${selection.index}`
-              : undefined
-          }
-          tabIndex={0}
-          onKeyDown={(event) => {
-            if (event.defaultPrevented) return;
-            const target = event.target as HTMLElement;
-            if (
-              target.closest(
-                'input,textarea,select,[contenteditable="true"]',
-              ) ||
-              (target.closest("button") && !target.closest(".inspect-cell"))
-            )
-              return;
-            const direction = (
-              {
-                ArrowDown: "next",
-                ArrowUp: "previous",
-                Home: "first",
-                End: "last",
-              } as const
-            )[event.key as "ArrowDown" | "ArrowUp" | "Home" | "End"];
-            if (direction) {
-              event.preventDefault();
-              const index = selection.move(direction);
-              if (index >= 0)
-                virtualizer.scrollToIndex(index, { align: "auto" });
-            } else if (event.key === "Enter" && selection.selectedId) {
-              event.preventDefault();
-              selection.inspect(selection.selectedId);
-            } else if (event.key === "Escape" && selection.opened) {
-              event.preventDefault();
-              event.stopPropagation();
-              selection.close();
+        <div className="event-scroll-layout">
+          <div
+            className="viewer-scroll"
+            ref={scrollRef}
+            role="grid"
+            aria-label="Log events"
+            aria-rowcount={rows.length}
+            aria-multiselectable="true"
+            aria-activedescendant={
+              selection.index >= 0
+                ? `${viewerId}-event-${selection.index}`
+                : undefined
             }
-          }}
-        >
-          {rows.length === 0 ? (
-            loading ? (
-              <EventLoadingIndicator position="empty" />
-            ) : (
-              <div className="viewer-empty">
-                <IconSearch size={32} stroke={1.2} />
-                <Text size="sm" fw={600}>
-                  {events.length
-                    ? "No loaded events match this filter"
-                    : "Ready to investigate"}
-                </Text>
-                <Text size="xs" c="dimmed">
-                  {events.length
-                    ? "Clear the local search or choose another level."
-                    : "Choose a log group and run a query to see events here."}
-                </Text>
-                {events.length > 0 && (
-                  <Button
-                    size="xs"
-                    variant="light"
-                    onClick={() =>
-                      onViewChange({ ...view, localSearch: "", level: "all" })
-                    }
-                  >
-                    Clear local filters
-                  </Button>
-                )}
-              </div>
-            )
-          ) : (
-            <>
-              {view.mode !== "json" && (
-                <div
-                  className="log-table-header"
-                  role="row"
-                  onClickCapture={headerDrag.onClickCapture}
-                  style={{
-                    minWidth:
-                      table.getTotalSize() + (view.mode === "hybrid" ? 32 : 0),
-                  }}
-                >
-                  {view.mode === "hybrid" && <div className="hybrid-gutter" />}
-                  {table.getHeaderGroups()[0]?.headers.map((header) => (
-                    <div
-                      className={`log-header-cell ${header.column.getIsPinned() ? "pinned" : ""}${headerDrag.visual?.sourcePath === columnPath(header.id) ? " is-reordering" : ""}${headerDrag.visual?.targetPath === columnPath(header.id) ? ` column-drop-${headerDrag.visual.edge}` : ""}`}
-                      key={header.id}
-                      data-column-path={columnPath(header.id)}
-                      style={{
-                        ...pinStyle(header.column),
-                        ...(header.column.getIsPinned() &&
-                        view.mode === "hybrid"
-                          ? { left: header.column.getStart("left") + 32 }
-                          : {}),
-                      }}
-                      role="columnheader"
-                      aria-sort={
-                        header.column.getIsSorted() === "asc"
-                          ? "ascending"
-                          : header.column.getIsSorted() === "desc"
-                            ? "descending"
-                            : "none"
+            tabIndex={0}
+            onWheel={(event) => {
+              if (event.deltaY) onPauseLiveFollow?.();
+            }}
+            onTouchMove={() => onPauseLiveFollow?.()}
+            onPointerDown={(event) => {
+              const element = event.currentTarget;
+              if (
+                event.target === element &&
+                event.clientX >=
+                  element.getBoundingClientRect().left + element.clientWidth
+              )
+                onPauseLiveFollow?.();
+            }}
+            onContextMenu={(event) => {
+              const target = event.target as HTMLElement;
+              if (
+                target.closest('input,textarea,select,[contenteditable="true"]')
+              )
+                return;
+              const row = target.closest<HTMLElement>("[data-event-id]");
+              const id = row?.dataset.eventId;
+              if (!id) return;
+              event.preventDefault();
+              if (id && !selectedEventIds.has(id)) selection.select(id);
+              setColumnMenu(null);
+              setContextPosition({ x: event.clientX, y: event.clientY });
+            }}
+            onKeyDown={(event) => {
+              if (event.defaultPrevented) return;
+              const target = event.target as HTMLElement;
+              if (
+                target.closest(
+                  'input,textarea,select,[contenteditable="true"]',
+                ) ||
+                (target.closest("button") && !target.closest(".inspect-cell"))
+              )
+                return;
+              if ((event.ctrlKey || event.metaKey) && !event.altKey) {
+                if (event.key.toLowerCase() === "a") {
+                  event.preventDefault();
+                  window.getSelection()?.removeAllRanges();
+                  selection.selectAll();
+                  return;
+                }
+                if (
+                  event.key.toLowerCase() === "c" &&
+                  selection.selectedIds.length > 0 &&
+                  !window.getSelection()?.toString()
+                ) {
+                  event.preventDefault();
+                  void copySelected(event.shiftKey ? "records" : "messages");
+                  return;
+                }
+              }
+              if (
+                event.key === "PageUp" ||
+                event.key === "PageDown" ||
+                event.key === " "
+              )
+                onPauseLiveFollow?.();
+              const direction = (
+                {
+                  ArrowDown: "next",
+                  ArrowUp: "previous",
+                  Home: "first",
+                  End: "last",
+                } as const
+              )[event.key as "ArrowDown" | "ArrowUp" | "Home" | "End"];
+              if (direction) {
+                event.preventDefault();
+                onPauseLiveFollow?.();
+                const index = selection.move(direction, {
+                  range: event.shiftKey,
+                  additive: event.shiftKey && (event.ctrlKey || event.metaKey),
+                });
+                if (index >= 0)
+                  virtualizer.scrollToIndex(index, { align: "auto" });
+              } else if (event.key === "Enter" && selection.selectedId) {
+                event.preventDefault();
+                selection.inspect(selection.selectedId);
+              } else if (event.key === "Escape" && selection.opened) {
+                event.preventDefault();
+                event.stopPropagation();
+                selection.close();
+              }
+            }}
+          >
+            {rows.length === 0 ? (
+              loading ? (
+                <EventLoadingIndicator position="empty" />
+              ) : (
+                <div className="viewer-empty">
+                  <IconSearch size={32} stroke={1.2} />
+                  <Text size="sm" fw={600}>
+                    {events.length
+                      ? "No loaded events match this filter"
+                      : liveState === "streaming"
+                        ? "Waiting for new events"
+                        : liveState === "stopped"
+                          ? "Live stopped"
+                          : "Ready to investigate"}
+                  </Text>
+                  <Text size="xs" c="dimmed">
+                    {events.length
+                      ? "Clear the local search or choose another level."
+                      : liveState === "streaming"
+                        ? "New matching events appear here automatically."
+                        : liveState === "stopped"
+                          ? "Start Live again or run a query to load history."
+                          : "Choose a log group and run a query to see events here."}
+                  </Text>
+                  {events.length > 0 && (
+                    <Button
+                      size="xs"
+                      variant="light"
+                      onClick={() =>
+                        onViewChange({
+                          ...view,
+                          localSearch: "",
+                          level: "all",
+                          levels: undefined,
+                        })
                       }
                     >
-                      <button
-                        className="column-sort"
-                        title={`Sort by ${titleFor(columnPath(header.id))}`}
-                        onClick={header.column.getToggleSortingHandler()}
-                        draggable={false}
-                        onDragStart={(event) => event.preventDefault()}
-                        onPointerDown={(event) => {
-                          finishColumnResize(true);
-                          headerDrag.begin(columnPath(header.id), event);
-                        }}
-                        onPointerMove={headerDrag.move}
-                        onPointerUp={headerDrag.end}
-                        onPointerCancel={headerDrag.cancel}
-                        onLostPointerCapture={headerDrag.cancel}
-                      >
-                        {flexRender(
-                          header.column.columnDef.header,
-                          header.getContext(),
-                        )}
-                        {header.column.getIsPinned() && <IconPin size={11} />}
-                        {header.column.getIsSorted() === "asc" ? (
-                          <IconArrowUp size={12} />
-                        ) : header.column.getIsSorted() === "desc" ? (
-                          <IconArrowDown size={12} />
-                        ) : null}
-                      </button>
-                      <div
-                        className={`column-resizer ${resizeSession.current?.id === header.id ? "resizing" : ""}`}
-                        role="separator"
-                        aria-label={`Resize ${titleFor(columnPath(header.id))}`}
-                        aria-orientation="vertical"
-                        aria-valuemin={70}
-                        aria-valuemax={1400}
-                        aria-valuenow={Math.round(header.getSize())}
-                        tabIndex={0}
-                        draggable={false}
-                        onDragStart={(event) => event.preventDefault()}
-                        onPointerDown={(event) => {
-                          if (!event.isPrimary || event.button !== 0) return;
-                          event.preventDefault();
-                          event.stopPropagation();
-                          headerDrag.cancel();
-                          finishColumnResize(true);
-                          window.getSelection()?.removeAllRanges();
-                          const element = event.currentTarget;
-                          element.setPointerCapture(event.pointerId);
-                          resizeSession.current = {
-                            pointerId: event.pointerId,
-                            element,
-                            path: columnPath(header.id),
-                            id: header.id,
-                            startX: event.clientX,
-                            startWidth: header.getSize(),
-                            width: header.getSize(),
-                          };
-                          document.body.classList.add("resizing-columns");
-                          setDraftSizing({ ...configuredSizing });
-                        }}
-                        onPointerMove={(event) => {
-                          const session = resizeSession.current;
-                          if (!session || event.pointerId !== session.pointerId)
-                            return;
-                          event.preventDefault();
-                          const width = Math.round(
-                            Math.min(
-                              1400,
-                              Math.max(
-                                70,
-                                session.startWidth +
-                                  event.clientX -
-                                  session.startX,
-                              ),
-                            ),
-                          );
-                          if (width === session.width) return;
-                          session.width = width;
-                          setDraftSizing({
-                            ...configuredSizing,
-                            [session.id]: width,
-                          });
-                        }}
-                        onPointerUp={(event) => {
-                          if (
-                            event.pointerId === resizeSession.current?.pointerId
-                          )
-                            finishColumnResize(true);
-                        }}
-                        onPointerCancel={(event) => {
-                          if (
-                            event.pointerId === resizeSession.current?.pointerId
-                          )
-                            finishColumnResize(false);
-                        }}
-                        onLostPointerCapture={(event) => {
-                          if (
-                            event.pointerId === resizeSession.current?.pointerId
-                          )
-                            finishColumnResize(true);
-                        }}
-                        onKeyDown={(event) => {
-                          if (
-                            event.key !== "ArrowLeft" &&
-                            event.key !== "ArrowRight"
-                          )
-                            return;
-                          event.preventDefault();
-                          const width = Math.min(
-                            1400,
-                            Math.max(
-                              70,
-                              header.getSize() +
-                                (event.key === "ArrowRight" ? 10 : -10),
-                            ),
-                          );
-                          applyColumns(
-                            config.map((column) =>
-                              column.path === columnPath(header.id)
-                                ? { ...column, width }
-                                : column,
-                            ),
-                          );
-                        }}
-                        onDoubleClick={() =>
-                          applyColumns(
-                            config.map((column) =>
-                              column.path === columnPath(header.id)
-                                ? {
-                                    ...column,
-                                    width:
-                                      initialColumns.find(
-                                        (entry) => entry.path === column.path,
-                                      )?.width ?? 180,
-                                  }
-                                : column,
-                            ),
-                          )
-                        }
-                      />
-                    </div>
-                  ))}
+                      Clear local filters
+                    </Button>
+                  )}
                 </div>
-              )}
-              <div
-                className="virtual-events"
-                style={{
-                  height: virtualizer.getTotalSize(),
-                  minWidth:
-                    view.mode === "json"
-                      ? undefined
-                      : table.getTotalSize() +
+              )
+            ) : (
+              <>
+                {view.mode !== "json" && (
+                  <div
+                    className="log-table-header"
+                    role="row"
+                    onClickCapture={headerDrag.onClickCapture}
+                    style={{
+                      minWidth:
+                        table.getTotalSize() +
                         (view.mode === "hybrid" ? 32 : 0),
-                }}
-              >
-                {visibleItems.map((virtualRow) => {
-                  const tableRow = rows[virtualRow.index]!;
-                  const row = tableRow.original;
-                  const expanded = expansion.isExpanded(row.event.id);
-                  const highlight = highlighting.results.get(row.event.id);
-                  return (
-                    <EventHighlightContext.Provider
-                      key={tableRow.id}
-                      value={highlight}
-                    >
-                      <div
-                        className={`virtual-event ${view.mode === "json" ? "json-event-card" : "table-event"} level-${row.level}${selection.selectedId === row.event.id ? " event-selected" : ""}`}
-                        key={tableRow.id}
-                        id={`${viewerId}-event-${virtualRow.index}`}
-                        role="row"
-                        aria-selected={selection.selectedId === row.event.id}
-                        data-event-id={row.event.id}
-                        data-selected={selection.selectedId === row.event.id}
-                        data-highlighted={Boolean(
-                          highlight?.row.background ||
-                          highlight?.row.foreground,
-                        )}
-                        onClick={(event) => {
-                          selection.select(row.event.id);
-                          if (
-                            !(event.target as HTMLElement).closest(
-                              "button:not(.inspect-cell),input,select,textarea,a",
+                    }}
+                  >
+                    {view.mode === "hybrid" && (
+                      <div className="hybrid-gutter" />
+                    )}
+                    {table
+                      .getHeaderGroups()[0]
+                      ?.headers.map((header, index, headers) => (
+                        <div
+                          className={`log-header-cell ${header.column.getIsPinned() ? "pinned" : ""}${headerDrag.visual?.sourcePath === columnPath(header.id) ? " is-reordering" : ""}${headerDrag.visual?.targetPath === columnPath(header.id) ? ` column-drop-${headerDrag.visual.edge}` : ""}`}
+                          key={header.id}
+                          data-column-path={columnPath(header.id)}
+                          style={{
+                            ...pinStyle(header.column),
+                            // Keep a pinned header's centered resize handle above
+                            // the next pinned header without covering the rest.
+                            ...(header.column.getIsPinned()
+                              ? { zIndex: headers.length - index + 2 }
+                              : {}),
+                            ...(header.column.getIsPinned() &&
+                            view.mode === "hybrid"
+                              ? { left: header.column.getStart("left") + 32 }
+                              : {}),
+                          }}
+                          role="columnheader"
+                          onContextMenu={(event) => {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            headerDrag.cancel();
+                            finishColumnResize(true);
+                            setContextPosition(null);
+                            setColumnMenu({
+                              path: columnPath(header.id),
+                              origin:
+                                event.currentTarget.querySelector<HTMLElement>(
+                                  ".column-sort",
+                                ) ?? undefined,
+                              x: event.clientX,
+                              y: event.clientY,
+                            });
+                          }}
+                          onKeyDown={(event) => {
+                            if (
+                              event.key !== "ContextMenu" &&
+                              !(event.shiftKey && event.key === "F10")
                             )
-                          )
-                            scrollRef.current?.focus({ preventScroll: true });
-                        }}
-                        onDoubleClick={(event) => {
-                          if (
-                            (event.target as HTMLElement).closest(
-                              "button:not(.inspect-cell),input,select,textarea,a",
-                            )
-                          )
-                            return;
-                          selection.inspect(row.event.id);
-                        }}
-                        data-index={virtualRow.index}
-                        ref={virtualizer.measureElement}
-                        style={
-                          {
-                            "--event-highlight-bg": highlight?.row.background,
-                            "--event-highlight-fg": highlight?.row.foreground,
-                            position: "absolute",
-                            top: 0,
-                            left: 0,
-                            width: "100%",
-                            transform: `translateY(${virtualRow.start}px)`,
-                          } as CSSProperties
-                        }
-                      >
-                        {view.mode === "json" ? (
-                          <>
-                            <div className="json-card-meta">
-                              <button
-                                type="button"
-                                className="event-action expand-event"
-                                aria-label={`${expanded ? "Collapse" : "Expand"} event details`}
-                                aria-expanded={expanded}
-                                onClick={() => toggleExpand(row.event.id)}
-                              >
-                                {expanded ? (
-                                  <IconChevronDown size={13} />
-                                ) : (
-                                  <IconChevronRight size={13} />
-                                )}
-                              </button>
-                              <Badge
-                                size="xs"
-                                color={levelColor[row.level]}
-                                variant="light"
-                              >
-                                {row.level}
-                              </Badge>
-                              <span className="event-timestamp">
-                                {timeLabel(
-                                  row.event.timestamp,
-                                  preferences.timezone,
-                                )}
-                              </span>
-                              <span
-                                className="event-source"
-                                title={`${row.event.logGroup} · ${row.event.logStream}`}
-                              >
-                                {row.event.logStream}
-                              </span>
-                              <span className="toolbar-spacer" />
-                              <button
-                                className="event-inspect"
-                                onClick={() => selection.inspect(row.event.id)}
-                              >
-                                Inspect <IconArrowRight size={12} />
-                              </button>
-                              <button
-                                className="event-action"
-                                aria-label="Copy raw event"
-                                onClick={() => copy(row.event.message)}
-                              >
-                                <IconCopy size={13} />
-                              </button>
-                            </div>
-                            {expanded ? (
-                              <div className="event-message-details">
-                                <MessageContent
-                                  row={row}
-                                  highlight={highlightText}
-                                  compact
-                                  onAddColumn={addColumn}
-                                />
-                              </div>
-                            ) : (
-                              <div className="message-summary">
-                                <HighlightText
-                                  text={row.event.message
-                                    .slice(0, 600)
-                                    .replace(/\s+/g, " ")}
-                                  needle={highlightText}
-                                />
-                              </div>
+                              return;
+                            event.preventDefault();
+                            event.stopPropagation();
+                            const rect =
+                              event.currentTarget.getBoundingClientRect();
+                            setContextPosition(null);
+                            setColumnMenu({
+                              path: columnPath(header.id),
+                              origin:
+                                event.currentTarget.querySelector<HTMLElement>(
+                                  ".column-sort",
+                                ) ?? undefined,
+                              x: rect.left + Math.min(16, rect.width / 2),
+                              y: rect.top + rect.height / 2,
+                            });
+                          }}
+                          aria-sort={
+                            header.column.getIsSorted() === "asc"
+                              ? "ascending"
+                              : header.column.getIsSorted() === "desc"
+                                ? "descending"
+                                : "none"
+                          }
+                        >
+                          <button
+                            className="column-sort"
+                            title={`Sort by ${titleFor(columnPath(header.id))}`}
+                            onClick={header.column.getToggleSortingHandler()}
+                            draggable={false}
+                            onDragStart={(event) => event.preventDefault()}
+                            onPointerDown={(event) => {
+                              finishColumnResize(true);
+                              headerDrag.begin(columnPath(header.id), event);
+                            }}
+                            onPointerMove={headerDrag.move}
+                            onPointerUp={headerDrag.end}
+                            onPointerCancel={headerDrag.cancel}
+                            onLostPointerCapture={headerDrag.cancel}
+                          >
+                            {flexRender(
+                              header.column.columnDef.header,
+                              header.getContext(),
                             )}
-                          </>
-                        ) : (
-                          <>
-                            <div className="log-table-row" role="presentation">
-                              {view.mode === "hybrid" && (
+                            {header.column.getIsPinned() && (
+                              <IconPin size={11} />
+                            )}
+                            {header.column.getIsSorted() === "asc" ? (
+                              <IconArrowUp size={12} />
+                            ) : header.column.getIsSorted() === "desc" ? (
+                              <IconArrowDown size={12} />
+                            ) : null}
+                          </button>
+                          <div
+                            className={`column-resizer ${resizeSession.current?.id === header.id ? "resizing" : ""}`}
+                            role="separator"
+                            aria-label={`Resize ${titleFor(columnPath(header.id))}`}
+                            aria-orientation="vertical"
+                            aria-valuemin={70}
+                            aria-valuemax={1400}
+                            aria-valuenow={Math.round(header.getSize())}
+                            tabIndex={0}
+                            draggable={false}
+                            onDragStart={(event) => event.preventDefault()}
+                            onPointerDown={(event) => {
+                              if (!event.isPrimary || event.button !== 0)
+                                return;
+                              event.preventDefault();
+                              event.stopPropagation();
+                              headerDrag.cancel();
+                              finishColumnResize(true);
+                              window.getSelection()?.removeAllRanges();
+                              const element = event.currentTarget;
+                              element.setPointerCapture(event.pointerId);
+                              resizeSession.current = {
+                                pointerId: event.pointerId,
+                                element,
+                                path: columnPath(header.id),
+                                id: header.id,
+                                startX: event.clientX,
+                                startWidth: header.getSize(),
+                                width: header.getSize(),
+                              };
+                              document.body.classList.add("resizing-columns");
+                              setDraftSizing({ ...configuredSizing });
+                            }}
+                            onPointerMove={(event) => {
+                              const session = resizeSession.current;
+                              if (
+                                !session ||
+                                event.pointerId !== session.pointerId
+                              )
+                                return;
+                              event.preventDefault();
+                              const width = Math.round(
+                                Math.min(
+                                  1400,
+                                  Math.max(
+                                    70,
+                                    session.startWidth +
+                                      event.clientX -
+                                      session.startX,
+                                  ),
+                                ),
+                              );
+                              if (width === session.width) return;
+                              session.width = width;
+                              setDraftSizing({
+                                ...configuredSizing,
+                                [session.id]: width,
+                              });
+                            }}
+                            onPointerUp={(event) => {
+                              if (
+                                event.pointerId ===
+                                resizeSession.current?.pointerId
+                              )
+                                finishColumnResize(true);
+                            }}
+                            onPointerCancel={(event) => {
+                              if (
+                                event.pointerId ===
+                                resizeSession.current?.pointerId
+                              )
+                                finishColumnResize(false);
+                            }}
+                            onLostPointerCapture={(event) => {
+                              if (
+                                event.pointerId ===
+                                resizeSession.current?.pointerId
+                              )
+                                finishColumnResize(true);
+                            }}
+                            onKeyDown={(event) => {
+                              if (
+                                event.key !== "ArrowLeft" &&
+                                event.key !== "ArrowRight"
+                              )
+                                return;
+                              event.preventDefault();
+                              const width = Math.min(
+                                1400,
+                                Math.max(
+                                  70,
+                                  header.getSize() +
+                                    (event.key === "ArrowRight" ? 10 : -10),
+                                ),
+                              );
+                              applyColumns(
+                                config.map((column) =>
+                                  column.path === columnPath(header.id)
+                                    ? { ...column, width }
+                                    : column,
+                                ),
+                              );
+                            }}
+                            onDoubleClick={() =>
+                              applyColumns(
+                                config.map((column) =>
+                                  column.path === columnPath(header.id)
+                                    ? {
+                                        ...column,
+                                        width:
+                                          initialColumns.find(
+                                            (entry) =>
+                                              entry.path === column.path,
+                                          )?.width ?? 180,
+                                      }
+                                    : column,
+                                ),
+                              )
+                            }
+                          />
+                        </div>
+                      ))}
+                  </div>
+                )}
+                <div
+                  className="virtual-events"
+                  style={{
+                    height: virtualizer.getTotalSize(),
+                    minWidth:
+                      view.mode === "json"
+                        ? undefined
+                        : table.getTotalSize() +
+                          (view.mode === "hybrid" ? 32 : 0),
+                  }}
+                >
+                  {visibleItems.map((virtualRow) => {
+                    const tableRow = rows[virtualRow.index]!;
+                    const row = tableRow.original;
+                    const expanded = expansion.isExpanded(row.event.id);
+                    const highlight = highlighting.results.get(row.event.id);
+                    return (
+                      <EventHighlightContext.Provider
+                        key={tableRow.id}
+                        value={highlight}
+                      >
+                        <div
+                          className={`virtual-event ${view.mode === "json" ? "json-event-card" : "table-event"} level-${row.level}${selectedEventIds.has(row.event.id) ? " event-selected" : ""}`}
+                          key={tableRow.id}
+                          id={`${viewerId}-event-${virtualRow.index}`}
+                          role="row"
+                          aria-selected={selectedEventIds.has(row.event.id)}
+                          data-event-id={row.event.id}
+                          data-selected={selectedEventIds.has(row.event.id)}
+                          data-current={selection.selectedId === row.event.id}
+                          data-highlighted={Boolean(
+                            highlight?.row.background ||
+                            highlight?.row.foreground,
+                          )}
+                          onPointerDown={(event) => {
+                            onPauseLiveFollow?.();
+                            if (
+                              event.button === 2 ||
+                              event.ctrlKey ||
+                              event.metaKey ||
+                              event.shiftKey
+                            )
+                              event.preventDefault();
+                          }}
+                          onClick={(event) => {
+                            const textSelection = window.getSelection();
+                            if (
+                              textSelection &&
+                              !textSelection.isCollapsed &&
+                              textSelection.containsNode(
+                                event.currentTarget,
+                                true,
+                              )
+                            )
+                              return;
+                            if (
+                              !(event.target as HTMLElement).closest(
+                                "button:not(.inspect-cell),input,select,textarea,a",
+                              )
+                            ) {
+                              selection.select(row.event.id, {
+                                additive: event.ctrlKey || event.metaKey,
+                                range: event.shiftKey,
+                              });
+                              scrollRef.current?.focus({ preventScroll: true });
+                            }
+                          }}
+                          onDoubleClick={(event) => {
+                            if (
+                              (event.target as HTMLElement).closest(
+                                "button:not(.inspect-cell),input,select,textarea,a",
+                              )
+                            )
+                              return;
+                            selection.inspect(row.event.id);
+                          }}
+                          data-index={virtualRow.index}
+                          ref={virtualizer.measureElement}
+                          style={
+                            {
+                              "--event-highlight-bg": highlight?.row.background,
+                              "--event-highlight-fg": highlight?.row.foreground,
+                              position: "absolute",
+                              top: 0,
+                              left: 0,
+                              width: "100%",
+                              transform: `translateY(${virtualRow.start}px)`,
+                            } as CSSProperties
+                          }
+                        >
+                          {view.mode === "json" ? (
+                            <>
+                              <div className="json-card-meta">
                                 <button
-                                  className="hybrid-gutter expand-event"
+                                  type="button"
+                                  className="event-action expand-event"
                                   aria-label={`${expanded ? "Collapse" : "Expand"} event details`}
                                   aria-expanded={expanded}
                                   onClick={() => toggleExpand(row.event.id)}
@@ -1208,100 +1463,232 @@ export function LogViewer({
                                     <IconChevronRight size={13} />
                                   )}
                                 </button>
-                              )}
-                              {tableRow.getVisibleCells().map((cell) => (
-                                <div
-                                  className={`log-cell ${cell.column.getIsPinned() ? "pinned" : ""}`}
-                                  role="cell"
-                                  key={cell.id}
-                                  style={{
-                                    ...pinStyle(cell.column),
-                                    ...(cell.column.getIsPinned() &&
-                                    view.mode === "hybrid"
-                                      ? {
-                                          left:
-                                            cell.column.getStart("left") + 32,
-                                        }
-                                      : {}),
-                                  }}
+                                <Badge
+                                  size="xs"
+                                  color={levelColor[row.level]}
+                                  variant="light"
                                 >
+                                  {row.level}
+                                </Badge>
+                                <span className="event-timestamp">
+                                  {timeLabel(
+                                    row.event.timestamp,
+                                    preferences.timezone,
+                                  )}
+                                </span>
+                                <span
+                                  className="event-source"
+                                  title={`${row.event.logGroup} · ${row.event.logStream}`}
+                                >
+                                  {row.event.logStream}
+                                </span>
+                                <span className="toolbar-spacer" />
+                                <button
+                                  className="event-inspect"
+                                  onClick={() =>
+                                    selection.inspect(row.event.id)
+                                  }
+                                >
+                                  Inspect <IconArrowRight size={12} />
+                                </button>
+                                <button
+                                  className="event-action"
+                                  aria-label="Copy raw event"
+                                  onClick={() => copy(row.event.message)}
+                                >
+                                  <IconCopy size={13} />
+                                </button>
+                              </div>
+                              {expanded ? (
+                                <div className="event-message-details">
+                                  <MessageContent
+                                    row={row}
+                                    highlight={highlightText}
+                                    compact
+                                    onAddColumn={addColumn}
+                                  />
+                                </div>
+                              ) : (
+                                <div className="message-summary">
+                                  <HighlightText
+                                    text={row.event.message
+                                      .slice(0, 600)
+                                      .replace(/\s+/g, " ")}
+                                    needle={highlightText}
+                                  />
+                                </div>
+                              )}
+                            </>
+                          ) : (
+                            <>
+                              <div
+                                className="log-table-row"
+                                role="presentation"
+                              >
+                                {view.mode === "hybrid" && (
                                   <button
-                                    className="inspect-cell"
-                                    aria-label={`Select event ${row.event.id}`}
-                                    onFocus={() =>
-                                      selection.select(row.event.id)
-                                    }
-                                    onClick={() =>
-                                      selection.select(row.event.id)
-                                    }
+                                    className="hybrid-gutter expand-event"
+                                    aria-label={`${expanded ? "Collapse" : "Expand"} event details`}
+                                    aria-expanded={expanded}
+                                    onClick={() => toggleExpand(row.event.id)}
                                   >
-                                    {flexRender(
-                                      cell.column.columnDef.cell,
-                                      cell.getContext(),
+                                    {expanded ? (
+                                      <IconChevronDown size={13} />
+                                    ) : (
+                                      <IconChevronRight size={13} />
                                     )}
                                   </button>
-                                </div>
-                              ))}
-                            </div>
-                            {expanded && (
-                              <div className="hybrid-detail event-message-details">
-                                <MessageContent
-                                  row={row}
-                                  highlight={highlightText}
-                                  compact
-                                  onAddColumn={addColumn}
-                                />
-                                <Group gap="xs" mt={6}>
-                                  {view.mode === "hybrid" && (
-                                    <Button
-                                      size="compact-xs"
-                                      variant="subtle"
-                                      onClick={() => toggleExpand(row.event.id)}
-                                    >
-                                      Fold message
-                                    </Button>
-                                  )}
-                                  <Button
-                                    size="compact-xs"
-                                    variant="subtle"
-                                    onClick={() =>
-                                      selection.inspect(row.event.id)
-                                    }
+                                )}
+                                {tableRow.getVisibleCells().map((cell) => (
+                                  <div
+                                    className={`log-cell ${cell.column.getIsPinned() ? "pinned" : ""}`}
+                                    role="cell"
+                                    key={cell.id}
+                                    style={{
+                                      ...pinStyle(cell.column),
+                                      ...(cell.column.getIsPinned() &&
+                                      view.mode === "hybrid"
+                                        ? {
+                                            left:
+                                              cell.column.getStart("left") + 32,
+                                          }
+                                        : {}),
+                                    }}
                                   >
-                                    Open inspector
-                                  </Button>
-                                  <Button
-                                    size="compact-xs"
-                                    variant="subtle"
-                                    leftSection={<IconCopy size={12} />}
-                                    onClick={() => copy(row.event.message)}
-                                  >
-                                    Copy raw
-                                  </Button>
-                                  {onContext && (
-                                    <Button
-                                      size="compact-xs"
-                                      variant="subtle"
-                                      onClick={() => onContext(row.event)}
+                                    <div
+                                      tabIndex={0}
+                                      className="inspect-cell"
+                                      aria-label={`Select event ${row.event.id}`}
+                                      onFocus={() =>
+                                        selection.select(row.event.id)
+                                      }
                                     >
-                                      Surrounding context
-                                    </Button>
-                                  )}
-                                </Group>
+                                      {flexRender(
+                                        cell.column.columnDef.cell,
+                                        cell.getContext(),
+                                      )}
+                                    </div>
+                                  </div>
+                                ))}
                               </div>
-                            )}
-                          </>
-                        )}
-                      </div>
-                    </EventHighlightContext.Provider>
-                  );
-                })}
-              </div>
-            </>
-          )}
-          {loading && rows.length > 0 && (
-            <EventLoadingIndicator position="more" />
-          )}
+                              {expanded && (
+                                <div className="hybrid-detail event-message-details">
+                                  <MessageContent
+                                    row={row}
+                                    highlight={highlightText}
+                                    compact
+                                    onAddColumn={addColumn}
+                                  />
+                                  <Group gap="xs" mt={6}>
+                                    {view.mode === "hybrid" && (
+                                      <Button
+                                        size="compact-xs"
+                                        variant="subtle"
+                                        onClick={() =>
+                                          toggleExpand(row.event.id)
+                                        }
+                                      >
+                                        Fold message
+                                      </Button>
+                                    )}
+                                    <Button
+                                      size="compact-xs"
+                                      variant="subtle"
+                                      onClick={() =>
+                                        selection.inspect(row.event.id)
+                                      }
+                                    >
+                                      Open inspector
+                                    </Button>
+                                    <Button
+                                      size="compact-xs"
+                                      variant="subtle"
+                                      leftSection={<IconCopy size={12} />}
+                                      onClick={() => copy(row.event.message)}
+                                    >
+                                      Copy raw
+                                    </Button>
+                                    {onContext && (
+                                      <Button
+                                        size="compact-xs"
+                                        variant="subtle"
+                                        onClick={() => onContext(row.event)}
+                                      >
+                                        Surrounding context
+                                      </Button>
+                                    )}
+                                  </Group>
+                                </div>
+                              )}
+                            </>
+                          )}
+                        </div>
+                      </EventHighlightContext.Provider>
+                    );
+                  })}
+                </div>
+              </>
+            )}
+            {loading && rows.length > 0 && (
+              <EventLoadingIndicator position="more" />
+            )}
+          </div>
+          <Menu
+            withinPortal
+            position="bottom-start"
+            opened={contextPosition !== null}
+            onChange={(opened) => {
+              if (!opened) setContextPosition(null);
+            }}
+            returnFocus={false}
+          >
+            <Menu.Target>
+              <span
+                aria-hidden="true"
+                style={{
+                  position: "fixed",
+                  left: contextPosition?.x ?? 0,
+                  top: contextPosition?.y ?? 0,
+                  width: 0,
+                  height: 0,
+                  pointerEvents: "none",
+                }}
+              />
+            </Menu.Target>
+            <Menu.Dropdown>
+              <Menu.Item
+                leftSection={<IconCopy size={14} />}
+                disabled={selection.selectedIds.length === 0 || filtering}
+                onClick={() => void copySelected("messages")}
+              >
+                Copy selected messages
+              </Menu.Item>
+              <Menu.Item
+                leftSection={<IconBraces size={14} />}
+                disabled={selection.selectedIds.length === 0 || filtering}
+                onClick={() => void copySelected("records")}
+              >
+                Copy selected records
+              </Menu.Item>
+            </Menu.Dropdown>
+          </Menu>
+          <ColumnHeaderMenu
+            target={columnMenu}
+            columns={config}
+            onClose={() => setColumnMenu(null)}
+            onChange={applyColumns}
+          />
+          <EventOverview
+            rows={overviewRows}
+            measurements={virtualizer.measurementsCache}
+            totalSize={virtualizer.getTotalSize()}
+            scrollRef={scrollRef}
+            onNavigate={(index) => {
+              onPauseLiveFollow?.();
+              selection.select(rows[index]!.original.event.id);
+              virtualizer.scrollToIndex(index, { align: "center" });
+            }}
+          />
         </div>
         <EventInspector
           opened={selection.opened}
@@ -1483,9 +1870,9 @@ export function LogViewer({
           </EventHighlightContext.Provider>
         </EventInspector>
       </div>
-      {highlighting.error && (
+      {(highlighting.error || overview.error) && (
         <Text size="xs" c="orange" role="status">
-          {highlighting.error}
+          {highlighting.error || overview.error}
         </Text>
       )}
       {renderStatus?.(rows.length)}
@@ -1581,10 +1968,10 @@ export function LogViewer({
                   variant={column.pinned ? "light" : "subtle"}
                   onClick={() =>
                     applyColumns(
-                      config.map((entry) =>
-                        entry.path === column.path
-                          ? { ...entry, pinned: !entry.pinned }
-                          : entry,
+                      applyColumnAction(
+                        config,
+                        column.path,
+                        column.pinned ? "unpin" : "pin",
                       ),
                     )
                   }
@@ -1619,7 +2006,13 @@ export function LogViewer({
                 }
                 onClick={() =>
                   applyColumns(
-                    config.filter((entry) => entry.path !== column.path),
+                    column.path === "@source"
+                      ? config.map((entry) =>
+                          entry.path === "@source"
+                            ? { ...entry, hidden: true }
+                            : entry,
+                        )
+                      : config.filter((entry) => entry.path !== column.path),
                   )
                 }
               >

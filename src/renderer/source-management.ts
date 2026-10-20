@@ -3,12 +3,13 @@ import { z } from "zod";
 
 export const RESOURCE_MIME = "application/x-aws-log-explorer-resource";
 const source = z.object({
+  connectionId: z.string().min(1).max(160).optional(),
   logGroup: z.string().min(1).max(512),
   logStreams: z.array(z.string().min(1).max(512)).min(1).max(100).optional(),
 });
 const payload = z.object({
-  connectionId: z.string().min(1).max(100),
-  sources: z.array(source).min(1).max(50),
+  connectionId: z.string().min(1).max(160),
+  sources: z.array(source).min(1).max(100),
 });
 export function decodeResourceDrop(
   text: string,
@@ -24,34 +25,42 @@ export function decodeResourceDrop(
 export function mergeSources(
   current: LogSource[],
   added: LogSource[],
+  defaultConnectionId?: string,
+  maxGroups = 50,
 ): LogSource[] {
   const groups = new Map<string, LogSource>();
-  for (const item of [...current, ...added]) {
+  for (const original of [...current, ...added]) {
+    const item = { ...original };
+    if (item.connectionId === defaultConnectionId) delete item.connectionId;
     if (!source.safeParse(item).success)
       throw new Error("Enter a valid group and stream name.");
-    const existing = groups.get(item.logGroup);
+    const key = JSON.stringify([item.connectionId ?? "", item.logGroup]);
+    const existing = groups.get(key);
     if (!existing)
-      groups.set(item.logGroup, {
+      groups.set(key, {
         ...item,
         ...(item.logStreams
           ? { logStreams: [...new Set(item.logStreams)] }
           : {}),
       });
     else if (!existing.logStreams?.length || !item.logStreams?.length)
-      groups.set(item.logGroup, { logGroup: item.logGroup });
+      groups.set(key, {
+        logGroup: item.logGroup,
+        ...(item.connectionId ? { connectionId: item.connectionId } : {}),
+      });
     else {
       const streams = [
         ...new Set([...existing.logStreams, ...item.logStreams]),
       ];
       if (streams.length > 100)
         throw new Error("A group can select at most 100 streams.");
-      groups.set(item.logGroup, {
-        logGroup: item.logGroup,
+      groups.set(key, {
+        ...item,
         logStreams: streams,
       });
     }
   }
-  if (groups.size > 50)
-    throw new Error("A tab can include at most 50 log groups.");
+  if (groups.size > maxGroups)
+    throw new Error(`A tab can include at most ${maxGroups} log groups.`);
   return [...groups.values()];
 }

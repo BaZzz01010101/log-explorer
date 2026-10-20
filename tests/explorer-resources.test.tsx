@@ -18,12 +18,22 @@ function Probe({
   visible = ["east"],
   search = "",
   connections = [east, west],
+  refreshKey = 0,
+  regex = false,
 }: {
   visible?: string[];
   search?: string;
   connections?: Connection[];
+  refreshKey?: number;
+  regex?: boolean;
 }) {
-  result = useExplorerResources(connections, visible, search);
+  result = useExplorerResources(
+    connections,
+    visible,
+    search,
+    refreshKey,
+    regex,
+  );
   return null;
 }
 beforeEach(() => {
@@ -39,12 +49,133 @@ beforeEach(() => {
       error(...args);
   });
 });
+
+it("scans unfiltered pages for regex matches beyond the first page without scrolling", async () => {
+  class RegexWorker {
+    onmessage?: (event: { data: unknown }) => void;
+    onerror?: () => void;
+    constructor() {
+      queueMicrotask(() => this.onmessage?.({ data: { ready: true } }));
+    }
+    postMessage({ pattern, names }: { pattern: string; names: string[] }) {
+      try {
+        const regex = new RegExp(pattern);
+        queueMicrotask(() =>
+          this.onmessage?.({
+            data: {
+              matches: names.flatMap((name, index) =>
+                regex.test(name) ? [index] : [],
+              ),
+            },
+          }),
+        );
+      } catch {
+        queueMicrotask(() =>
+          this.onmessage?.({ data: { error: "Invalid regular expression" } }),
+        );
+      }
+    }
+    terminate() {}
+  }
+  vi.stubGlobal("Worker", RegexWorker);
+  groups.mockImplementation(async (_connection, _search, cursor) =>
+    cursor
+      ? { items: [{ name: "/orders-api" }] }
+      : { items: [{ name: "/unrelated" }], cursor: "next" },
+  );
+  await act(async () => {
+    renderer = create(<Probe search="orders-(api|worker)$" regex />);
+  });
+  expect(groups.mock.calls).toEqual([
+    [east, "", undefined],
+    [east, "", "next"],
+  ]);
+  expect(result.cache.east.groups.items).toEqual([{ name: "/orders-api" }]);
+  expect(result.cache.east.groups.loading).toBe(false);
+  expect(result.cache.east.groups.cursor).toBeUndefined();
+  await act(async () => renderer.update(<Probe search="[" regex />));
+  expect(result.cache.east.groups.error).toContain(
+    "Invalid regular expression",
+  );
+  expect(groups).toHaveBeenCalledTimes(2);
+});
+
+it("restarts an interrupted regex scan when its region becomes visible again", async () => {
+  class RegexWorker {
+    onmessage?: (event: { data: unknown }) => void;
+    constructor() {
+      queueMicrotask(() => this.onmessage?.({ data: { ready: true } }));
+    }
+    postMessage({ names }: { names: string[] }) {
+      queueMicrotask(() =>
+        this.onmessage?.({ data: { matches: names.map((_, index) => index) } }),
+      );
+    }
+    terminate() {}
+  }
+  vi.stubGlobal("Worker", RegexWorker);
+  let finishOld: (value: unknown) => void = () => {};
+  groups
+    .mockResolvedValueOnce({ items: [{ name: "/first" }], cursor: "next" })
+    .mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishOld = resolve;
+        }),
+    )
+    .mockResolvedValue({ items: [{ name: "/fresh" }] });
+  await act(async () => {
+    renderer = create(<Probe search=".*" regex />);
+  });
+  expect(result.cache.east.groups.loading).toBe(true);
+  await act(async () =>
+    renderer.update(<Probe search=".*" regex visible={[]} />),
+  );
+  await act(async () => renderer.update(<Probe search=".*" regex />));
+  expect(groups).toHaveBeenCalledTimes(3);
+  expect(result.cache.east.groups.items).toEqual([{ name: "/fresh" }]);
+  expect(result.cache.east.groups.loading).toBe(false);
+  await act(async () => finishOld({ items: [{ name: "/stale" }] }));
+  expect(result.cache.east.groups.items).toEqual([{ name: "/fresh" }]);
+});
+
+it("retries failed resources after access is enabled and ignores the disabled generation", async () => {
+  groups.mockRejectedValueOnce(new Error("AWS access is disabled"));
+  await act(async () => {
+    renderer = create(<Probe />);
+  });
+  expect(result.cache.east.groups.error).toContain("disabled");
+  groups.mockResolvedValueOnce({ items: [{ name: "/fresh" }] });
+  await act(async () => renderer.update(<Probe refreshKey={1} />));
+  expect(result.cache.east.groups.items).toEqual([{ name: "/fresh" }]);
+  expect(result.cache.east.groups.error).toBeUndefined();
+});
 afterEach(async () => {
   await act(async () => renderer?.unmount());
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
   groups.mockReset();
   streams.mockReset();
+});
+it("sorts stream pages by newest event after merging, leaving streams without events last", async () => {
+  await act(async () => {
+    renderer = create(<Probe />);
+  });
+  streams.mockResolvedValueOnce({
+    items: [{ name: "old", lastEventTime: 1 }, { name: "none" }],
+    cursor: "next",
+  });
+  await act(async () => result.loadStreams("east", "/same"));
+  streams.mockResolvedValueOnce({
+    items: [
+      { name: "new", lastEventTime: 3 },
+      { name: "middle", lastEventTime: 2 },
+    ],
+  });
+  await act(async () => result.loadStreams("east", "/same", true));
+  expect(
+    result.cache.east.streams["/same"].items.map((stream) => stream.name),
+  ).toEqual(["new", "middle", "old", "none"]);
 });
 it("fetches only expanded regions, caches them independently and suppresses repeated opaque cursors", async () => {
   groups.mockImplementation(

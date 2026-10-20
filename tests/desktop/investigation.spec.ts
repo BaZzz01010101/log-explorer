@@ -212,7 +212,8 @@ test("server and local filtering export real selected data and inspector opens s
   await inspector
     .getByRole("button", { name: "Surrounding context", exact: true })
     .click();
-  await expect(inspector).toHaveCount(0);
+  // Context is a new tab, so its inspector follows the default-open behavior.
+  await expect(inspector).toBeVisible();
   await expect(page.getByRole("tab", { name: /^Context ·/ })).toHaveAttribute(
     "aria-selected",
     "true",
@@ -298,31 +299,34 @@ test("Insights recovers after unsupported syntax and aggregates changed sources 
     `${baseline.length} scanned`,
   );
 
-  await page.getByRole("button", { name: "1 source", exact: true }).click();
-  await page
-    .getByRole("menuitem", { name: "Edit sources", exact: true })
-    .click();
-  const sources = page.getByRole("dialog", {
-    name: "Log sources",
+  const resource = page.getByRole("button", {
+    name: "/aws/lambda/payments-worker",
     exact: true,
   });
-  const groups = sources.getByLabel("Log groups, one per line");
-  await sources
-    .getByText("Paste multiple group names", { exact: true })
-    .click();
-  await groups.fill("");
-  await expect(
-    sources.getByRole("button", { name: "Apply sources" }),
-  ).toBeDisabled();
-  await groups.fill("/aws/lambda/orders-api\n/aws/lambda/payments-worker");
-  await sources.getByRole("button", { name: "Apply sources" }).click();
-  await expect(sources).toHaveCount(0);
+  const start = (await resource.boundingBox())!;
+  await page.mouse.move(start.x + start.width / 2, start.y + start.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(
+    start.x + start.width / 2 + 15,
+    start.y + start.height / 2,
+    { steps: 3 },
+  );
+  await expect(page.locator(".source-badges")).toBeVisible();
+  const end = (await page.locator(".source-badges").boundingBox())!;
+  await page.mouse.move(end.x + end.width / 2, end.y + end.height / 2, {
+    steps: 12,
+  });
+  await expect(page.locator(".source-badges")).toHaveClass(
+    /source-drop-active/,
+  );
+  await page.mouse.up();
   await expect(page.locator(".query-status")).toHaveAttribute(
     "data-query-state",
-    "idle",
+    "complete",
   );
-  await expect(page.locator(".query-status")).toContainText("0 loaded");
-  await runQuery();
+  await expect(page.locator(".query-status")).toContainText(
+    `${(baseline.length * 2).toLocaleString()} scanned`,
+  );
   const combined = JSON.parse(
     await exportLoaded("json", "combined"),
   ) as LogEvent[];
@@ -332,8 +336,6 @@ test("Insights recovers after unsupported syntax and aggregates changed sources 
       0,
     ),
   ).toBe(baseline.length * 2);
-  await expect(
-    page.getByRole("button", { name: "2 sources", exact: true }),
-  ).toBeVisible();
+  await expect(page.locator(".source-badge")).toHaveCount(2);
   expect(errors).toEqual([]);
 });

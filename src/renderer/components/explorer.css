@@ -9,18 +9,38 @@
   white-space: nowrap;
   color: var(--mantine-color-red-5);
 }
+.resource-row[aria-selected="true"] {
+  background: color-mix(in srgb, var(--mantine-color-blue-5) 12%, transparent);
+}
+.resource-row input[type="checkbox"] {
+  flex-shrink: 0;
+}
+.explorer-group,
+.explorer-stream {
+  position: relative;
+}
+.explorer-group > .resource-label,
+.explorer-stream > .resource-label {
+  align-self: stretch;
+}
+/* The label owns the row's blank space as well as its text. Dedicated controls
+   stay above this hit area so their click and context behavior is unchanged. */
+.explorer-group > .resource-label::before,
+.explorer-stream > .resource-label::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+}
+.explorer-group > .tree-toggle,
+.explorer-group > input,
+.explorer-stream > input,
+.explorer-group > .favorite-button {
+  position: relative;
+  z-index: 1;
+}
 .configured-region {
   border: 1px solid var(--mantine-color-default-border);
   background: var(--surface-alt);
   border-radius: var(--mantine-radius-sm);
   padding: 7px 10px;
-}
-.advanced-connections {
-  border-top: 1px solid var(--mantine-color-default-border);
-  padding-top: 12px;
-}
-.advanced-connections summary {
-  cursor: pointer;
-  color: var(--mantine-color-dimmed);
-  font-size: 12px;
 }

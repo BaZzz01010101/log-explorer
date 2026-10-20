@@ -32,6 +32,7 @@ import {
   useSortable,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
+import { notifications } from "@mantine/notifications";
 import {
   ActionIcon,
   Button,
@@ -57,19 +58,34 @@ import {
   IconPlus,
   IconRestore,
   IconTerminal2,
+  IconStack2,
+  IconStar,
   IconTrash,
   IconX,
 } from "@tabler/icons-react";
-import type { SplitEdge, TabGroup, Workspace } from "../../shared/contracts";
-import { legacyLayout, nextSplitAxis } from "../../shared/pane-layout";
+import type {
+  LogTab,
+  SplitEdge,
+  TabGroup,
+  Workspace,
+} from "../../shared/contracts";
+import { sourceCount } from "../../shared/source-labels";
+import {
+  legacyLayout,
+  nextSplitAxis,
+  MAX_SPLIT_PANES,
+} from "../../shared/pane-layout";
 import { paneLayoutRect, type LayoutRect } from "../../shared/layout-geometry";
 import {
   createTab,
   projectWorkspaceDrop,
+  projectResourceDrop,
+  projectFavoriteSave,
   type WorkspaceAction,
 } from "../workspace";
 import {
   activeEntryId,
+  logTabLabel,
   workspaceEntries,
   type WorkspaceEntry,
 } from "../workspace-entries";
@@ -91,6 +107,22 @@ const COLORS = [
 ];
 const colorStyle = (color = "blue") =>
   ({ "--group-color": `var(--mantine-color-${color}-5)` }) as CSSProperties;
+
+function saveFavorite(
+  workspace: Workspace,
+  dispatch: Dispatch<WorkspaceAction>,
+  tabId: string,
+) {
+  const result = projectFavoriteSave(workspace, tabId);
+  if (result.error)
+    notifications.show({
+      color: "red",
+      title: "Favorite could not be saved",
+      message: result.error,
+    });
+  else if (result.workspace !== workspace)
+    dispatch({ type: "favorites/save", tabId });
+}
 
 function SortableTab({
   tab,
@@ -149,7 +181,7 @@ function SortableTab({
       {split &&
         members.map((member) => (
           <Text size="xs" key={member.id}>
-            {member.customTitle ?? member.title}
+            {logTabLabel(member)}
           </Text>
         ))}
       {!split &&
@@ -218,6 +250,14 @@ function SortableTab({
           >
             <Tooltip
               label={tooltip}
+              styles={{
+                tooltip: {
+                  background: "var(--mantine-color-body)",
+                  color: "var(--mantine-color-text)",
+                  border: "1px solid var(--mantine-color-default-border)",
+                  boxShadow: "0 4px 16px #0002",
+                },
+              }}
               openDelay={500}
               multiline
               w={330}
@@ -256,15 +296,14 @@ function SortableTab({
                     className="tab-source-icon"
                     data-split-tab-icon
                   />
+                ) : sourceCount(members[0]?.sources ?? []) > 1 ? (
+                  <IconStack2 size={14} className="tab-source-icon" />
                 ) : (
                   <IconTerminal2 size={14} className="tab-source-icon" />
                 )}
                 <span>{tab.title}</span>
                 {!split && members[0]?.kind === "insights" && (
                   <span className="tab-kind">SQL</span>
-                )}
-                {split && (
-                  <span className="tab-member-count">{members.length}</span>
                 )}
               </button>
             </Tooltip>
@@ -298,6 +337,12 @@ function SortableTab({
             Rename tab
           </Menu.Item>
           <Menu.Item
+            leftSection={<IconStar size={14} />}
+            onClick={() => saveFavorite(workspace, dispatch, tab.id)}
+          >
+            Save view to Favorites
+          </Menu.Item>
+          <Menu.Item
             leftSection={<IconCopy size={14} />}
             onClick={() => {
               dispatch({ type: "tab/duplicate", tabId: tab.id });
@@ -308,7 +353,7 @@ function SortableTab({
           </Menu.Item>
           <Menu.Item
             leftSection={<IconLayoutColumns size={14} />}
-            disabled={chosen.length < 2 || chosenMembers.size > 4}
+            disabled={chosen.length < 2 || chosenMembers.size > MAX_SPLIT_PANES}
             onClick={() => {
               dispatch({ type: "pane/show-tabs", tabIds: chosen });
               setSelected([]);
@@ -324,7 +369,7 @@ function SortableTab({
             </Menu.Item>
           ) : (
             <Menu.Item
-              disabled={workspace.panes.length >= 4}
+              disabled={workspace.panes.length >= MAX_SPLIT_PANES}
               onClick={() => dispatch({ type: "pane/split", tabId: tab.id })}
             >
               Move to a new split
@@ -588,11 +633,12 @@ const WorkspaceDragMode = createContext<
   sourceKind: null,
 });
 
-function dragDestination(
+export function dragDestination(
   workspace: Workspace,
   tabId: string,
   point: { x: number; y: number },
   panel = false,
+  resource?: LogTab | LogTab[],
 ): DragDestination {
   const strip = document
     .querySelector(".workspace-tab-list")
@@ -603,7 +649,7 @@ function dragDestination(
         Math.max(strip.top - point.y, 0, point.y - strip.bottom),
       )
     : Infinity;
-  const mode = distance <= 28 ? "reorder" : "placement";
+  const mode = !resource && distance <= 28 ? "reorder" : "placement";
   let placement: DragPlacement | null = null;
   let insertion: DragDestination["insertion"] = null;
   if (
@@ -691,16 +737,28 @@ function dragDestination(
         .querySelector(".pane-layout-root")
         ?.getBoundingClientRect();
       const projected =
-        root && projectWorkspaceDrop(workspace, tabId, paneId, edge);
+        root &&
+        (resource
+          ? projectResourceDrop(workspace, resource, paneId, edge)
+          : projectWorkspaceDrop(workspace, tabId, paneId, edge));
       if (root && projected?.layout && projected !== workspace) {
         const source = workspaceEntries(workspace).find(
           (entry) => entry.id === tabId,
         );
+        const resources = resource
+          ? Array.isArray(resource)
+            ? resource
+            : [resource]
+          : null;
         const rectangles =
-          source?.kind === "split"
+          resources || source?.kind === "split"
             ? projected.panes
                 .filter(
-                  (pane) => pane.tabId && source.tabIds.includes(pane.tabId),
+                  (pane) =>
+                    pane.tabId &&
+                    (resources
+                      ? resources.some((tab) => tab.id === pane.tabId)
+                      : source!.tabIds.includes(pane.tabId)),
                 )
                 .flatMap(
                   (pane) =>
@@ -837,7 +895,10 @@ export function WorkspaceDragSurface({
       return;
     }
     if (source) {
-      if (
+      if (source.kind === "tab" && target?.kind === "view-favorites") {
+        saveFavorite(workspaceRef.current, dispatch, source.tabId);
+        restoreActivation();
+      } else if (
         source.kind === "pane-header" &&
         target?.kind === "tab-strip" &&
         destination.insertion
@@ -935,7 +996,9 @@ export function WorkspaceDragSurface({
                     (source.kind === "pane-header" ? "tab-strip" : "tab")
                   : container.data.current?.kind === "pane" ||
                     (source.kind === "tab" &&
-                      container.data.current?.kind === "group")
+                      ["group", "view-favorites"].includes(
+                        container.data.current?.kind,
+                      ))
                 : container.data.current?.kind === kind,
             );
             const targetArgs = { ...args, droppableContainers: eligible };
@@ -1021,7 +1084,7 @@ export function WorkspaceDragSurface({
                 source = {
                   kind: "pane-header",
                   tabId: tab.id,
-                  title: tab.customTitle ?? tab.title,
+                  title: logTabLabel(tab),
                   entryKind: "single",
                 };
             }
@@ -1291,7 +1354,7 @@ export function WorkspaceTabs({ workspace, dispatch }: Props) {
                   : "Split above and below"
               }
               data-split-axis={splitAxis}
-              disabled={workspace.panes.length >= 4}
+              disabled={workspace.panes.length >= MAX_SPLIT_PANES}
               onClick={() => dispatch({ type: "pane/split" })}
             >
               <SplitIcon size={16} />

@@ -274,26 +274,31 @@ describe("split panel drag projection", () => {
     valid(projected);
   });
 
-  it("rejects an over-capacity cross-split move without extracting the source", () => {
+  it("moves a cross-split panel into a fifth destination pane and dissolves its source", () => {
     let state = views(6);
     const ids = state.tabs.map((tab) => tab.id);
     state = combine(state, ids.slice(0, 2));
     const source = state.panes[0].tabId!;
     state = combine(state, ids.slice(2));
     const before = structuredClone(state);
-    expect(
-      projectWorkspaceDrop(state, source, state.activePaneId, "left"),
-    ).toBeNull();
+    const projected = projectWorkspaceDrop(
+      state,
+      source,
+      state.activePaneId,
+      "left",
+    )!;
+    expect(projected.panes).toHaveLength(5);
+    expect(projected.splitTabs).toHaveLength(1);
     expect(
       workspaceReducer(state, {
         type: "pane/drop-tab",
         tabId: source,
         paneId: state.activePaneId,
         edge: "left",
-      }),
-    ).toEqual(state);
+      }).layout,
+    ).toEqual(projected.layout);
     expect(state).toEqual(before);
-    valid(state);
+    valid(projected);
   });
 });
 

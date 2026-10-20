@@ -12,6 +12,7 @@ import {
   throwIfAborted,
   type LogAdapter,
 } from "./aws-adapter";
+import { createMultiSourceEvents, scopedQueries } from "./multi-source-events";
 import { createOfflineAdapter } from "./offline-adapter";
 
 export interface LogServiceOptions {
@@ -73,8 +74,14 @@ function validateQuery(request: QueryRequest, live: boolean): void {
   if (!request.sources.length || request.sources.length > 50)
     throw new Error("Select between 1 and 50 log groups");
   if (
-    new Set(request.sources.map((source) => source.logGroup)).size !==
-    request.sources.length
+    new Set(
+      request.sources.map((source) =>
+        JSON.stringify([
+          source.connectionId ?? request.connection.id,
+          source.logGroup,
+        ]),
+      ),
+    ).size !== request.sources.length
   )
     throw new Error("Each log group can appear only once in a query");
   if (
@@ -89,6 +96,11 @@ function validateQuery(request: QueryRequest, live: boolean): void {
     );
   if (request.kind === "insights" && !request.query.trim())
     throw new Error("Enter a CloudWatch Logs Insights query");
+  const scoped = scopedQueries(request);
+  if (scoped.length > 1 && (live || request.kind === "insights"))
+    throw new Error(
+      "Live Tail and Insights require sources from one connection and region. Use Events for a combined cross-region view.",
+    );
   if (live && request.cursor)
     throw new Error("Live monitoring cannot use a historical continuation");
 }
@@ -141,6 +153,7 @@ export function createLogService(
     }
     return adapter;
   }
+  const multiSourceEvents = createMultiSourceEvents(adapterFor);
   async function metadata<T extends LogGroup | LogStream>(
     connection: Connection,
     key: string,
@@ -214,7 +227,7 @@ export function createLogService(
   }
   async function schedule(request: QueryRequest, live: boolean): Promise<void> {
     validateQuery(request, live);
-    gate(request.connection);
+    for (const query of scopedQueries(request)) gate(query.connection);
     await cancel(request.requestId);
     if (jobs.size >= 32)
       throw new Error(
@@ -252,13 +265,28 @@ export function createLogService(
           job.controller.signal,
         );
         throwIfAborted(job.controller.signal);
-        gate(input.connection);
+        for (const query of scopedQueries(input)) gate(query.connection);
         update({ requestId: input.requestId, state: "running" });
-        const adapter = adapterFor(input.connection);
-        if (live) await adapter.live(input, job.controller.signal, update);
-        else if (input.kind === "insights")
-          await adapter.insights(input, job.controller.signal, update);
-        else update(await adapter.events(input, job.controller.signal));
+        const queries = scopedQueries(input);
+        if (queries.length > 1) {
+          update(await multiSourceEvents.events(input, job.controller.signal));
+        } else {
+          const query = queries[0];
+          const adapter = adapterFor(query.connection);
+          const scopedUpdate = (value: QueryUpdate) =>
+            update({
+              ...value,
+              events: value.events?.map((event) => ({
+                ...event,
+                connectionId: query.connection.id,
+              })),
+            });
+          if (live)
+            await adapter.live(query, job.controller.signal, scopedUpdate);
+          else if (input.kind === "insights")
+            await adapter.insights(query, job.controller.signal, scopedUpdate);
+          else scopedUpdate(await adapter.events(query, job.controller.signal));
+        }
         if (!job.terminal)
           update({ requestId: input.requestId, state: "complete" });
       } catch (error) {
@@ -350,6 +378,7 @@ export function createLogService(
             failures.push(error);
           }
         }
+        multiSourceEvents.clear();
         adapters.clear();
         cache.clear();
         if (failures.length)

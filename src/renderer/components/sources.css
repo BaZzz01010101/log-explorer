@@ -1,87 +1,80 @@
-.source-editor-columns {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: 20px;
+.source-control {
+  min-width: 120px;
+  max-width: 100%;
+  flex: 1;
 }
-.source-choices {
-  max-height: 150px;
-  min-height: 32px;
-  overflow: auto;
-  border: 1px solid var(--mantine-color-default-border);
-  border-radius: 4px;
-  padding: 4px;
+.source-control[hidden] {
+  display: none;
 }
-.source-choice {
+.source-badges {
   display: flex;
   align-items: center;
-  gap: 6px;
-  width: 100%;
-  padding: 6px;
-  border: 0;
-  border-radius: 3px;
-  background: transparent;
-  color: inherit;
-  text-align: left;
-  cursor: pointer;
-  font-size: 11px;
+  gap: 12px;
+  min-height: 30px;
+  padding: 3px 0;
 }
-.source-choice span {
-  overflow: hidden;
-  text-overflow: ellipsis;
+.source-badge-list {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+.source-strip-label {
+  color: var(--mantine-color-text);
+  font-size: 13px;
+  font-weight: 650;
+  flex-shrink: 0;
   white-space: nowrap;
 }
-.source-choice:hover {
+.source-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  max-width: 240px;
+  padding: 3px 4px 3px 8px;
+  border: 1px solid var(--mantine-color-default-border);
+  border-radius: 7px;
+  font-size: 11px;
   background: var(--mantine-color-default-hover);
 }
-.source-selected-groups {
-  display: grid;
-  gap: 6px;
-  max-height: 260px;
-  overflow: auto;
+.source-badge > span {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
-.source-card-active {
-  border-color: var(--mantine-color-blue-5);
-}
-.source-card-title {
-  display: grid;
-  gap: 4px;
-  flex: 1;
-  min-width: 0;
-  color: inherit;
-  background: transparent;
-  border: 0;
-  cursor: pointer;
-  text-align: left;
-  font-size: 11px;
-  overflow-wrap: anywhere;
-}
-.source-card-title span {
-  color: var(--mantine-color-dimmed);
-}
-.query-pane.source-drop-active {
-  outline: 2px dashed var(--mantine-color-blue-5);
-  outline-offset: -4px;
-}
-.source-drop-message {
-  position: absolute;
-  inset: 12px;
-  z-index: 30;
+.source-badge button {
   display: grid;
   place-items: center;
-  border: 2px dashed var(--mantine-color-blue-5);
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--mantine-color-body) 90%, transparent);
-  color: var(--mantine-color-blue-5);
-  pointer-events: none;
-  font-weight: 600;
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 0;
+  border-radius: 3px;
+  color: var(--mantine-color-dimmed);
+  background: transparent;
+  cursor: pointer;
 }
-@media (max-width: 700px) {
-  .source-editor-columns {
-    grid-template-columns: minmax(0, 1fr);
-  }
+.source-badge button:hover {
+  background: var(--mantine-color-default-border);
+  color: var(--mantine-color-text);
 }
-.query-pane {
-  position: relative;
+.source-badges.source-drop-active {
+  outline: 2px dashed var(--mantine-color-blue-5);
+  outline-offset: -2px;
+  background: var(--mantine-color-blue-light);
+}
+.source-empty {
+  font-size: 11px;
+  color: var(--mantine-color-dimmed);
+  white-space: nowrap;
+}
+.source-error {
+  font-size: 11px;
+  color: var(--mantine-color-red-6);
 }
 .resource-drag-preview {
   position: fixed;

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type {
   Connection,
   QueryRequest,
@@ -11,6 +11,7 @@ import {
   type CloudWatchCommand,
 } from "../src/main/aws-adapter";
 import { createOfflineAdapter } from "../src/main/offline-adapter";
+import { setAwsAccess } from "../src/main/aws-access-toggle";
 
 const offline: Connection = {
   id: "fixture",
@@ -324,6 +325,54 @@ describe("offline log service", () => {
 });
 
 describe("AWS adapter with isolated command transport", () => {
+  it("stops an already authorized Insights query after access is revoked without authorizing new requests", async () => {
+    let enabled = true,
+      constructions = 0;
+    const operations: string[] = [];
+    let polled!: () => void;
+    const polling = new Promise<void>((resolve) => {
+      polled = resolve;
+    });
+    const service = createLogService(() => {}, {
+      allowAws: () => enabled,
+      awsAdapterFactory: (connection) =>
+        createAwsAdapter(connection, {
+          allowAws: () => enabled,
+          transportFactory: async () => {
+            constructions++;
+            return transport(async (command) => {
+              operations.push(command.constructor.name);
+              if (command.constructor.name === "StartQueryCommand")
+                return { queryId: "authorized-query" };
+              if (command.constructor.name === "StopQueryCommand")
+                return { success: true };
+              polled();
+              return { status: "Running", results: [] };
+            });
+          },
+        }),
+    });
+    await service.query(request({ connection: aws, kind: "insights" }));
+    await polling;
+    await expect(
+      setAwsAccess(
+        {
+          setEnabled(value) {
+            enabled = value;
+          },
+        },
+        false,
+        () => service.shutdown(),
+      ),
+    ).resolves.toBeUndefined();
+    expect(operations).toContain("StopQueryCommand");
+    expect(constructions).toBe(1);
+    const count = operations.length;
+    await expect(service.listGroups(aws, "")).rejects.toThrow(/disabled/i);
+    expect(operations).toHaveLength(count);
+    expect(constructions).toBe(1);
+  });
+
   it("denies before constructing any transport, including an already cached connection", async () => {
     let enabled = false;
     let constructions = 0;
@@ -545,6 +594,99 @@ describe("AWS adapter with isolated command transport", () => {
       ),
     ).toBe(true);
     expect(updates.at(-1)?.state).toBe("complete");
+    expect(updates[0]).toMatchObject({ liveState: "streaming" });
+  });
+
+  it("ends a silent Live response with a useful timeout and aborts its transport", async () => {
+    vi.useFakeTimers();
+    try {
+      let ready!: () => void;
+      const reading = new Promise<void>((resolve) => {
+        ready = resolve;
+      });
+      let transportSignal: AbortSignal | undefined;
+      let closed = false;
+      const adapter = createAwsAdapter(aws, {
+        allowAws: () => true,
+        transportFactory: async () =>
+          transport(async (_command, signal) => {
+            transportSignal = signal;
+            return {
+              responseStream: {
+                [Symbol.asyncIterator]() {
+                  return {
+                    next() {
+                      ready();
+                      return new Promise(() => {});
+                    },
+                    async return() {
+                      closed = true;
+                      return { done: true, value: undefined };
+                    },
+                  };
+                },
+              },
+            };
+          }),
+      });
+      const promise = adapter.live(
+        request({
+          connection: aws,
+          sources: [
+            { logGroup: "arn:aws:logs:eu-west-1:000000000000:log-group:group" },
+          ],
+        }),
+        new AbortController().signal,
+        () => {},
+      );
+      const rejected = expect(promise).rejects.toThrow(
+        /Live Tail.*(updates|connection)/i,
+      );
+      await reading;
+      await vi.advanceTimersByTimeAsync(30_001);
+      await rejected;
+      expect(transportSignal?.aborted).toBe(true);
+      expect(closed).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("delivers the complete Live batch so the view buffer can retain the newest events", async () => {
+    async function* stream() {
+      yield {
+        sessionUpdate: {
+          sessionMetadata: { sampled: false },
+          sessionResults: [
+            { timestamp: 1, message: "first" },
+            { timestamp: 2, message: "last" },
+          ],
+        },
+      };
+    }
+    const adapter = createAwsAdapter(aws, {
+      allowAws: () => true,
+      transportFactory: async () =>
+        transport(async () => ({ responseStream: stream() })),
+    });
+    const updates: QueryUpdate[] = [];
+    await adapter.live(
+      request({
+        connection: aws,
+        limit: 1,
+        sources: [
+          { logGroup: "arn:aws:logs:eu-west-1:000000000000:log-group:group" },
+        ],
+      }),
+      new AbortController().signal,
+      (update) => updates.push(update),
+    );
+    expect(
+      updates
+        .flatMap((update) => update.events ?? [])
+        .map((event) => event.message),
+    ).toEqual(["first", "last"]);
+    expect(updates.some((update) => update.truncated)).toBe(false);
   });
 
   it("cancels Live Tail while waiting for the next streamed event and closes its iterator", async () => {

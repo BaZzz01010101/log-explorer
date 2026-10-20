@@ -160,7 +160,7 @@ test("desktop vertical slice stays isolated and supports investigation", async (
   expect(info.awsEnabled).toBe(false);
   expect(info.canEnableAws).toBe(false);
   expect(info.packaged).toBe(process.env.EXPLORER_DESKTOP_PACKAGED === "1");
-  expect(info.version).toBe("0.1.8");
+  expect(info.version).toBe("0.1.21");
   await expect(
     page.evaluate(() => window.explorer.enableAws(true)),
   ).rejects.toThrow(/development/);
@@ -222,7 +222,7 @@ test("desktop vertical slice stays isolated and supports investigation", async (
     "data-query-state",
     "running",
   );
-  await click(page.getByLabel("Cancel query"));
+  await click(page.getByRole("button", { name: "Stop Live", exact: true }));
   await expect(page.locator(".query-status")).toHaveAttribute(
     "data-query-state",
     "cancelled",
@@ -230,9 +230,7 @@ test("desktop vertical slice stays isolated and supports investigation", async (
   await click(
     page.getByRole("button", { name: "Workspace settings", exact: true }),
   );
-  await expect(
-    page.getByLabel("Enable AWS access for this packaged session"),
-  ).toBeDisabled();
+  await expect(page.getByLabel("Enable AWS access")).toBeDisabled();
   await click(page.getByRole("tab", { name: "Preferences", exact: true }));
   await expect(page.getByLabel("Maximum events per view")).toBeVisible();
   await key("Escape");

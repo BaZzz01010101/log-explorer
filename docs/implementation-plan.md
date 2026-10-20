@@ -1,5 +1,57 @@
 # Implementation plan
 
+## Event row selection and hover colors (0.1.21)
+
+Give selection priority over profile row colors, apply a neutral hover tint to all primary row states, and remove the partial outline across pinned cells while preserving expanded details. See [the checklist and verification notes](row-colors-0.1.21.md).
+
+## Live Tail lifecycle and feedback (0.1.20)
+
+Separate connecting/streaming/stopped feedback, preserve matching history, make automatic reception and follow behavior explicit, and verify stop/retry, silent transport and complete batch handling. See [the checklist and verification notes](live-tail-0.1.20.md).
+
+## Highlights editor and event text selection (0.1.19)
+
+Replace vertical rule cards with the compact profile/table/detail layout, preserve highlight behavior, add collapsible live preview and make event text directly selectable. See [the checklist and verification notes](highlights-editor-0.1.19.md).
+
+## Selected event copying and Hybrid previews (0.1.18)
+
+Add message/record copying and keep multiline Hybrid previews compact using [the current checklist](event-copy-0.1.18.md). Verify through isolated hidden desktop tests and update the standard build after the running app exits naturally.
+
+## Divider alignment (0.1.17)
+
+Centered column and inspector resize targets, verified Explorer and both split axes, and preserved the full scrollbar map hit area. See [verification notes](divider-alignment-0.1.17.md).
+
+## Control improvements (0.1.16)
+
+Implement the requested checkbox level selection, column header actions, automatic query-mode refresh, row-only hover and Explorer/badge/icon fixes using [the current checklist](control-improvements-0.1.16.md). Preserve existing saved configurations and hidden offline verification.
+
+## Favorite menus, Source and hover (0.1.14)
+
+- [x] Position favorite context menus beside the pointer, preserving keyboard opening and visibility inside the scrolled favorites list.
+- [x] Add persistent favorite aliases through Rename, retaining snapshots, open tabs and save deduplication.
+- [x] Show a configurable Source column for multiple groups/streams, with shortened names, stream-collision handling and profile/region identity. Retained results use executed request snapshots.
+- [x] Keep selected-row hover tint in JSON/Table/Hybrid, including pinned cells and expanded Hybrid areas, in both themes.
+- [x] Complete 482 unit/integration tests and 21 targeted packaged regressions; retain prior full-suite evidence separately. Package and stage a hash-checked normal-folder update gated on natural app exit.
+
+## Saved views and remembered access (0.1.13)
+
+- [x] Replace group/stream favorites with self-contained snapshots of normal/combined tabs, preserving sources, connection endpoints, time windows, queries and view settings. Migrate legacy favorites.
+- [x] Add tab context-menu save, drag-to-Favorites, independent reopening and right-click removal. Preserve original snapshots and reject capacity overflow atomically with visible feedback.
+- [x] Remove advanced connection settings; retain the friendly profile/region editor. Remember explicit packaged AWS-access choices separately from workspace imports. Refresh Explorer and AWS queries on enabling; keep development and verification hard-offline.
+- [x] Reproduce and fix reviewed deleted-group restoration, failed preference-write revocation and save/open workspace-size overflow cases. Focused desktop flows and 477 unit/integration tests pass.
+- [x] Complete the 88-case packaged suite and visual verification; stage a hash-checked normal-folder handoff gated on natural app exit. All evidence remains in `.tmp`; no real AWS, installation or commits.
+
+## Inspector defaults and proportional overview (0.1.10)
+
+- [x] Open new event viewers with an inspector at 30% of the event area. Keep pointer/keyboard resizing and add a show/hide toggle beside Export.
+- [x] Replace midpoint dots with scaled event-area bands; merge adjacent colors, preserve real gaps and variable heights, and keep dense rendering bounded. Navigate to the event at the clicked part of a band.
+- [x] Match decoded/formatted quick-highlight text in the right overview and keep that lane visible and clickable beside the inspector. Cover regressions with hidden input, geometry and pixel checks, then package and stage a hash-checked normal-folder update for application after natural close. Keep results in `.tmp` and AWS isolated.
+
+## Event scrollbar overview (0.1.9)
+
+- [x] Keep a compact native scrollbar with warning/error/fatal markers on its left and corresponding quick/profile highlight colors on its right. Cover all currently displayed loaded events, including virtualized offscreen rows.
+- [x] Reuse the guarded regex worker for bounded background summaries; cancel stale work and retain responsive scrolling. Aggregate dense markers, follow sorting/filtering and measured row heights, and support clicking markers to jump.
+- [x] Verify unit behavior and trusted hidden desktop interactions in all viewer modes, light/dark themes, inspector/resize and native scrolling. Package and update the standard launch path safely; keep evidence in `.tmp` and AWS isolated.
+
 ## Explorer selectors and quick highlighting (0.1.8)
 
 The user replaced the account/region tree design with explicit dropdown selection. Continue in place, preserving prior view state and AWS isolation. This bounded revision reuses the resource cache, tree interactions, known-region catalog, visibility model and literal highlight renderer.
@@ -74,3 +126,15 @@ The user added this scope after the 0.1.6 checkpoint (406 unit tests and all 65 
 - [x] Cover model/schema migration, disabled state restoration, region metadata and duplicate IDs/endpoints; lazy loading, concurrent region pagination, stale responses and keyboard traversal; settings toggles and natural restart with hidden offline native checks. Run appropriate full regression checks, rebuild versioned 0.1.7 Windows artifacts and record exact results/hashes under `.tmp`.
 
 Review focus: duplicate log-group names must retain their connection identity; collapsing accounts must not fetch their hidden children; disabling a profile must preserve its selected regions and open tabs; profile discovery must remain impossible in development/offline verification; favorites and drops must use the originating region; search/pagination results must not leak between regions.
+
+## Direct source controls (0.1.11)
+
+The user requested replacing staged source editing with removable horizontal badges, limiting drops to that strip, automatic queries, accurate generated titles, multi-region and multi-stream correctness, and newest-first Explorer streams. Follow [the implementation and verification checklist](sources-0.1.11.md). Preserve manual names, view configuration and isolated background verification.
+
+## Explorer pane drops and source presentation (0.1.12)
+
+Extend resource dragging into pane splits while retaining source-strip additions. Use separate badges and a prominent count label, hide the single-source control except during dragging, generate `Mixed Sources (N)` labels across combined panes, and distinguish pane headers from statuses in both themes. Follow [the implementation and verification checklist](explorer-splits-0.1.12.md).
+
+## Explorer selection and larger split views (0.1.15)
+
+Implement the current favorite aliases, regex filtering, fixed dropdown choices, batch resource context/drag actions, larger splits, remembered access and event multi-selection requirements using [the checklist](explorer-selection-0.1.15.md). Preserve previous behavior and verify the integrated application in hidden offline windows.

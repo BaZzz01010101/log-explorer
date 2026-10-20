@@ -1,3 +1,4 @@
+import { sourceIdentity } from "../shared/source-identity";
 import type {
   LogEvent,
   LogTab,
@@ -127,15 +128,14 @@ export function requestMatchesTab(
   request: QueryRequest,
   tab: LogTab,
   connection?: Connection,
+  connections: Connection[] = connection ? [connection] : [],
 ): boolean {
   if (
-    !connection ||
-    request.connection.id !== connection.id ||
-    request.connection.profile !== connection.profile ||
-    request.connection.region !== connection.region ||
-    request.connection.mode !== connection.mode ||
     request.kind !== tab.kind ||
-    JSON.stringify(request.sources) !== JSON.stringify(tab.sources)
+    sourceIdentity(request.connection.id, request.sources, [
+      request.connection,
+      ...(request.connections ?? []),
+    ]) !== sourceIdentity(tab.connectionId, tab.sources, connections)
   )
     return false;
   if (

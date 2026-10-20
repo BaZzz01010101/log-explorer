@@ -1,6 +1,7 @@
 import type {
   Connection,
   Favorite,
+  ViewFavorite,
   LogSource,
   LogTab,
   Pane,
@@ -14,6 +15,8 @@ import type {
   VisualizationPreset,
   Workspace,
 } from "../shared/contracts";
+import { shortStreamId, sourceCount } from "../shared/source-labels";
+import { LOG_LEVELS } from "../shared/log-data";
 import { parseHighlightProfiles } from "../shared/highlights";
 import {
   legacyLayout,
@@ -23,6 +26,8 @@ import {
   resizeLayout,
   mapLayoutIds,
   nextSplitAxis,
+  MAX_SPLIT_PANES,
+  MAX_LAYOUT_DEPTH,
 } from "../shared/pane-layout";
 import {
   activeEntryId,
@@ -31,8 +36,15 @@ import {
   type WorkspaceEntry,
 } from "./workspace-entries";
 import { parseRelativePreset } from "./query-state";
+import { decodeResourceDrop, mergeSources } from "./source-management";
+import type { ResourcePayload, ResourceActionMode } from "./resource-drag";
 
 export type WorkspaceAction =
+  | {
+      type: "resources/apply";
+      payload: ResourcePayload;
+      mode: ResourceActionMode;
+    }
   | { type: "tab/open"; tab: LogTab; paneId?: string }
   | { type: "tab/preview" | "tab/open-resource"; tab: LogTab; paneId?: string }
   | { type: "tab/promote"; tabId: string }
@@ -42,7 +54,12 @@ export type WorkspaceAction =
   | { type: "connection/select"; connectionId: string }
   | { type: "pane/swap"; paneId: string; overPaneId: string }
   | { type: "pane/detach"; tabId: string; beforeTabId: string | null }
-  | { type: "tab/select"; tabId: string; paneId?: string }
+  | {
+      type: "tab/select";
+      tabId: string;
+      paneId?: string;
+      preserveConnection?: boolean;
+    }
   | { type: "tab/update"; tabId: string; patch: Partial<LogTab> }
   | { type: "tab/close"; tabId: string }
   | { type: "tab/reopen" }
@@ -52,6 +69,12 @@ export type WorkspaceAction =
   | {
       type: "pane/drop-tab";
       tabId: string;
+      paneId: string;
+      edge: SplitEdge | null;
+    }
+  | {
+      type: "pane/drop-resource";
+      tab: LogTab | LogTab[];
       paneId: string;
       edge: SplitEdge | null;
     }
@@ -67,7 +90,9 @@ export type WorkspaceAction =
   | { type: "group/reorder"; groupId: string; beforeGroupId: string | null }
   | { type: "connections/set"; connections: Connection[] }
   | { type: "preferences/update"; patch: Partial<Preferences> }
-  | { type: "favorites/toggle"; favorite: Favorite }
+  | { type: "favorites/save"; tabId: string }
+  | { type: "favorites/rename"; favoriteId: string; title: string }
+  | { type: "favorites/open" | "favorites/remove"; favoriteId: string }
   | { type: "recents/add"; favorite: Favorite }
   | { type: "query/save"; query: SavedQuery }
   | { type: "query/remove"; queryId: string }
@@ -176,6 +201,7 @@ function defaultView(): ViewConfig {
     localSearch: "",
     highlightText: "",
     level: "",
+    levels: [...LOG_LEVELS],
     wrap: false,
   };
 }
@@ -219,6 +245,19 @@ function parseView(value: unknown): ViewConfig {
       ? { highlightText: string(raw.highlightText, "", 200) }
       : {}),
     level: string(raw.level, "", 40),
+    levels: Array.isArray(raw.levels)
+      ? [
+          ...new Set(
+            raw.levels.filter(
+              (level): level is string =>
+                typeof level === "string" &&
+                LOG_LEVELS.some((known) => known === level),
+            ),
+          ),
+        ].slice(0, LOG_LEVELS.length)
+      : LOG_LEVELS.some((known) => known === raw.level)
+        ? [String(raw.level)]
+        : [...LOG_LEVELS],
     wrap: raw.wrap === true,
     ...(typeof sort.path === "string"
       ? {
@@ -237,6 +276,9 @@ function parseSources(value: unknown): LogSource[] {
         .filter(Boolean);
       return {
         logGroup: string(raw.logGroup, "", 512),
+        ...(typeof raw.connectionId === "string" && raw.connectionId
+          ? { connectionId: string(raw.connectionId, "", 160) }
+          : {}),
         ...(logStreams.length ? { logStreams: [...new Set(logStreams)] } : {}),
       };
     })
@@ -246,17 +288,22 @@ function parseSources(value: unknown): LogSource[] {
       sources.findIndex(
         (other) =>
           other.logGroup === source.logGroup &&
+          other.connectionId === source.connectionId &&
           JSON.stringify(other.logStreams) ===
             JSON.stringify(source.logStreams),
       ) === index,
   );
 }
 function tabTitle(sources: LogSource[]): string {
+  const count = sourceCount(sources);
+  if (count > 1) return `Mixed Sources (${count})`;
   if (!sources.length) return "Log view";
   const title =
     sources[0].logGroup.split("/").filter(Boolean).at(-1) ||
     sources[0].logGroup;
-  return sources.length > 1 ? title + " +" + (sources.length - 1) : title;
+  const streams = sources[0].logStreams;
+  if (streams?.length === 1) return `${title} Â· ${shortStreamId(streams[0])}`;
+  return streams?.length ? `${title} Â· ${streams.length} streams` : title;
 }
 function baseTab(
   id: string,
@@ -286,7 +333,11 @@ function parseTab(
   const connectionId = string(raw.connectionId, "", 160);
   if (!id || !connections.some((connection) => connection.id === connectionId))
     return null;
-  const sources = parseSources(raw.sources);
+  const sources = parseSources(raw.sources).filter(
+    (source) =>
+      !source.connectionId ||
+      connections.some((connection) => connection.id === source.connectionId),
+  );
   const defaults = baseTab(id, connectionId, sources);
   const groupId = string(raw.groupId, "", 160);
   return {
@@ -479,9 +530,38 @@ function assignPane(
   };
 }
 function cleanLinks(state: Workspace): Workspace {
+  const exists = (id: string) =>
+    state.connections.some((connection) => connection.id === id);
   const validConnection = (tab: LogTab) =>
-    state.connections.some((connection) => connection.id === tab.connectionId);
+    exists(tab.connectionId) ||
+    tab.sources.some(
+      (source) => source.connectionId && exists(source.connectionId),
+    );
   const cleanTab = (tab: LogTab): LogTab => {
+    const sources = tab.sources.filter((source) =>
+      exists(source.connectionId ?? tab.connectionId),
+    );
+    const connectionId = exists(tab.connectionId)
+      ? tab.connectionId
+      : sources[0].connectionId!;
+    if (
+      sources.length !== tab.sources.length ||
+      connectionId !== tab.connectionId
+    ) {
+      tab = {
+        ...tab,
+        connectionId,
+        sources: sources.map((source) =>
+          source.connectionId === connectionId
+            ? {
+                logGroup: source.logGroup,
+                ...(source.logStreams ? { logStreams: source.logStreams } : {}),
+              }
+            : source,
+        ),
+        ...(!tab.customTitle ? { title: tabTitle(sources) } : {}),
+      };
+    }
     if (!tab.groupId || state.groups.some((group) => group.id === tab.groupId))
       return tab;
     const { groupId: _removed, ...rest } = tab;
@@ -498,11 +578,7 @@ function cleanLinks(state: Workspace): Workspace {
     tabs,
     closedTabs,
     panes,
-    favorites: state.favorites.filter((favorite) =>
-      state.connections.some(
-        (connection) => connection.id === favorite.connectionId,
-      ),
-    ),
+    favorites: state.favorites,
     recents: state.recents.filter((favorite) =>
       state.connections.some(
         (connection) => connection.id === favorite.connectionId,
@@ -552,6 +628,277 @@ export function createWorkspace(): Workspace {
   };
 }
 /** Restore only whitelisted configuration; credentials, log data and runtime authorization are never restored. */
+function parseViewFavorite(
+  value: unknown,
+  connections: Connection[],
+  timezone: Preferences["timezone"],
+  index: number,
+): ViewFavorite | null {
+  const raw = record(value);
+  if (typeof raw.logGroup === "string") {
+    const resource = parseFavorite(value, connections);
+    if (!resource) return null;
+    const tab = baseTab("saved-tab-" + (index + 1), resource.connectionId, [
+      {
+        logGroup: resource.logGroup,
+        ...(resource.logStream ? { logStreams: [resource.logStream] } : {}),
+      },
+    ]);
+    return {
+      id: "favorite-" + (index + 1),
+      title: tab.title,
+      tabs: [tab],
+      connections: [
+        structuredClone(
+          connections.find(
+            (connection) => connection.id === resource.connectionId,
+          )!,
+        ),
+      ],
+      timezone,
+    };
+  }
+  const known = unique(
+    list(raw.connections, 50)
+      .map(parseConnection)
+      .filter((value): value is Connection => value !== null),
+  );
+  const tabs = unique(
+    list(raw.tabs, MAX_SPLIT_PANES + 1)
+      .map((tab) => parseTab(tab, known, []))
+      .filter((value): value is LogTab => value !== null),
+  );
+  const id = string(raw.id, "", 160),
+    title = string(raw.title, "", 512);
+  if (!id || !title || !tabs.length || !known.length) return null;
+  const splitRaw = record(raw.split);
+  let split: SplitTab | undefined;
+  if (Object.keys(splitRaw).length) {
+    const panes = unique(
+      list(splitRaw.panes, MAX_SPLIT_PANES + 1).map((value) => {
+        const pane = record(value);
+        return {
+          id: string(pane.id, "", 160),
+          tabId: string(pane.tabId, "", 160),
+        };
+      }),
+    );
+    const members = new Set(panes.map((pane) => pane.tabId)),
+      layout = normalizeLayout(
+        splitRaw.layout,
+        panes.map((pane) => pane.id),
+      );
+    if (
+      !layout ||
+      panes.length < 2 ||
+      panes.length !== tabs.length ||
+      members.size !== tabs.length ||
+      tabs.some((tab) => !members.has(tab.id))
+    )
+      return null;
+    const active = string(splitRaw.activePaneId);
+    split = {
+      id: string(splitRaw.id, "saved-split", 160),
+      panes,
+      layout,
+      activePaneId: panes.some((pane) => pane.id === active)
+        ? active
+        : panes[0].id,
+      ...(typeof splitRaw.title === "string"
+        ? { title: string(splitRaw.title, "", 512) }
+        : {}),
+    };
+  } else if (tabs.length !== 1) return null;
+  return {
+    id,
+    title,
+    tabs,
+    connections: known,
+    ...(split ? { split } : {}),
+    timezone: raw.timezone === "utc" ? "utc" : "local",
+  };
+}
+
+/** Capture configuration, including connection identity, without retaining log payloads. */
+export function captureViewFavorite(
+  input: Workspace,
+  tabId: string,
+): ViewFavorite | null {
+  const state = modelState(input),
+    entry = workspaceEntries(state).find((entry) => entry.id === tabId);
+  if (!entry) return null;
+  const tabs = entry.tabIds.map((id) =>
+    structuredClone(state.tabs.find((tab) => tab.id === id)!),
+  );
+  const referenced = new Set(
+    tabs.flatMap((tab) => [
+      tab.connectionId,
+      ...tab.sources.map((source) => source.connectionId ?? tab.connectionId),
+    ]),
+  );
+  const split = state.splitTabs?.find((split) => split.id === entry.id);
+  return {
+    id: nextId("favorite", state.favorites),
+    title: entry.title || "Log view",
+    tabs,
+    connections: structuredClone(
+      state.connections.filter((connection) => referenced.has(connection.id)),
+    ),
+    ...(split ? { split: structuredClone(split) } : {}),
+    timezone: state.preferences.timezone,
+  };
+}
+
+export function projectFavoriteSave(
+  input: Workspace,
+  tabId: string,
+): { workspace: Workspace; error?: string } {
+  const state = modelState(input),
+    favorite = captureViewFavorite(state, tabId);
+  if (!favorite) return { workspace: input };
+  const { id: _id, title: _title, ...snapshot } = favorite;
+  if (
+    state.favorites.some(
+      ({ id: _savedId, title: _savedTitle, ...saved }) =>
+        JSON.stringify(saved) === JSON.stringify(snapshot),
+    )
+  )
+    return { workspace: input };
+  if (state.favorites.length >= 500)
+    return {
+      workspace: input,
+      error:
+        "The workspace can hold up to 500 saved views. Remove an unused favorite and try again.",
+    };
+  const next = {
+    ...state,
+    favorites: [...state.favorites, favorite],
+  };
+  if (
+    new TextEncoder().encode(JSON.stringify(next, null, 2)).byteLength >
+    5_000_000
+  )
+    return {
+      workspace: input,
+      error:
+        "Saving this view would exceed the 5 MB workspace limit. Remove unused favorites and try again.",
+    };
+  return { workspace: next };
+}
+
+function openViewFavorite(input: Workspace, favorite: ViewFavorite): Workspace {
+  const state = modelState(input);
+  if (state.tabs.length + favorite.tabs.length > 100) return input;
+  const connections = [...state.connections],
+    connectionIds = new Map<string, string>();
+  for (const saved of favorite.connections) {
+    let connection = connections.find(
+      (connection) =>
+        connection.mode === saved.mode &&
+        connection.profile === saved.profile &&
+        connection.region === saved.region,
+    );
+    if (!connection) {
+      if (connections.length >= 50) return input;
+      connection = {
+        ...saved,
+        id: connections.some((connection) => connection.id === saved.id)
+          ? nextId("connection", connections)
+          : saved.id,
+      };
+      connections.push(connection);
+    }
+    connectionIds.set(saved.id, connection.id);
+  }
+  const tabs = [...state.tabs],
+    tabIds = new Map<string, string>();
+  for (const saved of favorite.tabs) {
+    const copy = parseTab(
+      {
+        ...structuredClone(saved),
+        id: nextId("tab", entryIdentities(state, tabs)),
+        preview: false,
+        ...(!favorite.split ? { customTitle: favorite.title } : {}),
+        connectionId: connectionIds.get(saved.connectionId),
+        sources: saved.sources.map((source) => ({
+          ...source,
+          ...(source.connectionId
+            ? { connectionId: connectionIds.get(source.connectionId) }
+            : {}),
+        })),
+      },
+      connections,
+      state.groups,
+    );
+    if (!copy) return input;
+    tabs.push(copy);
+    tabIds.set(saved.id, copy.id);
+  }
+  const id = favorite.split
+    ? nextId("split", entryIdentities(state, tabs))
+    : tabIds.get(favorite.tabs[0].id)!;
+  const savedSplit = favorite.split ? { ...favorite.split } : undefined;
+  if (
+    savedSplit?.groupId &&
+    !state.groups.some((group) => group.id === savedSplit.groupId)
+  )
+    delete savedSplit.groupId;
+  const split = savedSplit
+    ? {
+        ...structuredClone(savedSplit),
+        title: favorite.title,
+        id,
+        panes: savedSplit.panes.map((pane) => ({
+          ...pane,
+          tabId: tabIds.get(pane.tabId!)!,
+        })),
+      }
+    : undefined;
+  return orderedFlatTabs(
+    projectEntry(
+      {
+        ...state,
+        connections,
+        tabs,
+        splitTabs: split
+          ? [...(state.splitTabs ?? []), split]
+          : state.splitTabs,
+        tabOrder: [...(state.tabOrder ?? []), id],
+        preferences: { ...state.preferences, timezone: favorite.timezone },
+      },
+      id,
+      true,
+    ),
+  );
+}
+
+export function projectFavoriteOpen(
+  input: Workspace,
+  favoriteId: string,
+): { workspace: Workspace; error?: string } {
+  const favorite = input.favorites.find(
+    (favorite) => favorite.id === favoriteId,
+  );
+  if (!favorite) return { workspace: input };
+  const next = openViewFavorite(input, favorite);
+  if (next === input)
+    return {
+      workspace: input,
+      error:
+        "This view cannot be opened within the workspace tab or connection limits. Close unused tabs or remove unused connections and try again.",
+    };
+  if (
+    new TextEncoder().encode(JSON.stringify(next, null, 2)).byteLength >
+    5_000_000
+  )
+    return {
+      workspace: input,
+      error:
+        "Opening this view would exceed the 5 MB workspace limit. Close unused tabs or remove unused favorites and try again.",
+    };
+  return { workspace: next };
+}
+
 export function restoreWorkspace(value: unknown): Workspace {
   const raw = record(value);
   const defaults = createWorkspace();
@@ -588,7 +935,7 @@ export function restoreWorkspace(value: unknown): Workspace {
     });
   const shown = new Set<string>();
   const panes: Pane[] = unique(
-    list(raw.panes, 4).map((value, index) => {
+    list(raw.panes, MAX_SPLIT_PANES).map((value, index) => {
       const pane = record(value);
       const tabId = string(pane.tabId, "", 160);
       const usable = tabs.some((tab) => tab.id === tabId) && !shown.has(tabId);
@@ -632,7 +979,18 @@ export function restoreWorkspace(value: unknown): Workspace {
         panes.map((pane) => pane.id),
         parseSplitSizes(raw.splitSizes),
       ),
-    favorites: favorites(raw.favorites, 500),
+    favorites: unique(
+      list(raw.favorites, 500)
+        .map((value, index) =>
+          parseViewFavorite(
+            value,
+            connections,
+            parsePreferences(raw.preferences).timezone,
+            index,
+          ),
+        )
+        .filter(valid),
+    ),
     recents: favorites(raw.recents, 100),
     savedQueries: unique(
       list(raw.savedQueries, 500).map(parseQuery).filter(valid),
@@ -654,6 +1012,7 @@ function resourceKey(tab: LogTab): string {
   return JSON.stringify([
     tab.connectionId,
     tab.sources.map((source) => [
+      source.connectionId ?? tab.connectionId,
       source.logGroup,
       [...(source.logStreams ?? [])].sort(),
     ]),
@@ -814,7 +1173,14 @@ function legacyWorkspaceReducer(
           if (tab.id !== action.tabId) return tab;
           const parsed =
             parseTab(
-              { ...tab, ...action.patch, id: tab.id },
+              {
+                ...tab,
+                ...action.patch,
+                ...(action.patch.sources && !tab.customTitle
+                  ? { title: tabTitle(action.patch.sources) }
+                  : {}),
+                id: tab.id,
+              },
               state.connections,
               state.groups,
             ) ?? tab;
@@ -886,7 +1252,7 @@ function legacyWorkspaceReducer(
       };
     }
     case "pane/split": {
-      if (state.panes.length >= 4) return state;
+      if (state.panes.length >= MAX_SPLIT_PANES) return state;
       const paneId = nextId("pane", state.panes);
       const targetId = action.paneId ?? state.activePaneId;
       if (
@@ -963,7 +1329,7 @@ function legacyWorkspaceReducer(
       const ids = [...new Set(action.tabIds)].filter((id) =>
         state.tabs.some((tab) => tab.id === id),
       );
-      if (ids.length < 2 || ids.length > 4) return state;
+      if (ids.length < 2 || ids.length > MAX_SPLIT_PANES) return state;
       const panes: Pane[] = [];
       for (const [index, tabId] of ids.entries())
         panes.push({
@@ -981,7 +1347,11 @@ function legacyWorkspaceReducer(
       };
     }
     case "pane/resize":
-      if (!/^[01]{0,3}$/.test(action.path) || !Number.isFinite(action.ratio))
+      if (
+        !/^[01]*$/.test(action.path) ||
+        action.path.length >= MAX_LAYOUT_DEPTH ||
+        !Number.isFinite(action.ratio)
+      )
         return state;
       return {
         ...state,
@@ -1090,16 +1460,6 @@ function legacyWorkspaceReducer(
           ...action.patch,
         }),
       };
-    case "favorites/toggle": {
-      const favorite = parseFavorite(action.favorite, state.connections);
-      if (!favorite) return state;
-      return {
-        ...state,
-        favorites: state.favorites.some((item) => sameFavorite(item, favorite))
-          ? state.favorites.filter((item) => !sameFavorite(item, favorite))
-          : [...state.favorites, favorite].slice(-500),
-      };
-    }
     case "recents/add": {
       const favorite = parseFavorite(action.favorite, state.connections);
       return favorite
@@ -1248,7 +1608,7 @@ function normalizeWorkspaceEntries(
     const item = record(value),
       id = string(item.id, "", 160);
     if (!id || tabIds.has(id) || splitIds.has(id)) continue;
-    const panes = list(item.panes, 5).map((value) => {
+    const panes = list(item.panes, MAX_SPLIT_PANES + 1).map((value) => {
       const pane = record(value);
       return {
         id: string(pane.id, "", 160),
@@ -1260,7 +1620,7 @@ function normalizeWorkspaceEntries(
     const layout = normalizeLayout(item.layout, ids);
     if (
       panes.length < 2 ||
-      panes.length > 4 ||
+      panes.length > MAX_SPLIT_PANES ||
       ids.some((id) => !id) ||
       new Set(ids).size !== ids.length ||
       new Set(members).size !== members.length ||
@@ -1541,7 +1901,11 @@ function combineEntries(state: Workspace, ids: string[]): Workspace {
     return entry ? [entry] : [];
   });
   const tabIds = [...new Set(entries.flatMap((entry) => entry.tabIds))];
-  if (entries.length < 2 || tabIds.length < 2 || tabIds.length > 4)
+  if (
+    entries.length < 2 ||
+    tabIds.length < 2 ||
+    tabIds.length > MAX_SPLIT_PANES
+  )
     return state;
   const existing = entries.find((entry) => entry.kind === "split");
   const previous = state.splitTabs?.find((split) => split.id === existing?.id);
@@ -1709,7 +2073,8 @@ export function projectWorkspaceDrop(
       ? projectWorkspaceDrop(extracted, entryId, paneId, edge)
       : null;
   }
-  if (source.tabIds.length + destination.tabIds.length > 4) return null;
+  if (source.tabIds.length + destination.tabIds.length > MAX_SPLIT_PANES)
+    return null;
   const destinationSplit = state.splitTabs?.find(
     (split) => split.id === destination.id,
   );
@@ -1777,6 +2142,207 @@ export function projectWorkspaceDrop(
   );
 }
 
+function resourceTabWithPreset(state: Workspace, tab: LogTab): LogTab {
+  const preset = state.presets.find(
+    (preset) =>
+      preset.logGroup &&
+      tab.sources.some((source) => source.logGroup === preset.logGroup),
+  );
+  return preset ? { ...tab, view: structuredClone(preset.view) } : tab;
+}
+
+/** Project Explorer insertion without publishing a draft view or starting a query. */
+export function projectResourceDrop(
+  input: Workspace,
+  draft: LogTab | LogTab[],
+  paneId: string,
+  edge: SplitEdge | null,
+): Workspace | null {
+  const state = modelState(input);
+  const drafts = Array.isArray(draft) ? draft : [draft];
+  const ids = new Set(drafts.map((tab) => tab.id));
+  if (
+    !drafts.length ||
+    drafts.length > MAX_SPLIT_PANES ||
+    state.tabs.length + drafts.length > 100 ||
+    ids.size !== drafts.length ||
+    entryIdentities(state).some((entry) => ids.has(entry.id)) ||
+    !state.panes.some((pane) => pane.id === paneId)
+  )
+    return null;
+  const tabs: LogTab[] = [];
+  for (const draft of drafts) {
+    if (
+      draft.sources.some(
+        (source) =>
+          source.connectionId &&
+          !state.connections.some(
+            (connection) => connection.id === source.connectionId,
+          ),
+      )
+    )
+      return null;
+    const tab = parseTab(draft, state.connections, state.groups);
+    if (!tab) return null;
+    tabs.push({ ...resourceTabWithPreset(state, tab), preview: false });
+  }
+  let next: Workspace = {
+    ...state,
+    tabs: [...state.tabs, ...tabs],
+    tabOrder: [...(state.tabOrder ?? []), ...tabs.map((tab) => tab.id)],
+  };
+  let sourceId = tabs[0].id;
+  if (tabs.length > 1) {
+    next = combineEntries(
+      next,
+      tabs.map((tab) => tab.id),
+    );
+    sourceId = activeEntryId(next)!;
+    next = projectEntry(
+      { ...next, panes: state.panes, activePaneId: state.activePaneId },
+      activeEntryId(state),
+    );
+  }
+  return projectWorkspaceDrop(next, sourceId, paneId, edge);
+}
+
+/** Expand a selection into independent group or explicit-stream views. */
+export function createResourceTabs(payload: ResourcePayload): LogTab[] {
+  const parsed = decodeResourceDrop(JSON.stringify(payload));
+  if (!parsed) throw new Error("Select valid log groups or streams.");
+  const sources = mergeSources(
+    [],
+    parsed.sources,
+    parsed.connectionId,
+    MAX_SPLIT_PANES,
+  );
+  const expanded = sources.flatMap((source) =>
+    source.logStreams?.length
+      ? source.logStreams.map((stream) => ({ ...source, logStreams: [stream] }))
+      : [source],
+  );
+  if (expanded.length > MAX_SPLIT_PANES)
+    throw new Error(`A split can include at most ${MAX_SPLIT_PANES} panes.`);
+  return expanded.map((source) => {
+    const { connectionId, ...resource } = source;
+    return {
+      ...createTab(connectionId ?? parsed.connectionId, [resource]),
+      preview: false,
+    };
+  });
+}
+
+function addResourceRecents(state: Workspace, tabs: LogTab[]): Workspace {
+  let next = state;
+  for (const tab of tabs)
+    for (const source of tab.sources)
+      next = legacyWorkspaceReducer(next, {
+        type: "recents/add",
+        favorite: {
+          connectionId: source.connectionId ?? tab.connectionId,
+          logGroup: source.logGroup,
+          ...(source.logStreams?.length === 1
+            ? { logStream: source.logStreams[0] }
+            : {}),
+        },
+      });
+  return next;
+}
+
+/** Apply the complete Explorer selection atomically, reporting actionable failures. */
+export function projectResourceAction(
+  input: Workspace,
+  payload: ResourcePayload,
+  mode: ResourceActionMode,
+): { workspace: Workspace; error?: string } {
+  try {
+    const parsed = decodeResourceDrop(JSON.stringify(payload));
+    if (!parsed) throw new Error("Select valid log groups or streams.");
+    const state = modelState(input);
+    const referenced = [
+      parsed.connectionId,
+      ...parsed.sources.map(
+        (source) => source.connectionId ?? parsed.connectionId,
+      ),
+    ];
+    if (
+      referenced.some(
+        (id) => !state.connections.some((connection) => connection.id === id),
+      )
+    )
+      throw new Error("A selected source connection no longer exists.");
+    if (mode === "new-multisource" || mode === "add-sources") {
+      const active =
+        mode === "add-sources"
+          ? state.tabs.find(
+              (tab) =>
+                tab.id ===
+                state.panes.find((pane) => pane.id === state.activePaneId)
+                  ?.tabId,
+            )
+          : undefined;
+      const connectionId = active?.connectionId ?? parsed.connectionId;
+      const sources = mergeSources(
+        active?.sources ?? [],
+        parsed.sources.map((source) => ({
+          ...source,
+          connectionId: source.connectionId ?? parsed.connectionId,
+        })),
+        connectionId,
+      );
+      const tab = active
+        ? {
+            ...active,
+            sources,
+            preview: false,
+            ...(active.customTitle ? {} : { title: tabTitle(sources) }),
+          }
+        : { ...createTab(connectionId, sources), preview: false };
+      if (!active && state.tabs.length >= 100)
+        throw new Error("A workspace can include at most 100 views.");
+      const next = active
+        ? {
+            ...state,
+            tabs: state.tabs.map((current) =>
+              current.id === active.id ? tab : current,
+            ),
+          }
+        : addView(state, resourceTabWithPreset(state, tab), false);
+      return { workspace: addResourceRecents(next, [tab]) };
+    }
+    if (mode !== "new-split" && mode !== "add-splits")
+      throw new Error("Choose a valid resource action.");
+    const drafts = createResourceTabs(parsed);
+    if (state.tabs.length + drafts.length > 100)
+      throw new Error("A workspace can include at most 100 views.");
+    if (mode === "add-splits" && state.tabs.length) {
+      const next = projectResourceDrop(state, drafts, state.activePaneId, null);
+      if (!next)
+        throw new Error(
+          `A split can include at most ${MAX_SPLIT_PANES} panes.`,
+        );
+      return { workspace: addResourceRecents(next, drafts) };
+    }
+    let next = state;
+    for (const tab of drafts)
+      next = addView(next, resourceTabWithPreset(state, tab), false);
+    if (drafts.length > 1)
+      next = combineEntries(
+        next,
+        drafts.map((tab) => tab.id),
+      );
+    return { workspace: addResourceRecents(next, drafts) };
+  } catch (error) {
+    return {
+      workspace: input,
+      error:
+        error instanceof Error
+          ? error.message
+          : "Unable to apply the selected sources.",
+    };
+  }
+}
+
 export function workspaceReducer(
   input: Workspace,
   action: WorkspaceAction,
@@ -1785,6 +2351,30 @@ export function workspaceReducer(
     return restoreWorkspace(action.workspace);
   const state = modelState(input);
   switch (action.type) {
+    case "resources/apply":
+      return projectResourceAction(input, action.payload, action.mode)
+        .workspace;
+    case "favorites/save":
+      return projectFavoriteSave(state, action.tabId).workspace;
+    case "favorites/rename": {
+      const title = action.title.trim().slice(0, 120);
+      if (!title) return input;
+      return {
+        ...state,
+        favorites: state.favorites.map((favorite) =>
+          favorite.id === action.favoriteId ? { ...favorite, title } : favorite,
+        ),
+      };
+    }
+    case "favorites/remove":
+      return {
+        ...state,
+        favorites: state.favorites.filter(
+          (favorite) => favorite.id !== action.favoriteId,
+        ),
+      };
+    case "favorites/open":
+      return projectFavoriteOpen(state, action.favoriteId).workspace;
     case "tab/update": {
       const previous = state.tabs.find((tab) => tab.id === action.tabId);
       const next = legacyWorkspaceReducer(state, action);
@@ -1812,7 +2402,7 @@ export function workspaceReducer(
           input
         );
       return entryFor(state, action.tabId)
-        ? activateViewOrEntry(state, action.tabId)
+        ? activateViewOrEntry(state, action.tabId, !action.preserveConnection)
         : input;
     case "tab/open":
     case "tab/preview":
@@ -2056,6 +2646,19 @@ export function workspaceReducer(
         projectEntry({ ...extracted, tabOrder: order }, action.tabId, true),
       );
     }
+    case "pane/drop-resource": {
+      const next = projectResourceDrop(
+        state,
+        action.tab,
+        action.paneId,
+        action.edge,
+      );
+      if (!next) return input;
+      return addResourceRecents(
+        next,
+        Array.isArray(action.tab) ? action.tab : [action.tab],
+      );
+    }
     case "pane/drop-tab":
       return (
         projectWorkspaceDrop(state, action.tabId, action.paneId, action.edge) ??
@@ -2070,7 +2673,7 @@ export function workspaceReducer(
       const paneId = action.paneId ?? state.activePaneId;
       if (
         !state.panes.some((pane) => pane.id === paneId) ||
-        state.panes.length >= 4
+        state.panes.length >= MAX_SPLIT_PANES
       )
         return input;
       const edge =
@@ -2084,7 +2687,8 @@ export function workspaceReducer(
       const alternative =
         candidates.find((entry) => entry.kind === "single") ??
         candidates.find(
-          (entry) => entry.tabIds.length + state.panes.length <= 4,
+          (entry) =>
+            entry.tabIds.length + state.panes.length <= MAX_SPLIT_PANES,
         );
       const id = action.tabId ?? alternative?.id;
       if (id && !entryFor(state, id)) return input;

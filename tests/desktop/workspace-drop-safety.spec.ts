@@ -240,14 +240,16 @@ test("top-edge self-drop clones independent permanent tabs and invalid or cancel
   ).toEqual(["", "Payment"]);
 });
 
-test("a full four-pane workspace refuses a fifth split without adding tabs", async () => {
+test("a four-pane workspace adds a fifth split and refuses dragging its combined tab onto itself", async () => {
   const add = page.getByLabel("Add split pane", { exact: true });
   await add.click();
   await add.click();
   await add.click();
   await expect(page.locator(".workspace-pane")).toHaveCount(4);
   await expect(page.locator(".workspace-tab")).toHaveCount(1);
-  await expect(add).toBeDisabled();
+  await expect(add).toBeEnabled();
+  await add.click();
+  await expect(page.locator(".workspace-pane")).toHaveCount(5);
   const before = await snapshot();
   const target = (await page
     .locator("[data-pane-drop-target]")
@@ -260,7 +262,7 @@ test("a full four-pane workspace refuses a fifth split without adding tabs", asy
   await expect(page.locator(".pane-drop-overlay")).toHaveCount(0);
   await expect(page.locator('[data-split-preview="left"]')).toHaveCount(0);
   await page.mouse.up();
-  await expect(page.locator(".workspace-pane")).toHaveCount(4);
+  await expect(page.locator(".workspace-pane")).toHaveCount(5);
   await expect(page.locator(".workspace-tab")).toHaveCount(1);
   expect(await snapshot()).toEqual(before);
   await closeNaturally();

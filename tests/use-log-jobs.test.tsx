@@ -40,10 +40,49 @@ let cancelHandler: (requestId: string) => Promise<void>;
 let liveHandler: (request: QueryRequest) => Promise<void>;
 let cleanupErrors: string[];
 
-function Harness({ value }: { value: Workspace }) {
-  jobs = useLogJobs(value, true, (message) => cleanupErrors.push(message));
+function Harness({
+  value,
+  awsEnabled = false,
+}: {
+  value: Workspace;
+  awsEnabled?: boolean;
+}) {
+  jobs = useLogJobs(
+    value,
+    true,
+    (message) => cleanupErrors.push(message),
+    awsEnabled,
+  );
   return null;
 }
+
+it("retries AWS views once when access is enabled while leaving fixture views alone", async () => {
+  workspace.connections.push({ ...workspace.connections[0], id: "fixtures" });
+  workspace.tabs.push({
+    ...structuredClone(workspace.tabs[0]),
+    id: "fixture-tab",
+    connectionId: "fixtures",
+  });
+  workspace.connections[0].mode = "aws";
+  queryHandler = async (request) => {
+    if (request.connection.id === workspace.connections[0].id)
+      throw new Error("AWS access is disabled");
+  };
+  await mount();
+  expect(requests).toHaveLength(2);
+  queryHandler = async () => {};
+  await act(async () =>
+    renderer!.update(<Harness value={workspace} awsEnabled />),
+  );
+  expect(requests).toHaveLength(3);
+  expect(
+    requests.filter((request) => request.connection.id === "fixtures"),
+  ).toHaveLength(1);
+  await act(async () =>
+    renderer!.update(<Harness value={{ ...workspace }} awsEnabled />),
+  );
+  expect(requests).toHaveLength(3);
+});
 async function mount() {
   await act(async () => {
     renderer = create(<Harness value={workspace} />);
@@ -60,6 +99,178 @@ async function emit(update: QueryUpdate) {
     for (const listener of listeners) listener(update);
   });
 }
+
+it("Live retains matching history and counts appended events independently of loaded history", async () => {
+  await mount();
+  const tab = workspace.tabs[0]!;
+  await emit({
+    requestId: requests[0]!.requestId,
+    state: "complete",
+    events: [logEvent],
+    cursor: "history-cursor",
+  });
+  await act(async () => jobs.run(tab, true));
+  expect(jobs.runtimes[tab.id]!.events).toEqual([logEvent]);
+  expect(jobs.runtimes[tab.id]).toMatchObject({
+    live: true,
+    liveState: "connecting",
+    liveReceived: 0,
+  });
+  expect(liveRequests[0]!.cursor).toBeUndefined();
+  await emit({
+    requestId: liveRequests[0]!.requestId,
+    state: "running",
+    liveState: "streaming",
+    events: [],
+  });
+  const retained = jobs.runtimes[tab.id]!.events;
+  await emit({
+    requestId: liveRequests[0]!.requestId,
+    state: "running",
+    liveState: "streaming",
+    events: [],
+  });
+  expect(jobs.runtimes[tab.id]!.events).toBe(retained);
+  const next = { ...logEvent, id: "live-event", timestamp: 2000 };
+  await emit({
+    requestId: liveRequests[0]!.requestId,
+    state: "running",
+    liveState: "streaming",
+    events: [next],
+  });
+  await emit({
+    requestId: liveRequests[0]!.requestId,
+    state: "running",
+    liveState: "streaming",
+    events: [next],
+  });
+  expect(jobs.runtimes[tab.id]!.events).toEqual([logEvent, next]);
+  expect(jobs.runtimes[tab.id]).toMatchObject({
+    liveState: "streaming",
+    liveReceived: 1,
+  });
+});
+
+it("Live keeps the newest events within the buffer and counts all received events", async () => {
+  workspace.preferences.maxEvents = 2;
+  await mount();
+  const tab = workspace.tabs[0]!;
+  await emit({
+    requestId: requests[0]!.requestId,
+    state: "complete",
+    events: [logEvent],
+  });
+  await act(async () => jobs.run(tab, true));
+  const batch = [2, 3, 4].map((timestamp) => ({
+    ...logEvent,
+    id: `live-${timestamp}`,
+    timestamp: timestamp * 1000,
+  }));
+  await emit({
+    requestId: liveRequests[0]!.requestId,
+    state: "running",
+    liveState: "streaming",
+    events: batch,
+  });
+  expect(jobs.runtimes[tab.id]).toMatchObject({
+    events: batch.slice(1),
+    liveReceived: 3,
+    evicted: 2,
+  });
+});
+
+it("Live clears history that belongs to a different filter and reports a stopped session on stream completion", async () => {
+  await mount();
+  const tab = workspace.tabs[0]!;
+  await emit({
+    requestId: requests[0]!.requestId,
+    state: "complete",
+    events: [logEvent],
+  });
+  await replaceWorkspace({
+    ...workspace,
+    tabs: [{ ...tab, filterPattern: "changed" }],
+  });
+  await act(async () => jobs.run(workspace.tabs[0]!, true));
+  expect(jobs.runtimes[tab.id]!.events).toEqual([]);
+  await emit({ requestId: liveRequests[0]!.requestId, state: "complete" });
+  expect(jobs.runtimes[tab.id]).toMatchObject({
+    state: "complete",
+    live: false,
+    liveState: "stopped",
+  });
+});
+
+it("Stop Live retains events and stays stopped even when historical automatic refresh is enabled", async () => {
+  vi.useFakeTimers();
+  workspace.preferences.refreshSeconds = 1;
+  await mount();
+  const tab = workspace.tabs[0]!;
+  await act(async () => jobs.run(tab, true));
+  await emit({
+    requestId: liveRequests[0]!.requestId,
+    state: "running",
+    liveState: "streaming",
+    events: [logEvent],
+  });
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(3000);
+  });
+  expect(requests).toHaveLength(1);
+  await act(async () => jobs.cancel(tab.id));
+  expect(jobs.runtimes[tab.id]).toMatchObject({
+    state: "cancelled",
+    live: false,
+    liveState: "stopped",
+    events: [logEvent],
+  });
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(3000);
+  });
+  expect(requests).toHaveLength(1);
+});
+
+it("a failed Live session stays stopped and an explicit Live retry rejects late packets from the failed session", async () => {
+  vi.useFakeTimers();
+  workspace.preferences.refreshSeconds = 1;
+  await mount();
+  const tab = workspace.tabs[0]!;
+  await act(async () => jobs.run(tab, true));
+  const first = liveRequests[0]!;
+  await emit({
+    requestId: first.requestId,
+    state: "error",
+    error: "Connection lost",
+  });
+  expect(jobs.runtimes[tab.id]).toMatchObject({
+    live: false,
+    liveState: "stopped",
+    error: "Connection lost",
+  });
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(3000);
+  });
+  expect(requests).toHaveLength(1);
+  await act(async () => jobs.run(tab, true));
+  await emit({
+    requestId: first.requestId,
+    state: "running",
+    liveState: "streaming",
+    events: [logEvent],
+  });
+  expect(jobs.runtimes[tab.id]!.events).toEqual([]);
+  await emit({
+    requestId: liveRequests[1]!.requestId,
+    state: "running",
+    liveState: "streaming",
+    events: [logEvent],
+  });
+  expect(jobs.runtimes[tab.id]).toMatchObject({
+    live: true,
+    liveState: "streaming",
+    liveReceived: 1,
+  });
+});
 
 beforeEach(() => {
   workspace = createWorkspace();
@@ -342,6 +553,33 @@ describe("pending request lifecycle", () => {
 });
 
 describe("source and connection ownership", () => {
+  it("snapshots secondary connections and reruns when their region changes", async () => {
+    const east = {
+      ...workspace.connections[0],
+      id: "east",
+      region: "us-east-1",
+    };
+    workspace.connections.push(east);
+    workspace.tabs[0].sources.push({ connectionId: "east", logGroup: "/same" });
+    await mount();
+    expect(requests[0].connections).toEqual([east]);
+    await replaceWorkspace({
+      ...workspace,
+      connections: workspace.connections.map((connection) =>
+        connection.id === "east"
+          ? { ...connection, region: "us-west-2" }
+          : connection,
+      ),
+    });
+    expect(requests).toHaveLength(2);
+    expect(requests[1].connections?.[0].region).toBe("us-west-2");
+    await emit({
+      requestId: requests[0].requestId,
+      state: "complete",
+      events: [logEvent],
+    });
+    expect(jobs.runtimes[workspace.tabs[0].id].events).toEqual([]);
+  });
   it.each([
     "profile",
     "region",
@@ -350,7 +588,7 @@ describe("source and connection ownership", () => {
     "streams",
     "connectionId",
   ] as const)(
-    "clears and stops a live job when %s changes, and never reuses its cursor",
+    "stops a live job and automatically queries when %s changes without reusing its cursor",
     async (field) => {
       await mount();
       await act(async () => {
@@ -397,13 +635,13 @@ describe("source and connection ownership", () => {
         };
       await replaceWorkspace(next);
       expect(jobs.runtimes[tab.id]).toMatchObject({
-        state: "idle",
+        state: "queued",
         live: false,
         events: [],
       });
       expect(jobs.runtimes[tab.id]!.cursor).toBeUndefined();
       expect(cancellations).toContain(live.requestId);
-      expect(requests).toHaveLength(1);
+      expect(requests).toHaveLength(2);
       expect(liveRequests).toHaveLength(1);
       await emit({
         requestId: live.requestId,
@@ -411,9 +649,6 @@ describe("source and connection ownership", () => {
         events: [{ ...logEvent, id: "stale-event" }],
       });
       expect(jobs.runtimes[tab.id]!.events).toEqual([]);
-      await act(async () => {
-        await jobs.run(next.tabs[0]!, false, true);
-      });
       const fresh = requests[1]!;
       expect(fresh.cursor).toBeUndefined();
       expect(fresh.sources).toEqual(next.tabs[0]!.sources);
@@ -444,13 +679,14 @@ describe("source and connection ownership", () => {
       cancellation.resolve();
       await pending;
     });
-    expect(requests).toHaveLength(1);
+    expect(requests).toHaveLength(2);
+    expect(requests[1].sources).toEqual([{ logGroup: "/fixture/new-source" }]);
     expect(jobs.runtimes[workspace.tabs[0]!.id]).toMatchObject({
-      state: "idle",
+      state: "queued",
       events: [],
     });
   });
-  it("keeps changed sources idle through refresh ticks until explicitly queried", async () => {
+  it("queries changed sources once and does not duplicate that active request on refresh ticks", async () => {
     vi.useFakeTimers();
     workspace.preferences.refreshSeconds = 1;
     await mount();
@@ -466,8 +702,8 @@ describe("source and connection ownership", () => {
     await act(async () => {
       await vi.advanceTimersByTimeAsync(5000);
     });
-    expect(requests).toHaveLength(1);
-    expect(jobs.runtimes[workspace.tabs[0]!.id]!.state).toBe("idle");
+    expect(requests).toHaveLength(2);
+    expect(jobs.runtimes[workspace.tabs[0]!.id]!.state).toBe("queued");
   });
 });
 
@@ -560,12 +796,129 @@ describe("retired request cleanup failures", () => {
       if (action === "tab close") expect(jobs.runtimes[tab.id]).toBeUndefined();
       else
         expect(jobs.runtimes[tab.id]).toMatchObject({
-          state: "idle",
+          state: "queued",
           events: [],
         });
-      expect(requests).toHaveLength(1);
+      expect(requests).toHaveLength(action === "source change" ? 2 : 1);
     },
   );
+});
+
+describe("automatic query mode updates", () => {
+  it("runs the selected mode once with its fields, while text edits remain manual", async () => {
+    workspace.tabs[0]!.filterPattern = "events-only";
+    workspace.tabs[0]!.query = "fields @message | limit 7";
+    await mount();
+    const first = requests[0]!;
+    await replaceWorkspace({
+      ...workspace,
+      tabs: [{ ...workspace.tabs[0]!, kind: "insights" }],
+    });
+    expect(requests).toHaveLength(2);
+    expect(cancellations).toContain(first.requestId);
+    expect(requests[1]).toMatchObject({
+      kind: "insights",
+      query: "fields @message | limit 7",
+      filterPattern: "",
+    });
+    await emit({
+      requestId: first.requestId,
+      state: "complete",
+      events: [logEvent],
+    });
+    expect(jobs.runtimes[workspace.tabs[0]!.id]!.events).toEqual([]);
+    await replaceWorkspace({
+      ...workspace,
+      tabs: [{ ...workspace.tabs[0]!, query: "fields @message | limit 2" }],
+    });
+    expect(requests).toHaveLength(2);
+    await act(async () => {
+      await jobs.run(workspace.tabs[0]!);
+    });
+    expect(requests[2]!.query).toBe("fields @message | limit 2");
+    await replaceWorkspace({
+      ...workspace,
+      tabs: [{ ...workspace.tabs[0]!, kind: "events" }],
+    });
+    expect(requests).toHaveLength(4);
+    expect(requests[3]).toMatchObject({
+      kind: "events",
+      filterPattern: "events-only",
+      query: "",
+    });
+    await replaceWorkspace({ ...workspace, tabs: [...workspace.tabs] });
+    expect(requests).toHaveLength(4);
+  });
+
+  it("coalesces simultaneous mode, source and time changes into one request", async () => {
+    vi.useFakeTimers();
+    await mount();
+    await replaceWorkspace({
+      ...workspace,
+      tabs: [
+        {
+          ...workspace.tabs[0]!,
+          kind: "insights",
+          sources: [{ logGroup: "/new" }],
+          timePreset: "30m",
+        },
+      ],
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(500);
+    });
+    expect(requests).toHaveLength(2);
+    expect(requests[1]).toMatchObject({
+      kind: "insights",
+      sources: [{ logGroup: "/new" }],
+    });
+    expect(requests[1]!.endTime - requests[1]!.startTime).toBe(30 * 60000);
+  });
+
+  it("retires live updates and a delayed mode acknowledgement when a newer mode takes ownership", async () => {
+    await mount();
+    await act(async () => {
+      await jobs.run(workspace.tabs[0]!, true);
+    });
+    const live = liveRequests[0]!;
+    const pending = deferred();
+    const acknowledgement = deferred();
+    queryHandler = (request) =>
+      request.kind === "insights" ? acknowledgement.promise : Promise.resolve();
+    cancelHandler = (id) =>
+      id === live.requestId ? pending.promise : Promise.resolve();
+    await replaceWorkspace({
+      ...workspace,
+      tabs: [{ ...workspace.tabs[0]!, kind: "insights" }],
+    });
+    await emit({
+      requestId: live.requestId,
+      state: "running",
+      events: [logEvent],
+    });
+    expect(jobs.runtimes[workspace.tabs[0]!.id]!.events).toEqual([]);
+    await replaceWorkspace({
+      ...workspace,
+      tabs: [
+        { ...workspace.tabs[0]!, kind: "events", filterPattern: "latest" },
+      ],
+    });
+    await act(async () => {
+      pending.resolve();
+      acknowledgement.reject(new Error("Retired mode failed"));
+    });
+    expect(requests).toHaveLength(3);
+    expect(requests[2]).toMatchObject({
+      kind: "events",
+      filterPattern: "latest",
+    });
+    expect(cancellations).toContain(live.requestId);
+    expect(jobs.runtimes[workspace.tabs[0]!.id]!.live).toBe(false);
+    expect(jobs.runtimes[workspace.tabs[0]!.id]!.error).toBeUndefined();
+    expect(jobs.runtimes[workspace.tabs[0]!.id]!.request!.requestId).toBe(
+      requests[2]!.requestId,
+    );
+  });
 });
 
 describe("automatic date range updates", () => {
@@ -720,7 +1073,8 @@ describe("automatic date range updates", () => {
     await act(async () => {
       await vi.advanceTimersByTimeAsync(500);
     });
-    expect(requests).toHaveLength(2);
+    expect(requests).toHaveLength(3);
+    expect(requests[2].sources).toEqual([{ logGroup: "/different" }]);
     await replaceWorkspace({
       ...workspace,
       tabs: [{ ...workspace.tabs[0]!, customEnd: "2026-10-14T13:00" }],
@@ -733,6 +1087,6 @@ describe("automatic date range updates", () => {
     await act(async () => {
       await vi.advanceTimersByTimeAsync(500);
     });
-    expect(requests).toHaveLength(2);
+    expect(requests).toHaveLength(3);
   });
 });

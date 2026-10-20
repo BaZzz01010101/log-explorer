@@ -1,5 +1,10 @@
 import type { PaneLayout, SplitAxis, SplitEdge } from "./contracts";
 
+/** A split cannot own more views than the workspace's existing tab budget. */
+export const MAX_SPLIT_PANES = 100;
+export const MAX_LAYOUT_DEPTH = MAX_SPLIT_PANES - 1;
+export const MAX_LAYOUT_NODES = MAX_SPLIT_PANES * 2 - 1;
+
 const leaf = (paneId: string): PaneLayout => ({ type: "leaf", paneId });
 export const clampRatio = (value: number) =>
   Math.min(0.8, Math.max(0.2, Number.isFinite(value) ? value : 0.5));
@@ -20,6 +25,15 @@ export function legacyLayout(
   ids: string[],
   sizes = { horizontal: 0.5, vertical: 0.5 },
 ): PaneLayout {
+  if (ids.length > 4) {
+    const midpoint = Math.ceil(ids.length / 2);
+    return branch(
+      "horizontal",
+      legacyLayout(ids.slice(0, midpoint), sizes),
+      legacyLayout(ids.slice(midpoint), sizes),
+      sizes.horizontal,
+    );
+  }
   if (ids.length <= 1) return leaf(ids[0] ?? "pane-1");
   if (ids.length === 2)
     return branch("horizontal", leaf(ids[0]), leaf(ids[1]), sizes.horizontal);
@@ -48,9 +62,17 @@ export function normalizeLayout(
   value: unknown,
   ids: string[],
 ): PaneLayout | undefined {
+  if (!ids.length || ids.length > MAX_SPLIT_PANES) return;
   const seen = new Set<string>();
+  let visited = 0;
   const parse = (value: unknown, depth: number): PaneLayout | undefined => {
-    if (!value || typeof value !== "object" || depth > 3) return;
+    if (
+      ++visited > MAX_LAYOUT_NODES ||
+      !value ||
+      typeof value !== "object" ||
+      depth > MAX_LAYOUT_DEPTH
+    )
+      return;
     const raw = value as Record<string, unknown>;
     if (raw.type === "leaf") {
       if (
@@ -76,7 +98,7 @@ export function normalizeLayout(
       : undefined;
   };
   const result = parse(value, 0);
-  return result && seen.size === ids.length && ids.length <= 4
+  return result && seen.size === ids.length && ids.length <= MAX_SPLIT_PANES
     ? result
     : undefined;
 }
@@ -87,7 +109,8 @@ export function isPaneLayout(value: unknown): value is PaneLayout {
   let count = 0;
   while (pending.length) {
     const current = pending.pop();
-    if (++count > 7 || !current || typeof current !== "object") return false;
+    if (++count > MAX_LAYOUT_NODES || !current || typeof current !== "object")
+      return false;
     const raw = current as Record<string, unknown>;
     if (raw.type === "leaf") {
       if (

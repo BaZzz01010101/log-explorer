@@ -413,7 +413,7 @@ test("whole tabs reorder near the strip and create highlighted nested splits awa
   await expect(page.locator(".workspace-tab")).toHaveCount(1);
   await expect(
     page.getByLabel("Add split pane", { exact: true }),
-  ).toBeDisabled();
+  ).toBeEnabled();
   const four = await paneRectangles();
   expect(four.every((rect) => rect.width > 100 && rect.height > 100)).toBe(
     true,

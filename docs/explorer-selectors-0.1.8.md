@@ -1,5 +1,7 @@
 # Explorer selectors and quick highlighting
 
+Historical revision: [0.1.13](saved-views-and-access-0.1.13.md) removes the advanced editor, remembers packaged AWS access and replaces resource favorites with saved views.
+
 Version 0.1.8 replaces the 0.1.7 account/region hierarchy with separate Profile and Region dropdowns above Explorer. The tree contains only log groups and their log streams. Loaded-stream filtering is removed. Group-name substring search, automatic continuation, keyboard navigation, preview tabs, favorites, resource details and source dragging remain available.
 
 Only the selected region loads and renders its group list. Caches remain isolated by connection/search and can be reused when switching back. Changing regions or search text resets list position and selections. Identical resource names in different regions retain their connection identity. Profile selection prefers the current region when it exists in the new profile, otherwise its first configured region. Explicit dropdown choices persist independently of open views.

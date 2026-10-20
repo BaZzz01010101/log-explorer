@@ -2,7 +2,7 @@ import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { ResourceSidebar } from "../src/renderer/components/ResourceSidebar";
-import { createWorkspace } from "../src/renderer/workspace";
+import { createWorkspace, restoreWorkspace } from "../src/renderer/workspace";
 
 // Keep the actual component state and handlers. Presentation and layout need no
 // browser for this regression: focus() must synchronously dispatch focus before
@@ -11,6 +11,8 @@ vi.mock("@mantine/core", async () => {
   const { createElement } = await import("react");
   const component = ({ children, ...props }: Record<string, unknown>) =>
     createElement("div", props, children as ReactNode);
+  const input = ({ rightSection, ...props }: Record<string, unknown>) =>
+    createElement("div", props, rightSection as ReactNode);
   return {
     ActionIcon: component,
     Alert: component,
@@ -18,12 +20,14 @@ vi.mock("@mantine/core", async () => {
     Button: component,
     Group: component,
     Loader: component,
+    Modal: component,
     Select: component,
     Text: component,
-    TextInput: component,
+    TextInput: input,
     Tooltip: component,
     Menu: Object.assign(component, {
       Target: component,
+      ContextMenu: component,
       Dropdown: component,
       Label: component,
       Divider: component,
@@ -103,7 +107,7 @@ it("reports explicit connection selection without resetting it on an unrelated p
     favorites: [],
     recents: [],
     onOpen() {},
-    onFavorite() {},
+    onRemoveFavorite() {},
     onManage() {},
     onConnectionChange,
   };
@@ -129,6 +133,119 @@ it("reports explicit connection selection without resetting it on an unrelated p
   ).toBe(second.id);
 });
 
+it("offers non-editable profile and region choosers and an accessible inner regex toggle", async () => {
+  const connection = createWorkspace().connections[0];
+  await act(async () => {
+    renderer = create(
+      <ResourceSidebar
+        connections={[connection]}
+        activeConnectionId={connection.id}
+        favorites={[]}
+        recents={[]}
+        onOpen={() => {}}
+        onManage={() => {}}
+      />,
+    );
+  });
+  expect(
+    renderer!.root.findByProps({ "aria-label": "Explorer profile" }).props
+      .searchable,
+  ).not.toBe(true);
+  expect(
+    renderer!.root.findByProps({ "aria-label": "Explorer region" }).props
+      .searchable,
+  ).not.toBe(true);
+  const toggle = renderer!.root
+    .findAllByProps({ "aria-label": "Use regular expression" })
+    .at(-1)!;
+  expect(toggle.props["aria-pressed"]).toBe(false);
+  await act(async () => toggle.props.onClick());
+  expect(
+    renderer!.root
+      .findAllByProps({ "aria-label": "Use regular expression" })
+      .at(-1)!.props["aria-pressed"],
+  ).toBe(true);
+});
+
+it("selects mixed rows with modifiers, preserves a context batch and supplies every context action", async () => {
+  const connection = createWorkspace().connections[0],
+    onOpen = vi.fn(),
+    onResourceAction = vi.fn();
+  vi.stubGlobal("window", {
+    explorer: {
+      listGroups: async () => ({ items: [{ name: "/one" }, { name: "/two" }] }),
+      listStreams: async () => ({
+        items: [{ name: "stream-a" }, { name: "stream-b" }],
+      }),
+    },
+  });
+  await act(async () => {
+    renderer = create(
+      <ResourceSidebar
+        connections={[connection]}
+        activeConnectionId={connection.id}
+        favorites={[]}
+        recents={[]}
+        onOpen={onOpen}
+        onResourceAction={onResourceAction}
+        onManage={() => {}}
+      />,
+    );
+  });
+  await act(async () =>
+    renderer!.root.findByProps({ "aria-label": "Expand /one" }).props.onClick(),
+  );
+  const labels = () =>
+    renderer!.root
+      .findAllByProps({ className: "resource-label" })
+      .filter((node) => node.type === "button");
+  await act(async () => labels()[1].props.onClick({ ctrlKey: true }));
+  await act(async () => labels()[3].props.onClick({ shiftKey: true }));
+  await act(async () => labels()[1].props.onDoubleClick({ ctrlKey: true }));
+  expect(onOpen).not.toHaveBeenCalled();
+  expect(
+    renderer!.root
+      .findAllByProps({ role: "treeitem", "aria-selected": true })
+      .map((row) => row.props["aria-label"]),
+  ).toEqual(["stream-a", "stream-b", "/two"]);
+  await act(async () =>
+    renderer!.root
+      .findByProps({ role: "treeitem", "aria-label": "stream-b" })
+      .props.onContextMenu(),
+  );
+  const action = renderer!.root
+    .findAll(
+      (node) =>
+        node.type === "div" &&
+        node.props.children === "Open in new split tab" &&
+        typeof node.props.onClick === "function",
+    )
+    .at(2)!;
+  await act(async () => action.props.onClick());
+  expect(onResourceAction).toHaveBeenLastCalledWith(
+    {
+      connectionId: connection.id,
+      sources: [
+        { logGroup: "/one", logStreams: ["stream-a", "stream-b"] },
+        { logGroup: "/two" },
+      ],
+    },
+    "new-split",
+  );
+  const streamLabel = labels()[1].parent!;
+  expect(streamLabel.props.payload.sources).toHaveLength(2);
+  await act(async () =>
+    renderer!.root
+      .findByProps({ role: "treeitem", "aria-label": "/one" })
+      .props.onContextMenu(),
+  );
+  expect(
+    renderer!.root
+      .findAllByProps({ role: "treeitem", "aria-selected": true })
+      .map((row) => row.props["aria-label"]),
+  ).toEqual(["/one"]);
+});
+
 it("advances the active row when ArrowDown transfers focus from a child control", async () => {
   const connection = createWorkspace().connections[0];
   await act(async () => {
@@ -139,7 +256,7 @@ it("advances the active row when ArrowDown transfers focus from a child control"
         favorites={[]}
         recents={[]}
         onOpen={() => {}}
-        onFavorite={() => {}}
+        onRemoveFavorite={() => {}}
         onManage={() => {}}
       />,
       {
@@ -153,7 +270,9 @@ it("advances the active row when ArrowDown transfers focus from a child control"
     "aria-label": "/one",
   });
   await act(async () => {
-    firstRow.parent!.props.onFocusCapture();
+    let ancestor = firstRow.parent!;
+    while (!ancestor.props.onFocusCapture) ancestor = ancestor.parent!;
+    ancestor.props.onFocusCapture();
   });
   await act(async () => {
     const tree = renderer!.root.findByProps({ role: "tree" });
@@ -172,6 +291,101 @@ it("advances the active row when ArrowDown transfers focus from a child control"
   expect(tree.props["aria-activedescendant"]).toBe(secondRow.props.id);
 });
 
+it("leaves navigation inside a context menu with the menu instead of moving the resource tree", async () => {
+  const connection = createWorkspace().connections[0];
+  await act(async () => {
+    renderer = create(
+      <ResourceSidebar
+        connections={[connection]}
+        activeConnectionId={connection.id}
+        favorites={[]}
+        recents={[]}
+        onOpen={() => {}}
+        onManage={() => {}}
+      />,
+    );
+  });
+  const tree = renderer!.root.findByProps({ role: "tree" });
+  const before = tree.props["aria-activedescendant"];
+  await act(async () =>
+    tree.props.onKeyDown({
+      target: Object.assign(new FocusTarget(), {
+        closest: () => ({ role: "menu" }),
+      }),
+      currentTarget: treeNode,
+      key: "ArrowDown",
+      preventDefault() {},
+    }),
+  );
+  expect(
+    renderer!.root.findByProps({ role: "tree" }).props["aria-activedescendant"],
+  ).toBe(before);
+});
+
+it("keeps one resource context menu open and ignores a stale menu close", async () => {
+  const connection = createWorkspace().connections[0];
+  await act(async () => {
+    renderer = create(
+      <ResourceSidebar
+        connections={[connection]}
+        activeConnectionId={connection.id}
+        favorites={[]}
+        recents={[]}
+        onOpen={() => {}}
+        onManage={() => {}}
+      />,
+    );
+  });
+  const menus = () =>
+    renderer!.root.findAll(
+      (node) =>
+        node.type !== "div" &&
+        node.props.position === "bottom-start" &&
+        node.props.width === 240,
+    );
+  await act(async () =>
+    renderer!.root
+      .findByProps({ role: "treeitem", "aria-label": "/one" })
+      .props.onContextMenu(),
+  );
+  expect(menus().map((menu) => menu.props.opened)).toEqual([true, false]);
+  const prior = menus()[0];
+  await act(async () =>
+    renderer!.root
+      .findByProps({ role: "treeitem", "aria-label": "/two" })
+      .props.onContextMenu(),
+  );
+  expect(menus().map((menu) => menu.props.opened)).toEqual([false, true]);
+  await act(async () => prior.props.onChange(false));
+  expect(menus().map((menu) => menu.props.opened)).toEqual([false, true]);
+});
+
+it("stops the handled context key before document outside-key listeners can close its menu", async () => {
+  const connection = createWorkspace().connections[0];
+  await act(async () => {
+    renderer = create(
+      <ResourceSidebar
+        connections={[connection]}
+        activeConnectionId={connection.id}
+        favorites={[]}
+        recents={[]}
+        onOpen={() => {}}
+        onManage={() => {}}
+      />,
+    );
+  });
+  vi.stubGlobal("document", { getElementById: () => null });
+  const stopPropagation = vi.fn();
+  await act(async () =>
+    renderer!.root.findByProps({ role: "tree" }).props.onKeyDown({
+      key: "ContextMenu",
+      preventDefault() {},
+      stopPropagation,
+    }),
+  );
+  expect(stopPropagation).toHaveBeenCalledOnce();
+});
+
 it("previews resource clicks and Enter, while double click opens permanently", async () => {
   const connection = createWorkspace().connections[0];
   const onOpen = vi.fn();
@@ -183,7 +397,7 @@ it("previews resource clicks and Enter, while double click opens permanently", a
         favorites={[]}
         recents={[]}
         onOpen={onOpen}
-        onFavorite={() => {}}
+        onRemoveFavorite={() => {}}
         onManage={() => {}}
       />,
       {
@@ -222,70 +436,79 @@ it("previews resource clicks and Enter, while double click opens permanently", a
   );
 });
 
-it("uses the same preview and double-click behavior for favorites and recent sources", async () => {
-  const connection = createWorkspace().connections[0];
-  const favorite = {
-    connectionId: connection.id,
-    logGroup: "/favorite",
-    logStream: "stream",
-  };
-  const recent = { connectionId: connection.id, logGroup: "/recent" };
-  const onOpen = vi.fn();
+it("opens and removes saved views while retaining preview behavior for recent sources", async () => {
+  const state = restoreWorkspace({
+    ...createWorkspace(),
+    favorites: [
+      { connectionId: "offline", logGroup: "/favorite", logStream: "stream" },
+    ],
+  });
+  const recent = { connectionId: "offline", logGroup: "/recent" },
+    onOpen = vi.fn(),
+    onOpenFavorite = vi.fn(),
+    onRemoveFavorite = vi.fn();
   await act(async () => {
     renderer = create(
       <ResourceSidebar
-        connections={[connection]}
-        activeConnectionId={connection.id}
-        favorites={[favorite]}
+        connections={state.connections}
+        activeConnectionId="offline"
+        favorites={state.favorites}
         recents={[recent]}
         onOpen={onOpen}
-        onFavorite={() => {}}
+        onOpenFavorite={onOpenFavorite}
+        onRemoveFavorite={onRemoveFavorite}
         onManage={() => {}}
       />,
     );
   });
-  const buttons = renderer!.root.findAllByProps({
-    className: "quick-resource",
+  const saved = renderer!.root.findByProps({
+    "data-favorite-id": state.favorites[0].id,
   });
-  await act(async () => buttons[0].props.onClick());
+  await act(async () => saved.props.onClick());
+  expect(onOpenFavorite).toHaveBeenCalledWith(state.favorites[0].id);
+  expect(onOpen).not.toHaveBeenCalled();
+  const remove = renderer!.root
+    .findAll(
+      (node) =>
+        node.props.children === "Remove favorite" &&
+        typeof node.props.onClick === "function",
+    )
+    .at(-1)!;
+  await act(async () => remove.props.onClick());
+  expect(onRemoveFavorite).toHaveBeenCalledWith(state.favorites[0].id);
+  const button = renderer!.root.findByProps({ className: "quick-resource" });
+  await act(async () => button.props.onClick());
   expect(onOpen).toHaveBeenLastCalledWith(
-    connection.id,
-    [{ logGroup: "/favorite", logStreams: ["stream"] }],
-    "preview",
-  );
-  await act(async () => buttons[0].props.onDoubleClick());
-  expect(onOpen).toHaveBeenLastCalledWith(
-    connection.id,
-    [{ logGroup: "/favorite", logStreams: ["stream"] }],
-    "permanent",
-  );
-  await act(async () => buttons[1].props.onClick());
-  expect(onOpen).toHaveBeenLastCalledWith(
-    connection.id,
+    "offline",
     [{ logGroup: "/recent", logStreams: undefined }],
     "preview",
   );
-  await act(async () => buttons[1].props.onDoubleClick());
+  await act(async () => button.props.onDoubleClick());
   expect(onOpen).toHaveBeenLastCalledWith(
-    connection.id,
+    "offline",
     [{ logGroup: "/recent", logStreams: undefined }],
     "permanent",
   );
 });
 
 it("keeps favorites for legacy duplicate IDs while offering a single region and no extra tree levels", async () => {
-  const connection = createWorkspace().connections[0];
-  const duplicate = { ...connection, id: "duplicate", name: "Second name" };
-  const onOpen = vi.fn();
+  const connection = createWorkspace().connections[0],
+    duplicate = { ...connection, id: "duplicate", name: "Second name" };
+  const state = restoreWorkspace({
+    ...createWorkspace(),
+    connections: [connection, duplicate],
+    favorites: [{ connectionId: duplicate.id, logGroup: "/saved" }],
+  });
+  const onOpenFavorite = vi.fn();
   await act(async () => {
     renderer = create(
       <ResourceSidebar
-        connections={[connection, duplicate]}
+        connections={state.connections}
         activeConnectionId={connection.id}
-        favorites={[{ connectionId: duplicate.id, logGroup: "/saved" }]}
+        favorites={state.favorites}
         recents={[]}
-        onOpen={onOpen}
-        onFavorite={() => {}}
+        onOpen={() => {}}
+        onOpenFavorite={onOpenFavorite}
         onManage={() => {}}
       />,
     );
@@ -295,16 +518,12 @@ it("keeps favorites for legacy duplicate IDs while offering a single region and 
       .findByProps({ "aria-label": "Explorer region" })
       .props.data.map((item: { value: string }) => item.value),
   ).toEqual([connection.id]);
-  const favorite = renderer!.root.findAll(
-    (node) => node.type === "button" && node.props.title === "/saved",
-  )[0];
-  expect(favorite).toBeDefined();
+  const favorite = renderer!.root.findByProps({
+    "data-favorite-id": state.favorites[0].id,
+  });
   await act(async () => favorite.props.onClick());
-  expect(onOpen).toHaveBeenCalledWith(
-    duplicate.id,
-    [{ logGroup: "/saved", logStreams: undefined }],
-    "preview",
-  );
+  expect(onOpenFavorite).toHaveBeenCalledWith(state.favorites[0].id);
+  expect(state.favorites[0].connections[0].id).toBe(duplicate.id);
   expect(
     renderer!.root.findAllByProps({ "data-node-kind": "region" }),
   ).toHaveLength(0);
@@ -347,7 +566,7 @@ it("debounces substring searches through the server API and retains matching-pag
           favorites={[]}
           recents={[]}
           onOpen={() => {}}
-          onFavorite={() => {}}
+          onRemoveFavorite={() => {}}
           onManage={() => {}}
         />,
         {

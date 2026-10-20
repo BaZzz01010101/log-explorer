@@ -1,18 +1,29 @@
-import { workspaceSchema } from "./security";
+import {
+  workspaceSchema,
+  viewFavoriteSchema,
+  legacyFavoriteSchema,
+} from "./security";
 import { restoreWorkspace } from "../renderer/workspace";
 import { z } from "zod";
 
 // View data remains strict. Layout/membership references are repaired by the
 // bounded restoration path before strict validation of the resulting state.
-const workspaceData = z.object(workspaceSchema.shape).omit({
-  splitTabs: true,
-  tabOrder: true,
-  activeTabId: true,
-  activeConnectionId: true,
-  panes: true,
-  layout: true,
-  activePaneId: true,
-});
+const workspaceData = z
+  .object(workspaceSchema.shape)
+  .extend({
+    favorites: z
+      .array(z.union([viewFavoriteSchema, legacyFavoriteSchema]))
+      .max(500),
+  })
+  .omit({
+    splitTabs: true,
+    tabOrder: true,
+    activeTabId: true,
+    activeConnectionId: true,
+    panes: true,
+    layout: true,
+    activePaneId: true,
+  });
 const legacyData = z.object({
   version: z.literal(0),
   connections: z.array(z.unknown()).max(50),

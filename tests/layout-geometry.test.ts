@@ -146,7 +146,7 @@ describe("combined entry drop geometry", () => {
     expect(single.tabs).toHaveLength(1);
   });
 
-  it("rejects over-capacity merges and unknown targets while keeping safe geometry bounds", () => {
+  it("projects a fifth pane and rejects unknown targets while keeping safe geometry bounds", () => {
     let state = views(5);
     const source = state.tabs[4].id;
     state = workspaceReducer(state, {
@@ -154,8 +154,8 @@ describe("combined entry drop geometry", () => {
       tabIds: state.tabs.slice(0, 4).map((tab) => tab.id),
     });
     expect(
-      projectWorkspaceDrop(state, source, state.panes[0].id, "left"),
-    ).toBeNull();
+      projectWorkspaceDrop(state, source, state.panes[0].id, "left")?.panes,
+    ).toHaveLength(5);
     expect(
       projectWorkspaceDrop(state, "missing", state.panes[0].id, null),
     ).toBeNull();

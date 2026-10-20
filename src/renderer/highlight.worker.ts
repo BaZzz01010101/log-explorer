@@ -1,4 +1,4 @@
-import { highlightEvent } from "./highlight-engine";
+import { highlightEvent, type EventHighlights } from "./highlight-engine";
 import type { HighlightProfile } from "../shared/highlights";
 import type { ColumnConfig, LogEvent, Preferences } from "../shared/contracts";
 
@@ -9,14 +9,41 @@ self.onmessage = (
     theme: Preferences["theme"];
     columns: ColumnConfig[];
     timezone: Preferences["timezone"];
+    overview?: boolean;
+    needle?: string;
   }>,
 ) => {
-  const { events, profiles, theme, columns, timezone } = event.data;
+  const {
+    events,
+    profiles,
+    theme,
+    columns,
+    timezone,
+    overview,
+    needle = "",
+  } = event.data;
   self.postMessage({ ready: true });
-  for (const item of events)
-    self.postMessage({
-      id: item.id,
-      result: highlightEvent(item, profiles, theme, columns, timezone),
-    });
+  let batch: { id: string; result: EventHighlights }[] = [];
+  let lastProgress = performance.now();
+  for (const item of events) {
+    const result = highlightEvent(
+      item,
+      profiles,
+      theme,
+      columns,
+      timezone,
+      overview,
+      needle,
+    );
+    if (overview) {
+      if (result.overview!.length) batch.push({ id: item.id, result });
+      if (performance.now() - lastProgress > 16) {
+        self.postMessage({ batch });
+        batch = [];
+        lastProgress = performance.now();
+      }
+    } else self.postMessage({ id: item.id, result });
+  }
+  if (overview) self.postMessage({ batch });
   self.postMessage({ done: true });
 };

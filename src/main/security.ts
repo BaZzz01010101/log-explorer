@@ -1,7 +1,12 @@
 import { z } from "zod";
 import { highlightProfilesSchema } from "../shared/highlights";
 import type { PaneLayout } from "../shared/contracts";
-import { layoutPaneIds } from "../shared/pane-layout";
+import {
+  layoutPaneIds,
+  isPaneLayout,
+  normalizeLayout,
+  MAX_SPLIT_PANES,
+} from "../shared/pane-layout";
 
 const id = z.string().min(1).max(160);
 const text = z.string().max(10000);
@@ -17,6 +22,7 @@ export const connectionSchema = z.object({
   mode: z.enum(["offline", "aws"]),
 });
 export const sourceSchema = z.object({
+  connectionId: id.optional(),
   logGroup: z.string().min(1).max(512),
   logStreams: z.array(z.string().min(1).max(512)).max(100).optional(),
 });
@@ -24,6 +30,7 @@ export const querySchema = z
   .object({
     requestId: id,
     connection: connectionSchema,
+    connections: z.array(connectionSchema).max(49).optional(),
     sources: z.array(sourceSchema).min(1).max(50),
     startTime: z.number().int().nonnegative(),
     endTime: z.number().int().nonnegative(),
@@ -52,6 +59,12 @@ const viewSchema = z.object({
     .max(100),
   localSearch: text,
   level: z.string().max(40),
+  levels: z
+    .array(
+      z.enum(["trace", "debug", "info", "warn", "error", "fatal", "unknown"]),
+    )
+    .max(7)
+    .optional(),
   wrap: z.boolean(),
   sort: z.object({ path: z.string().max(2048), desc: z.boolean() }).optional(),
 });
@@ -82,23 +95,74 @@ const savedQuery = z.object({
   kind: z.enum(["events", "insights"]),
   text,
 });
-// A workspace has at most four panes, so no valid split tree needs more than
-// three levels. A finite schema bounds parsing and strips unknown nested keys.
-function boundedPaneLayoutSchema(depth = 0): z.ZodType<PaneLayout> {
-  const leaf = z.object({ type: z.literal("leaf"), paneId: id });
-  if (depth === 3) return leaf;
-  const child = boundedPaneLayoutSchema(depth + 1);
-  return z.union([
-    leaf,
-    z.object({
-      type: z.literal("split"),
-      axis: z.enum(["horizontal", "vertical"]),
-      ratio: z.number().min(0.2).max(0.8),
-      first: child,
-      second: child,
-    }),
-  ]);
+// Validate a finite node budget before recursively sanitizing the layout.
+function boundedPaneLayoutSchema(): z.ZodType<PaneLayout> {
+  return z
+    .custom<PaneLayout>(isPaneLayout, "Invalid or oversized pane layout")
+    .transform((layout) => normalizeLayout(layout, layoutPaneIds(layout))!);
 }
+const splitSchema = z.object({
+  id,
+  title: z.string().max(512).optional(),
+  groupId: id.optional(),
+  panes: z
+    .array(z.object({ id, tabId: id }))
+    .min(2)
+    .max(MAX_SPLIT_PANES),
+  layout: boundedPaneLayoutSchema(),
+  activePaneId: id,
+});
+export const viewFavoriteSchema = z
+  .object({
+    id,
+    title: z.string().min(1).max(512),
+    tabs: z.array(tabSchema).min(1).max(MAX_SPLIT_PANES),
+    connections: z.array(connectionSchema).min(1).max(50),
+    split: splitSchema.optional(),
+    timezone: z.enum(["local", "utc"]),
+  })
+  .superRefine((view, context) => {
+    const issue = (message: string) =>
+      context.addIssue({ code: "custom", message });
+    const tabs = new Set(view.tabs.map((tab) => tab.id)),
+      connections = new Set(
+        view.connections.map((connection) => connection.id),
+      );
+    if (
+      tabs.size !== view.tabs.length ||
+      connections.size !== view.connections.length
+    )
+      issue("Saved view IDs must be unique");
+    if (
+      view.tabs.some(
+        (tab) =>
+          !connections.has(tab.connectionId) ||
+          tab.sources.some(
+            (source) =>
+              source.connectionId && !connections.has(source.connectionId),
+          ),
+      )
+    )
+      issue("Saved source connections must exist");
+    if (view.split) {
+      const panes = new Set(view.split.panes.map((pane) => pane.id)),
+        members = view.split.panes.map((pane) => pane.tabId),
+        leaves = layoutPaneIds(view.split.layout);
+      if (
+        panes.size !== view.split.panes.length ||
+        !panes.has(view.split.activePaneId) ||
+        leaves.length !== panes.size ||
+        new Set(leaves).size !== leaves.length ||
+        leaves.some((id) => !panes.has(id)) ||
+        members.length !== tabs.size ||
+        new Set(members).size !== members.length ||
+        members.some((id) => !tabs.has(id))
+      )
+        issue("Saved split membership and layout must match its views");
+    } else if (tabs.size !== 1)
+      issue("Multiple saved views require a split layout");
+  });
+export const legacyFavoriteSchema = favorite;
 export const workspaceSchema = z
   .object({
     version: z.literal(1),
@@ -114,7 +178,7 @@ export const workspaceSchema = z
           panes: z
             .array(z.object({ id, tabId: id }))
             .min(2)
-            .max(4),
+            .max(MAX_SPLIT_PANES),
           layout: boundedPaneLayoutSchema(),
           activePaneId: id,
         }),
@@ -138,7 +202,7 @@ export const workspaceSchema = z
     panes: z
       .array(z.object({ id, tabId: id.nullable() }))
       .min(1)
-      .max(4),
+      .max(MAX_SPLIT_PANES),
     activePaneId: id,
     layout: boundedPaneLayoutSchema().optional(),
     sidebarWidth: z.number().min(180).max(600),
@@ -149,7 +213,7 @@ export const workspaceSchema = z
         vertical: z.number().min(0.2).max(0.8),
       })
       .optional(),
-    favorites: z.array(favorite).max(500),
+    favorites: z.array(viewFavoriteSchema).max(500),
     recents: z.array(favorite).max(100),
     savedQueries: z.array(savedQuery).max(500),
     history: z.array(savedQuery).max(100),
@@ -221,6 +285,10 @@ export const workspaceSchema = z
       [...workspace.tabs, ...workspace.closedTabs].some(
         (tab) =>
           !connectionIds.has(tab.connectionId) ||
+          tab.sources.some(
+            (source) =>
+              source.connectionId && !connectionIds.has(source.connectionId),
+          ) ||
           (tab.groupId && !groupIds.has(tab.groupId)),
       )
     )
@@ -314,7 +382,7 @@ export const workspaceSchema = z
     }
   });
 
-/** Authorization is deliberately process-local. Persisted state can never enable AWS. */
+/** Low-level process gate; only the separate application preference can restore access. Workspace imports cannot. */
 export class AwsAccessGate {
   private authorized = false;
   constructor(private readonly packaged: boolean) {}

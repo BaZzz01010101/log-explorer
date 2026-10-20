@@ -299,7 +299,7 @@ describe("pane and preview model safety", () => {
     expect(closed.closedTabs[0].id).toBe(source);
     valid(closed);
   });
-  it("does not remove a pane when a drop cannot add an unshown tab at capacity", () => {
+  it("adds a fifth unshown view without removing existing panes", () => {
     let state = twoPanes();
     state = workspaceReducer(state, { type: "pane/split" });
     state = workspaceReducer(state, { type: "pane/split" });
@@ -309,15 +309,15 @@ describe("pane and preview model safety", () => {
       tabs: [...state.tabs, tab],
       tabOrder: [...state.tabOrder!, tab.id],
     };
-    expect(
-      workspaceReducer(state, {
-        type: "pane/drop-tab",
-        paneId: state.panes[0].id,
-        tabId: tab.id,
-        edge: "left",
-      }),
-    ).toBe(state);
-    valid(state);
+    const next = workspaceReducer(state, {
+      type: "pane/drop-tab",
+      paneId: state.panes[0].id,
+      tabId: tab.id,
+      edge: "left",
+    });
+    expect(next.panes).toHaveLength(5);
+    expect(next.tabs).toHaveLength(state.tabs.length);
+    valid(next);
   });
   it("makes an unshown preview permanent when opening it in a split", () => {
     let state = createWorkspace();

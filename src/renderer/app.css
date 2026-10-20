@@ -26,6 +26,8 @@ input:focus-visible {
 .desktop-app {
   --surface: #121a25;
   --surface-alt: #17212f;
+  --pane-header: #29384e;
+  --pane-header-secondary: #b7c5da;
   --line: #283448;
   --muted: #8593aa;
   display: flex;
@@ -38,6 +40,8 @@ input:focus-visible {
 .desktop-app[data-theme="light"] {
   --surface: #f7f9fc;
   --surface-alt: #fff;
+  --pane-header: #e3e9f3;
+  --pane-header-secondary: #43536e;
   --line: #d8dfeb;
   --muted: #65728a;
   color: #243149;
@@ -284,7 +288,7 @@ input:focus-visible {
   background: color-mix(
     in srgb,
     var(--mantine-color-indigo-5) 14%,
-    var(--surface-alt)
+    var(--pane-header)
   );
   box-shadow: inset 3px 0 0 var(--mantine-color-indigo-5);
 }
@@ -298,11 +302,18 @@ input:focus-visible {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  background: var(--surface-alt);
+  background: var(--pane-header);
 }
 .pane-heading .pane-title {
   color: var(--mantine-color-text);
   letter-spacing: 0.1px;
+}
+.pane-heading .pane-region,
+.pane-heading .mantine-Badge-root {
+  color: var(--pane-header-secondary);
+}
+.pane-heading .mantine-Badge-root {
+  border-color: currentColor;
 }
 .pane-heading > div:last-child {
   flex-shrink: 0;
@@ -359,6 +370,7 @@ input:focus-visible {
   min-height: 0;
 }
 .query-status {
+  background: var(--surface-alt);
   height: 29px;
   min-height: 29px;
   padding: 0 10px;

@@ -298,7 +298,11 @@ export function createOfflineAdapter(): LogAdapter {
         name: `2026/10/13/[$LATEST]worker-${index + 1}`,
         lastEventTime: events[events.length - 4 + index].timestamp,
       })).filter((stream) => stream.name.startsWith(prefix));
-      return page(streams, cursor, `streams:${group}:${prefix}`);
+      return page(
+        streams.sort((a, b) => b.lastEventTime - a.lastEventTime),
+        cursor,
+        `streams:${group}:${prefix}`,
+      );
     },
     async events(request, signal) {
       throwIfAborted(signal);
@@ -364,7 +368,12 @@ export function createOfflineAdapter(): LogAdapter {
         );
       const predicate = fixtureFilter(request.filterPattern);
       for (const source of request.sources) groupEvents(source.logGroup);
-      emit({ requestId: request.requestId, state: "running", sampled: false });
+      emit({
+        requestId: request.requestId,
+        state: "running",
+        sampled: false,
+        liveState: "streaming",
+      });
       while (!signal.aborted) {
         await delay(900, signal);
         const now = Date.now();

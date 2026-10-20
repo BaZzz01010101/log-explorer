@@ -35,12 +35,26 @@ import type {
   LogSource,
   LogTab,
 } from "../shared/contracts";
-import { createTab, createWorkspace, workspaceReducer } from "./workspace";
-import { activeEntryId, workspaceEntries } from "./workspace-entries";
+import {
+  createTab,
+  createWorkspace,
+  workspaceReducer,
+  projectFavoriteOpen,
+  projectResourceAction,
+} from "./workspace";
+import {
+  activeEntryId,
+  logTabLabel,
+  workspaceEntries,
+} from "./workspace-entries";
 import { useLogJobs } from "./useLogJobs";
 import { useKeyboardModality } from "./useKeyboardModality";
 import { PaneLayoutView } from "./components/PaneLayout";
-import { legacyLayout, nextSplitAxis } from "../shared/pane-layout";
+import {
+  legacyLayout,
+  nextSplitAxis,
+  MAX_SPLIT_PANES,
+} from "../shared/pane-layout";
 import { ResourceSidebar } from "./components/ResourceSidebar";
 import {
   WorkspaceTabs,
@@ -48,6 +62,7 @@ import {
   PaneDropTarget,
   PaneDragHeader,
 } from "./components/WorkspaceTabs";
+import { ResourceDropSurface } from "./components/ResourceDropSurface";
 import { QueryPane } from "./components/QueryPane";
 import { Settings } from "./components/Settings";
 import "./components/workspace-tabs.css";
@@ -114,14 +129,19 @@ export default function App() {
       workspace.splitSizes,
     );
   workspaceRef.current = workspace;
-  const { runtimes, run, cancel } = useLogJobs(workspace, ready, (message) => {
-    notifications.show({
-      color: "red",
-      title: "Could not stop previous query",
-      message,
-      autoClose: false,
-    });
-  });
+  const { runtimes, run, cancel } = useLogJobs(
+    workspace,
+    ready,
+    (message) => {
+      notifications.show({
+        color: "red",
+        title: "Could not stop previous query",
+        message,
+        autoClose: false,
+      });
+    },
+    environment?.awsEnabled ?? false,
+  );
   const activePane =
     workspace.panes.find((p) => p.id === workspace.activePaneId) ??
     workspace.panes[0];
@@ -253,7 +273,7 @@ export default function App() {
     dispatch({
       type: "tab/open",
       tab: {
-        ...createTab(tab.connectionId, [
+        ...createTab(event.connectionId ?? tab.connectionId, [
           { logGroup: event.logGroup, logStreams: [event.logStream] },
         ]),
         title: `Context · ${event.logStream.split("/").at(-1)}`,
@@ -383,143 +403,173 @@ export default function App() {
       forceColorScheme={workspace.preferences.theme}
     >
       <Notifications position="top-right" limit={4} />
-      <div className="desktop-app" data-theme={workspace.preferences.theme}>
-        <header className="app-header">
-          <Group gap={10}>
-            <div className="brand-mark">
-              <IconCloud size={21} />
-            </div>
-            <div>
-              <Text size="sm" fw={650}>
-                AWS Log Explorer
-              </Text>
-              <Text size="xs" c="dimmed">
-                {workspace.name}
-              </Text>
-            </div>
-          </Group>
-          <button
-            className="command-trigger"
-            onClick={() => {
-              setCommandText("");
-              setCommandsOpen(true);
-            }}
-          >
-            <IconSearch size={15} />
-            <span>Search commands and tabs</span>
-            <Kbd size="xs">Ctrl K</Kbd>
-          </button>
-          <Group gap={8}>
-            <Badge
-              variant="light"
-              color={environment?.awsEnabled ? "teal" : "yellow"}
+      <WorkspaceDragSurface workspace={workspace} dispatch={dispatch}>
+        <div className="desktop-app" data-theme={workspace.preferences.theme}>
+          <header className="app-header">
+            <Group gap={10}>
+              <div className="brand-mark">
+                <IconCloud size={21} />
+              </div>
+              <div>
+                <Text size="sm" fw={650}>
+                  AWS Log Explorer
+                </Text>
+                <Text size="xs" c="dimmed">
+                  {workspace.name}
+                </Text>
+              </div>
+            </Group>
+            <button
+              className="command-trigger"
+              onClick={() => {
+                setCommandText("");
+                setCommandsOpen(true);
+              }}
             >
-              {environment?.awsEnabled
-                ? "AWS session enabled"
-                : "Offline · no AWS access"}
-            </Badge>
-            <Tooltip label="Workspace settings">
-              <ActionIcon
-                size="lg"
-                variant="subtle"
-                aria-label="Workspace settings"
-                onClick={() => setSettingsOpen(true)}
+              <IconSearch size={15} />
+              <span>Search commands and tabs</span>
+              <Kbd size="xs">Ctrl K</Kbd>
+            </button>
+            <Group gap={8}>
+              <Badge
+                variant="light"
+                color={environment?.awsEnabled ? "teal" : "yellow"}
               >
-                <IconAdjustments size={20} />
-              </ActionIcon>
-            </Tooltip>
-          </Group>
-        </header>
-        <div className="app-body">
-          <nav className="activity-bar" aria-label="Application tools">
-            <Tooltip label="Toggle explorer" position="right">
-              <ActionIcon
-                variant="subtle"
-                size="lg"
-                aria-label="Toggle explorer"
-                onClick={() =>
-                  dispatch({
-                    type: "workspace/update",
-                    patch: { sidebarVisible: !workspace.sidebarVisible },
-                  })
-                }
-              >
-                <IconLayoutSidebar size={21} />
-              </ActionIcon>
-            </Tooltip>
-            <Tooltip label="Commands" position="right">
-              <ActionIcon
-                variant="subtle"
-                size="lg"
-                aria-label="Commands"
-                onClick={() => setCommandsOpen(true)}
-              >
-                <IconCommand size={21} />
-              </ActionIcon>
-            </Tooltip>
-            <div className="activity-spacer" />
-            <Tooltip label="Settings" position="right">
-              <ActionIcon
-                variant="subtle"
-                size="lg"
-                aria-label="Settings"
-                onClick={() => setSettingsOpen(true)}
-              >
-                <IconAdjustments size={21} />
-              </ActionIcon>
-            </Tooltip>
-          </nav>
-          {workspace.sidebarVisible && (
-            <div
-              className="sidebar-shell"
-              style={{ width: workspace.sidebarWidth }}
-            >
-              <ResourceSidebar
-                preferences={workspace.preferences}
-                connections={workspace.connections}
-                activeConnectionId={activeConnectionId}
-                onConnectionChange={(connectionId) =>
-                  dispatch({ type: "connection/select", connectionId })
-                }
-                favorites={workspace.favorites}
-                recents={workspace.recents}
-                onOpen={openSources}
-                onFavorite={(favorite) =>
-                  dispatch({ type: "favorites/toggle", favorite })
-                }
-                onManage={() => setSettingsOpen(true)}
-              />
-              <div
-                className="sidebar-resizer"
-                role="separator"
-                aria-label="Resize explorer"
-                aria-orientation="vertical"
-                aria-valuenow={workspace.sidebarWidth}
-                tabIndex={0}
-                onPointerDown={beginResize}
-                onKeyDown={(e) => {
-                  if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
-                    e.preventDefault();
+                {environment?.awsEnabled
+                  ? "AWS access enabled"
+                  : "Offline · no AWS access"}
+              </Badge>
+              <Tooltip label="Workspace settings">
+                <ActionIcon
+                  size="lg"
+                  variant="subtle"
+                  aria-label="Workspace settings"
+                  onClick={() => setSettingsOpen(true)}
+                >
+                  <IconAdjustments size={20} />
+                </ActionIcon>
+              </Tooltip>
+            </Group>
+          </header>
+          <div className="app-body">
+            <nav className="activity-bar" aria-label="Application tools">
+              <Tooltip label="Toggle explorer" position="right">
+                <ActionIcon
+                  variant="subtle"
+                  size="lg"
+                  aria-label="Toggle explorer"
+                  onClick={() =>
                     dispatch({
                       type: "workspace/update",
-                      patch: {
-                        sidebarWidth: Math.max(
-                          180,
-                          Math.min(
-                            600,
-                            workspace.sidebarWidth +
-                              (e.key === "ArrowLeft" ? -20 : 20),
-                          ),
-                        ),
-                      },
-                    });
+                      patch: { sidebarVisible: !workspace.sidebarVisible },
+                    })
                   }
-                }}
-              />
-            </div>
-          )}
-          <main className="workspace-main">
-            <WorkspaceDragSurface workspace={workspace} dispatch={dispatch}>
+                >
+                  <IconLayoutSidebar size={21} />
+                </ActionIcon>
+              </Tooltip>
+              <Tooltip label="Commands" position="right">
+                <ActionIcon
+                  variant="subtle"
+                  size="lg"
+                  aria-label="Commands"
+                  onClick={() => setCommandsOpen(true)}
+                >
+                  <IconCommand size={21} />
+                </ActionIcon>
+              </Tooltip>
+              <div className="activity-spacer" />
+              <Tooltip label="Settings" position="right">
+                <ActionIcon
+                  variant="subtle"
+                  size="lg"
+                  aria-label="Settings"
+                  onClick={() => setSettingsOpen(true)}
+                >
+                  <IconAdjustments size={21} />
+                </ActionIcon>
+              </Tooltip>
+            </nav>
+            {workspace.sidebarVisible && (
+              <div
+                className="sidebar-shell"
+                style={{ width: workspace.sidebarWidth }}
+              >
+                <ResourceSidebar
+                  preferences={workspace.preferences}
+                  connections={workspace.connections}
+                  activeConnectionId={activeConnectionId}
+                  onConnectionChange={(connectionId) =>
+                    dispatch({ type: "connection/select", connectionId })
+                  }
+                  favorites={workspace.favorites}
+                  recents={workspace.recents}
+                  onOpen={openSources}
+                  onResourceAction={(payload, mode) => {
+                    const result = projectResourceAction(
+                      workspace,
+                      payload,
+                      mode,
+                    );
+                    if (result.error)
+                      notifications.show({
+                        title: "Log sources",
+                        message: result.error,
+                        color: "red",
+                      });
+                    else dispatch({ type: "resources/apply", payload, mode });
+                  }}
+                  refreshKey={environment?.awsEnabled ? 1 : 0}
+                  onOpenFavorite={(favoriteId) => {
+                    const result = projectFavoriteOpen(workspace, favoriteId);
+                    if (result.error)
+                      notifications.show({
+                        title: "Saved view",
+                        message: result.error,
+                        color: "red",
+                      });
+                    else if (result.workspace !== workspace)
+                      dispatch({ type: "favorites/open", favoriteId });
+                  }}
+                  onRenameFavorite={(favoriteId, title) =>
+                    dispatch({ type: "favorites/rename", favoriteId, title })
+                  }
+                  onRemoveFavorite={(favoriteId) =>
+                    dispatch({ type: "favorites/remove", favoriteId })
+                  }
+                  onManage={() => setSettingsOpen(true)}
+                />
+                <div
+                  className="sidebar-resizer"
+                  role="separator"
+                  aria-label="Resize explorer"
+                  aria-orientation="vertical"
+                  aria-valuenow={workspace.sidebarWidth}
+                  tabIndex={0}
+                  onPointerDown={beginResize}
+                  onKeyDown={(e) => {
+                    if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+                      e.preventDefault();
+                      dispatch({
+                        type: "workspace/update",
+                        patch: {
+                          sidebarWidth: Math.max(
+                            180,
+                            Math.min(
+                              600,
+                              workspace.sidebarWidth +
+                                (e.key === "ArrowLeft" ? -20 : 20),
+                            ),
+                          ),
+                        },
+                      });
+                    }
+                  }}
+                />
+              </div>
+            )}
+            <main className="workspace-main">
+              <ResourceDropSurface workspace={workspace} dispatch={dispatch} />
               <WorkspaceTabs workspace={workspace} dispatch={dispatch} />
               {!ready ? (
                 <div className="startup-loader">
@@ -548,6 +598,20 @@ export default function App() {
                     const connection = workspace.connections.find(
                       (c) => c.id === tab?.connectionId,
                     );
+                    const regions = [
+                      ...new Set(
+                        (tab?.sources ?? [])
+                          .map(
+                            (source) =>
+                              workspace.connections.find(
+                                (connection) =>
+                                  connection.id ===
+                                  (source.connectionId ?? tab?.connectionId),
+                              )?.region,
+                          )
+                          .filter((region): region is string => !!region),
+                      ),
+                    ];
                     return (
                       <PaneDropTarget key={pane.id} paneId={pane.id}>
                         <section
@@ -587,15 +651,21 @@ export default function App() {
                                 fw={600}
                                 truncate="end"
                               >
-                                {tab?.customTitle ?? tab?.title ?? "Empty pane"}
+                                {tab ? logTabLabel(tab) : "Empty pane"}
                               </Text>
                               <IconChevronRight size={12} />
-                              <Text size="xs" c="dimmed">
-                                {connection?.region}
+                              <Text
+                                size="xs"
+                                className="pane-region"
+                                title={regions.join(", ")}
+                              >
+                                {regions.length > 1
+                                  ? `${regions.length} regions`
+                                  : (regions[0] ?? connection?.region)}
                               </Text>
                             </Group>
                             <Group gap={4}>
-                              {workspace.panes.length < 4 && (
+                              {workspace.panes.length < MAX_SPLIT_PANES && (
                                 <ActionIcon
                                   size="sm"
                                   variant="subtle"
@@ -710,31 +780,34 @@ export default function App() {
                   }}
                 />
               )}
-            </WorkspaceDragSurface>
-          </main>
+            </main>
+          </div>
+          <footer className="app-footer">
+            <Group gap={12}>
+              <span className="status-dot" />
+              <Text size="xs">
+                {environment?.awsEnabled
+                  ? "Connected workspace"
+                  : "Isolated local development"}
+              </Text>
+              <Text size="xs" c="dimmed">
+                {entries.length} tabs · {workspace.panes.length} panes
+              </Text>
+            </Group>
+            <Group gap={14}>
+              <Text
+                size="xs"
+                c={saveState === "Save failed" ? "red" : "dimmed"}
+              >
+                {saveState}
+              </Text>
+              <Text size="xs" c="dimmed">
+                v{environment?.version ?? "0.1.0"}
+              </Text>
+            </Group>
+          </footer>
         </div>
-        <footer className="app-footer">
-          <Group gap={12}>
-            <span className="status-dot" />
-            <Text size="xs">
-              {environment?.awsEnabled
-                ? "Connected workspace"
-                : "Isolated local development"}
-            </Text>
-            <Text size="xs" c="dimmed">
-              {entries.length} tabs · {workspace.panes.length} panes
-            </Text>
-          </Group>
-          <Group gap={14}>
-            <Text size="xs" c={saveState === "Save failed" ? "red" : "dimmed"}>
-              {saveState}
-            </Text>
-            <Text size="xs" c="dimmed">
-              v{environment?.version ?? "0.1.0"}
-            </Text>
-          </Group>
-        </footer>
-      </div>
+      </WorkspaceDragSurface>
       <Settings
         opened={settingsOpen}
         onClose={() => setSettingsOpen(false)}

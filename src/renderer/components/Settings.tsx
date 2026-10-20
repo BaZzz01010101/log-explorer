@@ -16,13 +16,9 @@ import {
   TextInput,
   type NumberInputProps,
 } from "@mantine/core";
-import { IconPlus, IconTrash } from "@tabler/icons-react";
+import { IconTrash } from "@tabler/icons-react";
 import { notifications } from "@mantine/notifications";
-import type {
-  Connection,
-  EnvironmentInfo,
-  Workspace,
-} from "../../shared/contracts";
+import type { EnvironmentInfo, Workspace } from "../../shared/contracts";
 import type { WorkspaceAction } from "../workspace";
 import { parseWorkspaceInput } from "../../main/workspace-input";
 import { HighlightProfilesEditor } from "./HighlightProfilesEditor";
@@ -78,29 +74,10 @@ export function Settings({
   environment: EnvironmentInfo | null;
   onEnvironment(info: EnvironmentInfo): void;
 }) {
-  const [selectedId, setSelectedId] = useState(workspace.connections[0].id);
-  const selected =
-    workspace.connections.find((c) => c.id === selectedId) ??
-    workspace.connections[0];
-  const [draft, setDraft] = useState<Connection>({ ...selected });
-  useEffect(() => {
-    setDraft({ ...selected });
-  }, [
-    selected.id,
-    selected.name,
-    selected.profile,
-    selected.region,
-    selected.mode,
-  ]);
   const [profiles, setProfiles] = useState<string[]>([]);
+  const [accessPending, setAccessPending] = useState(false);
+  const [activeTab, setActiveTab] = useState<string | null>("connections");
   const [importText, setImportText] = useState("");
-  const updateConnection = (patch: Partial<Connection>) =>
-    dispatch({
-      type: "connections/set",
-      connections: workspace.connections.map((c) =>
-        c.id === selected.id ? { ...c, ...patch } : c,
-      ),
-    });
   const preferences = workspace.preferences;
   useEffect(() => {
     if (environment?.awsEnabled)
@@ -111,6 +88,7 @@ export function Settings({
     else setProfiles([]);
   }, [environment?.awsEnabled]);
   const setAws = async (enabled: boolean) => {
+    setAccessPending(true);
     try {
       onEnvironment(await window.explorer.enableAws(enabled));
     } catch (error) {
@@ -124,6 +102,8 @@ export function Settings({
         title: "AWS access",
         message: error instanceof Error ? error.message : String(error),
       });
+    } finally {
+      setAccessPending(false);
     }
   };
   return (
@@ -131,10 +111,12 @@ export function Settings({
       opened={opened}
       onClose={onClose}
       title="Workspace settings"
-      size="lg"
+      size={
+        activeTab === "highlights" ? "min(1200px, calc(100vw - 48px))" : "lg"
+      }
       centered
     >
-      <Tabs defaultValue="connections">
+      <Tabs value={activeTab} onChange={setActiveTab}>
         <Tabs.List>
           <Tabs.Tab value="connections">Connections</Tabs.Tab>
           <Tabs.Tab value="appearance">Preferences</Tabs.Tab>
@@ -148,20 +130,20 @@ export function Settings({
               color={environment?.awsEnabled ? "teal" : "yellow"}
               title={
                 environment?.awsEnabled
-                  ? "AWS enabled for this session"
+                  ? "AWS access is enabled"
                   : "AWS access is disabled"
               }
             >
               <Text size="sm">
                 {environment?.packaged
-                  ? "Enable access deliberately to use your configured AWS profiles. Authorization ends when the application exits."
+                  ? "Use your configured AWS profiles. This choice is remembered between restarts and can be disabled here."
                   : "Development builds use local fixtures only. They cannot read AWS profiles, SSO sessions or connect to AWS."}
               </Text>
             </Alert>
             <Switch
-              label="Enable AWS access for this packaged session"
+              label="Enable AWS access"
               checked={environment?.awsEnabled ?? false}
-              disabled={!environment?.canEnableAws}
+              disabled={!environment?.canEnableAws || accessPending}
               onChange={(e) => void setAws(e.currentTarget.checked)}
             />
             <ProfileConnectionsEditor
@@ -179,138 +161,6 @@ export function Settings({
                 })
               }
             />
-            <details className="advanced-connections">
-              <summary>Advanced connection settings</summary>
-              <Stack gap="sm" mt="sm">
-                <Group align="end">
-                  <Select
-                    style={{ flex: 1 }}
-                    label="Connection"
-                    value={selected.id}
-                    data={workspace.connections.map((c) => ({
-                      value: c.id,
-                      label: c.name,
-                    }))}
-                    onChange={(value) => value && setSelectedId(value)}
-                  />
-                  <Button
-                    variant="light"
-                    leftSection={<IconPlus size={16} />}
-                    onClick={() => {
-                      const connection: Connection = {
-                        id: crypto.randomUUID(),
-                        name: "New connection",
-                        profile: "default",
-                        region: "eu-west-1",
-                        mode: "offline",
-                      };
-                      dispatch({
-                        type: "connections/set",
-                        connections: [...workspace.connections, connection],
-                      });
-                      setSelectedId(connection.id);
-                    }}
-                  >
-                    Add
-                  </Button>
-                  <ActionIcon
-                    aria-label="Remove connection"
-                    size="lg"
-                    color="red"
-                    variant="subtle"
-                    disabled={
-                      workspace.connections.length < 2 ||
-                      workspace.tabs.some((t) => t.connectionId === selected.id)
-                    }
-                    onClick={() =>
-                      dispatch({
-                        type: "connections/set",
-                        connections: workspace.connections.filter(
-                          (c) => c.id !== selected.id,
-                        ),
-                      })
-                    }
-                  >
-                    <IconTrash size={17} />
-                  </ActionIcon>
-                </Group>
-                <TextInput
-                  label="Display name"
-                  value={draft.name}
-                  maxLength={120}
-                  onChange={(e) =>
-                    setDraft({ ...draft, name: e.currentTarget.value })
-                  }
-                />
-                <Group grow>
-                  <TextInput
-                    label="AWS profile"
-                    value={draft.profile}
-                    maxLength={256}
-                    onChange={(e) =>
-                      setDraft({ ...draft, profile: e.currentTarget.value })
-                    }
-                  />
-                  <TextInput
-                    label="AWS region"
-                    value={draft.region}
-                    maxLength={40}
-                    onChange={(e) =>
-                      setDraft({ ...draft, region: e.currentTarget.value })
-                    }
-                  />
-                </Group>
-                {profiles.length > 0 && (
-                  <Select
-                    label="Configured profiles"
-                    placeholder="Select a profile"
-                    searchable
-                    data={profiles}
-                    value={
-                      profiles.includes(draft.profile) ? draft.profile : null
-                    }
-                    onChange={(value) =>
-                      value && setDraft({ ...draft, profile: value })
-                    }
-                  />
-                )}
-                <Select
-                  label="Data source"
-                  value={draft.mode}
-                  data={[
-                    { value: "offline", label: "Offline fixtures" },
-                    { value: "aws", label: "AWS CloudWatch Logs" },
-                  ]}
-                  onChange={(value) =>
-                    value &&
-                    setDraft({ ...draft, mode: value as Connection["mode"] })
-                  }
-                />
-                <Text size="xs" c="dimmed">
-                  Profiles support IAM Identity Center / SSO and role assumption
-                  through the official AWS credential provider. Establish your
-                  SSO session outside this application. Credentials remain in
-                  the main process and are never stored in a workspace.
-                </Text>
-                <Button
-                  disabled={
-                    !draft.name.trim() ||
-                    !draft.profile.trim() ||
-                    !/^[a-z]{2}(?:-[a-z]+)+-\d+$/.test(draft.region)
-                  }
-                  onClick={() =>
-                    updateConnection({
-                      name: draft.name.trim(),
-                      profile: draft.profile.trim(),
-                      region: draft.region,
-                      mode: draft.mode,
-                    })
-                  }
-                >
-                  Apply connection
-                </Button>
-              </Stack>
-            </details>
           </Stack>
         </Tabs.Panel>
         <Tabs.Panel value="appearance" pt="md">

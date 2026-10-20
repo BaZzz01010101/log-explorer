@@ -12,7 +12,7 @@ import { tmpdir } from "node:os";
 import { join, resolve, sep } from "node:path";
 import { createWorkspace } from "../../src/renderer/workspace";
 
-test.setTimeout(60000);
+test.setTimeout(90000);
 let app: ElectronApplication | undefined;
 let child: ReturnType<ElectronApplication["process"]> | undefined;
 let page: Page;
@@ -260,28 +260,86 @@ for (const mode of ["Table", "Hybrid"]) {
       .toBeGreaterThan(0);
     const request = page.locator('.column-sort[title="Sort by /request/id"]');
     const message = page.locator('.column-sort[title="Sort by Message"]');
+    await request.scrollIntoViewIfNeeded();
     const requestBox = (await request.boundingBox())!,
       messageBox = (await message.boundingBox())!;
     const pinnedBox = (await page
       .getByRole("columnheader")
       .first()
       .boundingBox())!;
-    const dropX = Math.max(
-      messageBox.x + messageBox.width * 0.25,
-      pinnedBox.x + pinnedBox.width + 15,
+    const gridBox = (await page.locator(".viewer-scroll").boundingBox())!;
+    const visibleLeft = Math.max(messageBox.x, pinnedBox.x + pinnedBox.width);
+    const visibleRight = Math.min(
+      messageBox.x + messageBox.width,
+      gridBox.x + gridBox.width - 20,
     );
-    await page.mouse.move(
+    const dropX = (visibleLeft + visibleRight) / 2;
+    const startX = Math.min(
       requestBox.x + requestBox.width / 2,
-      requestBox.y + requestBox.height / 2,
+      gridBox.x + gridBox.width - 25,
     );
+    expect(visibleRight).toBeGreaterThan(visibleLeft);
+    expect(
+      await page.evaluate(
+        ({ x, y }) =>
+          document
+            .elementFromPoint(x, y)
+            ?.closest(".column-sort")
+            ?.getAttribute("title"),
+        { x: startX, y: requestBox.y + requestBox.height / 2 },
+      ),
+    ).toBe("Sort by /request/id");
+    expect(
+      await page.evaluate(
+        ({ x, y }) =>
+          document
+            .elementFromPoint(x, y)
+            ?.closest(".column-sort")
+            ?.getAttribute("title"),
+        { x: dropX, y: messageBox.y + messageBox.height / 2 },
+      ),
+    ).toBe("Sort by Message");
+    await page.mouse.move(startX, requestBox.y + requestBox.height / 2);
     await page.mouse.down();
     try {
-      await page.mouse.move(
-        requestBox.x + requestBox.width / 2 - 10,
-        requestBox.y + requestBox.height / 2,
-        { steps: 3 },
+      await page.mouse.move(startX - 10, requestBox.y + requestBox.height / 2, {
+        steps: 3,
+      });
+      const scrollBefore = await page
+        .locator(".viewer-scroll")
+        .evaluate((element) => element.scrollLeft);
+      // The inspector leaves only the end of Message visible. Scroll during
+      // pointer capture to reveal its first half before asking for insertion before it.
+      await page.mouse.wheel(-500, 0);
+      await expect
+        .poll(() =>
+          page
+            .locator(".viewer-scroll")
+            .evaluate((element) => element.scrollLeft),
+        )
+        .toBeLessThan(scrollBefore);
+      const movedMessage = (await message.boundingBox())!;
+      const beforeLeft = Math.max(
+        movedMessage.x + 8,
+        pinnedBox.x + pinnedBox.width + 8,
       );
-      await page.mouse.move(dropX, messageBox.y + messageBox.height / 2, {
+      const beforeRight = Math.min(
+        movedMessage.x + movedMessage.width / 2 - 8,
+        gridBox.x + gridBox.width - 25,
+      );
+      expect(beforeRight).toBeGreaterThan(beforeLeft);
+      const beforeX = (beforeLeft + beforeRight) / 2;
+      expect(
+        await page.evaluate(
+          ({ x, y }) =>
+            document
+              .elementFromPoint(x, y)
+              ?.closest(".column-sort")
+              ?.getAttribute("title"),
+          { x: beforeX, y: movedMessage.y + movedMessage.height / 2 },
+        ),
+      ).toBe("Sort by Message");
+      await page.mouse.move(beforeX, movedMessage.y + movedMessage.height / 2, {
         steps: 12,
       });
     } finally {

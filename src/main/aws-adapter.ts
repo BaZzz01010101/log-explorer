@@ -348,6 +348,24 @@ export function createAwsAdapter(
     gate();
     return client;
   }
+  async function stopQuery(queryId: string): Promise<StopQueryCommandOutput> {
+    // Revocation blocks all new work. Only cancellation of an already started
+    // query may reuse its existing client; never construct a transport here.
+    if (!transport || destroyed) throw new Error("AWS connection was closed");
+    const signal = AbortSignal.timeout(5000);
+    const release = await slots.acquire(signal);
+    try {
+      const client = await transport;
+      if (destroyed) throw new Error("AWS connection was closed");
+      throwIfAborted(signal);
+      return (await withAbort(
+        client.send(new StopQueryCommand({ queryId }), { abortSignal: signal }),
+        signal,
+      )) as StopQueryCommandOutput;
+    } finally {
+      release();
+    }
+  }
   async function send<T>(
     command: CloudWatchCommand,
     signal: AbortSignal,
@@ -524,7 +542,8 @@ export function createAwsAdapter(
           logStreamNamePrefix: prefix || undefined,
           nextToken: cursor,
           limit: 50,
-          orderBy: "LogStreamName",
+          orderBy: prefix ? "LogStreamName" : "LastEventTime",
+          descending: true,
         }),
         signal,
       );
@@ -738,10 +757,7 @@ export function createAwsAdapter(
       } finally {
         if (queryId && !terminal) {
           try {
-            const result = await send<StopQueryCommandOutput>(
-              new StopQueryCommand({ queryId }),
-              AbortSignal.timeout(5000),
-            );
+            const result = await stopQuery(queryId);
             if (!result.success)
               throw new Error("CloudWatch did not confirm cancellation");
           } catch (error) {
@@ -772,77 +788,99 @@ export function createAwsAdapter(
       const identifiers = await Promise.all(
         request.sources.map((source) => resolveArn(source.logGroup, signal)),
       );
-      const response = await send<StartLiveTailCommandOutput>(
-        new StartLiveTailCommand({
-          logGroupIdentifiers: identifiers,
-          logStreamNames: request.sources[0]?.logStreams?.length
-            ? request.sources[0].logStreams
-            : undefined,
-          logEventFilterPattern: request.filterPattern || undefined,
-        }),
-        signal,
-      );
-      if (!response.responseStream)
-        throw new Error(
-          "CloudWatch did not return a Live Tail response stream",
-        );
-      const iterator = response.responseStream[Symbol.asyncIterator]();
-      let session = "live";
-      let sequence = 0;
+      const streamController = new AbortController();
+      const streamSignal = AbortSignal.any([signal, streamController.signal]);
       try {
-        while (true) {
-          throwIfAborted(signal);
-          const next = await withAbort(iterator.next(), signal);
-          throwIfAborted(signal);
-          if (next.done) break;
-          const chunk = next.value;
-          if (chunk.SessionTimeoutException)
-            throw new Error(
-              chunk.SessionTimeoutException.message ??
-                "Live Tail session reached its service time limit",
-            );
-          if (chunk.SessionStreamingException)
-            throw new Error(
-              chunk.SessionStreamingException.message ??
-                "Live Tail session failed",
-            );
-          if (chunk.sessionStart) {
-            session = chunk.sessionStart.sessionId ?? session;
-            emit({
-              requestId: request.requestId,
-              state: "running",
-              sampled: false,
-            });
+        const response = await send<StartLiveTailCommandOutput>(
+          new StartLiveTailCommand({
+            logGroupIdentifiers: identifiers,
+            logStreamNames: request.sources[0]?.logStreams?.length
+              ? request.sources[0].logStreams
+              : undefined,
+            logEventFilterPattern: request.filterPattern || undefined,
+          }),
+          streamSignal,
+        );
+        if (!response.responseStream)
+          throw new Error(
+            "CloudWatch did not return a Live Tail response stream",
+          );
+        const iterator = response.responseStream[Symbol.asyncIterator]();
+        let session = "live";
+        let sequence = 0;
+        try {
+          while (true) {
+            throwIfAborted(signal);
+            let idleTimeout = false;
+            const timer = setTimeout(() => {
+              idleTimeout = true;
+              streamController.abort();
+            }, 30000);
+            const next = await withAbort(iterator.next(), streamSignal)
+              .catch((error) => {
+                if (idleTimeout && !signal.aborted)
+                  throw new Error(
+                    "Live Tail connection stopped sending updates. Start Live again to reconnect.",
+                  );
+                throw error;
+              })
+              .finally(() => clearTimeout(timer));
+            throwIfAborted(signal);
+            if (next.done) break;
+            const chunk = next.value;
+            if (chunk.SessionTimeoutException)
+              throw new Error(
+                chunk.SessionTimeoutException.message ??
+                  "Live Tail session reached its service time limit",
+              );
+            if (chunk.SessionStreamingException)
+              throw new Error(
+                chunk.SessionStreamingException.message ??
+                  "Live Tail session failed",
+              );
+            if (chunk.sessionStart) {
+              session = chunk.sessionStart.sessionId ?? session;
+              emit({
+                requestId: request.requestId,
+                state: "running",
+                liveState: "streaming",
+                sampled: false,
+              });
+            }
+            if (chunk.sessionUpdate) {
+              const results = chunk.sessionUpdate.sessionResults ?? [];
+              const events = results.map((event) => ({
+                id: `${session}:${sequence++}`,
+                timestamp: event.timestamp ?? Date.now(),
+                ingestionTime: event.ingestionTime,
+                message: event.message ?? "",
+                logGroup: nameFromIdentifier(event.logGroupIdentifier ?? ""),
+                logStream: event.logStreamName ?? "",
+              }));
+              emit({
+                requestId: request.requestId,
+                state: "running",
+                events,
+                replace: false,
+                liveState: "streaming",
+                sampled: chunk.sessionUpdate.sessionMetadata?.sampled ?? false,
+                truncated: false,
+              });
+            }
           }
-          if (chunk.sessionUpdate) {
-            const results = chunk.sessionUpdate.sessionResults ?? [];
-            const events = results.slice(0, request.limit).map((event) => ({
-              id: `${session}:${sequence++}`,
-              timestamp: event.timestamp ?? Date.now(),
-              ingestionTime: event.ingestionTime,
-              message: event.message ?? "",
-              logGroup: nameFromIdentifier(event.logGroupIdentifier ?? ""),
-              logStream: event.logStreamName ?? "",
-            }));
-            emit({
-              requestId: request.requestId,
-              state: "running",
-              events,
-              replace: false,
-              sampled: chunk.sessionUpdate.sessionMetadata?.sampled ?? false,
-              truncated: results.length > request.limit,
-            });
+          emit({ requestId: request.requestId, state: "complete" });
+        } finally {
+          streamController.abort();
+          if (iterator.return) {
+            try {
+              await withAbort(iterator.return(), AbortSignal.timeout(1000));
+            } catch {
+              /* The request abort signal closes the transport even if the iterator cannot finish promptly. */
+            }
           }
         }
-        emit({ requestId: request.requestId, state: "complete" });
       } finally {
-        if (iterator.return) {
-          try {
-            await withAbort(iterator.return(), AbortSignal.timeout(1000));
-          } catch {
-            /* The request abort signal closes the transport even if the iterator cannot finish promptly. */
-          }
-        }
+        streamController.abort();
       }
     },
     destroy() {

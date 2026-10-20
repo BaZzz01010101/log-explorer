@@ -65,6 +65,36 @@ it("keeps scan metrics available with filtered counts", () => {
   );
 });
 
+it("distinguishes Live connection, an active stream and a stopped session", () => {
+  expect(
+    text(status({ state: "running", live: true, liveState: "connecting" })),
+  ).toContain("Connecting to Live Tail");
+  expect(
+    text(
+      status(
+        {
+          state: "running",
+          live: true,
+          liveState: "streaming",
+          liveReceived: 2,
+        },
+        12,
+        12,
+      ),
+    ),
+  ).toBe("Live stream · connected12 loaded2 new in this session");
+  expect(
+    text(
+      status({
+        state: "cancelled",
+        live: false,
+        liveState: "stopped",
+        liveReceived: 2,
+      }),
+    ),
+  ).toContain("Live stopped");
+});
+
 it.each(["empty", "more"] as const)(
   "gives the %s loading indicator an accessible label and placement",
   (position) => {

@@ -21,6 +21,7 @@ vi.mock("@mantine/core", async () => {
     Tooltip: component,
     Menu: Object.assign(component, {
       Target: component,
+      ContextMenu: component,
       Dropdown: component,
       Label: component,
       Divider: component,
@@ -80,7 +81,7 @@ async function mount(connection = createWorkspace().connections[0]) {
         favorites={[]}
         recents={[]}
         onOpen={() => {}}
-        onFavorite={() => {}}
+        onRemoveFavorite={() => {}}
         onManage={() => {}}
       />,
       {
@@ -272,7 +273,7 @@ it("discards an old connection's pending page and never feeds its cursor to the 
         favorites={[]}
         recents={[]}
         onOpen={() => {}}
-        onFavorite={() => {}}
+        onRemoveFavorite={() => {}}
         onManage={() => {}}
       />,
       {

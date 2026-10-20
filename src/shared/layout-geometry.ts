@@ -1,5 +1,5 @@
 import type { PaneLayout } from "./contracts";
-import { clampRatio } from "./pane-layout";
+import { clampRatio, MAX_LAYOUT_NODES } from "./pane-layout";
 
 /** Viewport coordinates, matching getBoundingClientRect() and a fixed overlay. */
 export interface LayoutRect {
@@ -42,7 +42,7 @@ export function paneLayoutRect(
   let visited = 0;
   while (pending.length) {
     const { node, rect } = pending.pop()!;
-    if (++visited > 7) return;
+    if (++visited > MAX_LAYOUT_NODES) return;
     if (node.type === "leaf") {
       if (node.paneId === paneId) return rect;
       continue;

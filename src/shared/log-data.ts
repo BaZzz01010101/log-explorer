@@ -9,6 +9,15 @@ export interface ParsedMessage {
 }
 export type LogLevel =
   "trace" | "debug" | "info" | "warn" | "error" | "fatal" | "unknown";
+export const LOG_LEVELS: readonly LogLevel[] = [
+  "trace",
+  "debug",
+  "info",
+  "warn",
+  "error",
+  "fatal",
+  "unknown",
+];
 export const MESSAGE_LIMIT = 524_288;
 export const INSPECTION_LIMIT = 800;
 export const EXPORT_LIMIT = 20_000_000;
@@ -18,6 +27,7 @@ export const META_COLUMNS = [
   "@message",
   "@logGroup",
   "@logStream",
+  "@source",
 ] as const;
 
 /** Reject pathological nesting before parsing, respecting quoted/escaped delimiters. */
@@ -359,9 +369,13 @@ export function matchesLocalFilter(
   event: LogEvent,
   parsed: ParsedMessage,
   query: string,
-  level: string,
+  level: string | readonly string[],
 ): boolean {
-  if (level && level !== "all" && inferLevel(parsed, event.message) !== level)
+  if (
+    Array.isArray(level)
+      ? !level.includes(inferLevel(parsed, event.message))
+      : level && level !== "all" && inferLevel(parsed, event.message) !== level
+  )
     return false;
   const tokens = localFilterTokens(query);
   if (!tokens) return false;
@@ -421,6 +435,10 @@ export function eventColumnValue(
       return inferLevel(parsed, event.message);
     case "@message":
       return event.message;
+    case "@source":
+      return [event.connectionId, event.logGroup, event.logStream]
+        .filter(Boolean)
+        .join(" · ");
     case "@logGroup":
       return event.logGroup;
     case "@logStream":

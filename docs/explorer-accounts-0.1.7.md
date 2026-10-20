@@ -1,5 +1,7 @@
 # Account and region Explorer
 
+Historical revision: [0.1.13](saved-views-and-access-0.1.13.md) removes the advanced editor, remembers packaged AWS access and replaces resource favorites with saved views.
+
 Version 0.1.7 adds one virtualized account → region → log group → log stream tree. Account entries represent configured AWS profiles; no STS identity request is needed. A single AWS account hides its account node. Offline fixtures remain explicitly identified. Expand regions independently, search group names across expanded regions, and continue group/stream pages automatically while scrolling.
 
 Connections settings merges known profile names with existing configured profiles. Enable a profile and choose regions with searchable checkboxes; region location names and codes both match. Disabling a profile retains its selected regions. Disabling a region retains its connection ID, settings and open tabs. Visibility does not change session authorization or cancel queries in existing tabs. Manual connection editing remains available under Advanced connection settings.

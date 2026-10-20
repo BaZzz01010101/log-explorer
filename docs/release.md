@@ -1,5 +1,109 @@
 # Building and releasing
 
+## Latest local verification build (0.1.21)
+
+Selected event rows now use the theme selection background and text color ahead of profile row colors, even without hover. Hover subtly mixes neutral gray into the current regular, selected or regex-highlighted background. Pinned and unpinned cells and the Hybrid gutter share one resolved color; the partial selection outline and inset shadow are removed. Expanded details keep their colors on hover, and text-match highlights remain available. The change is confined to row CSS.
+
+All 550 unit/integration tests in 72 files and 32 targeted packaged desktop checks in eight files passed with no failures, skips or flaky results. This is targeted verification of 0.1.21, not a full desktop-suite run. Native checks cover both themes and all event modes, row backgrounds and foregrounds, foreground-only profiles, hover in each state, horizontally scrolled pinned columns, expanded details, multiple selection/copy, inspector/overview, Live Tail and natural save/close. TypeScript, formatting, whitespace, production build and NSIS packaging passed. The standard launch folder contains 0.1.21, with the previous build retained. Three hidden exact-standard-path checks passed. Evidence: `.tmp/final-verification-0.1.21.json`, `.tmp/unit-0.1.21-final.json`, `.tmp/test-results-0.1.21-final/report.json`, `.tmp/test-results-row-legacy-0.1.21-final/report.json` and `.tmp/standard-build-update-0.1.21-final.json`.
+
+Artifact hashes: `release/0.1.21/artifact-manifest.json`; executable: `release/0.1.21/win-unpacked/AWS Log Explorer.exe`. Tests stayed hidden and hard offline with isolated storage and intercepted OS clipboard writes. The installer was not installed. Changes remain uncommitted.
+
+## Earlier local verification build (0.1.20)
+
+Live Tail now distinguishes connecting, connected and stopped sessions, retains matching history and counts newly received events. Connected empty sessions wait without an endless loader. Follow Live scrolls independently of reception and pauses for selection, pointer or keyboard scrolling. Stop and failed/ended sessions remain stopped even with historical refresh enabled; Retry Live explicitly reconnects. Time presets, Run and mode changes return to history. Silent streams abort after 30 seconds without protocol updates. Complete service batches reach the existing bounded buffer, preserving the newest events.
+
+All 550 unit/integration tests in 72 files and 29 targeted packaged desktop regressions in seven files passed, with no failures, skips or flaky results. This is targeted verification of 0.1.20, not a full desktop-suite run. Hidden desktop checks cover quiet and active streams, automatic reception, history retention, wheel and keyboard follow controls, Stop, time presets, Run, Events/Insights transitions, copy, multiline rows, inspector/overview and natural close/save behavior. TypeScript, formatting, whitespace, production build and NSIS packaging passed. Independent review found the keyboard-follow gap; its regression failed before the fix. The staged standard-folder update waits for the running app to exit naturally, with the previous build retained. Three hidden exact-standard-path checks are queued after promotion. Evidence: `.tmp/final-verification-0.1.20.json`, `.tmp/unit-0.1.20-final.json`, `.tmp/test-results-0.1.20-final/report.json` and `.tmp/standard-build-update-0.1.20-final.json`.
+
+Artifact hashes: `release/0.1.20/artifact-manifest.json`; executable: `release/0.1.20/win-unpacked/AWS Log Explorer.exe`. AWS adapter tests use injected transports; desktop checks use hidden hard-offline windows and isolated storage. No real AWS session was tested. The installer was not installed. Changes remain uncommitted.
+
+## Earlier local verification build (0.1.19)
+
+Highlights settings now use a compact profile section above a sortable rule table and one selected-rule detail panel. Pointer/keyboard dragging, move buttons and numeric priority update the existing saved order. Enable checkboxes, scope/path, target, regex and color swatches remain visible in the table; shared/theme colors and all matching options remain editable in the detail panel. A collapsible live preview retains its sample and pauses matching while folded. Table/Hybrid event text is directly selectable with a text cursor, including highlighted spans, while row selection, copy shortcuts and inspector navigation remain available.
+
+All 542 unit/integration tests in 72 files and 32 targeted packaged desktop regressions in eight files passed, with no failures, skips or flaky results. This is targeted verification of 0.1.19; the prior full 116-case run belongs to 0.1.16. Native checks cover both themes, smaller windows, drag priority and cancellation, rule/profile add/delete, live preview, structured and theme-specific colors, persistence after restart, regex timeout recovery and native pointer text selection. Existing copy, inspector, overview, column-dragging and natural-close checks passed. TypeScript, formatting, whitespace, production build and Windows NSIS packaging passed. The staged standard-folder update waits for the running app to exit naturally, with the previous build retained. Three hidden exact-standard-path checks are queued after promotion. Evidence: `.tmp/final-verification-0.1.19.json`, `.tmp/unit-0.1.19-final.json`, `.tmp/test-results-0.1.19-final/report.json`, `.tmp/test-results-highlights-0.1.19-final/report.json` and `.tmp/standard-build-update-0.1.19-final.json`.
+
+Artifact hashes: `release/0.1.19/artifact-manifest.json`; executable: `release/0.1.19/win-unpacked/AWS Log Explorer.exe`. Tests stayed hidden and offline with isolated storage and intercepted OS clipboard writes. The installer is unsigned and was not installed. Changes remain uncommitted.
+
+## Earlier local verification build (0.1.18)
+
+Selected events can be copied as raw messages or newline-delimited JSON records through the toolbar menu, row context menu and keyboard. Records preserve visible column IDs and order, original JSON value types and missing values as null. Hybrid primary rows remain one line for multiline messages, including with wrapping enabled; expanded details, the inspector and copying retain the full raw text.
+
+All 542 unit/integration tests in 72 files and 29 targeted packaged desktop regressions in eight files passed, with no failures, skips or flaky results. This is targeted verification of 0.1.18; the prior full 116-case run belongs to 0.1.16. Native checks cover Table/Hybrid/JSON, sorted and filtered selection, pin order, hidden columns, typed fields, native text-copy behavior, both themes and full multiline data retention. Existing inspector, query, overview, export, column-dragging and natural-close checks also passed. TypeScript, formatting, whitespace, production build and Windows NSIS packaging passed. The standard launch folder contains 0.1.18, with the previous build retained. Three hidden exact-standard-path checks passed. Evidence: `.tmp/final-verification-0.1.18.json`, `.tmp/unit-0.1.18-final.json`, `.tmp/test-results-0.1.18-final/report.json` and `.tmp/standard-build-update-0.1.18-final.json`.
+
+Artifact hashes: `release/0.1.18/artifact-manifest.json`; executable: `release/0.1.18/win-unpacked/AWS Log Explorer.exe`. Tests stayed hidden and offline with isolated storage and intercepted OS clipboard writes. The installer is unsigned and was not installed. Changes remain uncommitted.
+
+## Earlier local verification build (0.1.17)
+
+Centered Table/Hybrid column resize highlights and hit targets on their separators; centered the inspector divider and kept it above the scrollbar overview with 3px of clearance for full map hit testing. Unclipped column handles and ordered pinned-header layers keep both sides draggable. Explorer and both split-pane axes retain their existing alignment.
+
+All 534 unit/integration tests in 71 files and 23 targeted packaged desktop regressions in eight files passed, with no failures, skips or flaky results. This is targeted verification of 0.1.17; the prior full 116-case run belongs to 0.1.16. Native tests cover both themes, pinned and horizontally scrolled headers, drag starts on either side of the actual border, Escape/keyboard resizing and normal/increased inspector zoom. TypeScript, formatting, whitespace, production build and Windows NSIS packaging passed. The standard launch folder contains 0.1.17, with the previous build retained. All three hidden exact-standard-path checks passed. Evidence: `.tmp/final-verification-0.1.17.json`, `.tmp/unit-0.1.17-final.json`, `.tmp/test-results-0.1.17-verified/report.json` and `.tmp/standard-build-update-0.1.17-verified.json`.
+
+Artifact hashes: `release/0.1.17/artifact-manifest.json`; executable: `release/0.1.17/win-unpacked/AWS Log Explorer.exe`. Tests stayed hidden and offline. The installer is unsigned and was not installed. Changes remain uncommitted.
+
+## Earlier local verification build (0.1.16)
+
+Checkbox level selection with exclusive text clicks and additive Ctrl/Cmd clicks; column-header move/pin menus; automatic query-mode refresh with isolated drafts; primary-row-only hover preserving profile colors; full-height Explorer click/drag targets; themed regex tooltips and filled-dot glyphs; centered source-removal buttons and distinct multi-source icons.
+
+All 534 unit/integration tests in 71 files and all 116 packaged desktop regressions in 26 files passed, with no failures, skips or flaky results. Independent review and native tests reproduced and fixed hidden-column editor pinning, early Escape closing the inspector, inactive query-mode text affecting results, and level-button label alignment. No remaining material findings.
+
+TypeScript, formatting, whitespace, production build and Windows NSIS packaging passed. The standard launch folder contains 0.1.16, with the previous build retained. All eight hidden standard-path checks passed. Evidence: `.tmp/final-verification-0.1.16.json`, `.tmp/unit-0.1.16-final.json`, `.tmp/test-results-0.1.16-final/report.json` and `.tmp/standard-build-update-0.1.16-final.json`. Artifact hashes: `release/0.1.16/artifact-manifest.json`; versioned executable: `release/0.1.16/win-unpacked/AWS Log Explorer.exe`.
+
+Build with `node node_modules/electron-builder/out/cli/cli.js --win nsis --config.directories.output=release/0.1.16 --config.electronDist=node_modules/electron/dist`, then `python build/artifact_manifest.py --release-dir release/0.1.16`. The installer is unsigned and was not installed. Verification stayed hidden and hard offline with isolated storage.
+
+## Earlier local verification build (0.1.15)
+
+Favorite aliases, exclusive cursor menus and theme-aware tooltips; non-editable selectors and guarded paged regex search; mixed group/stream batch actions and dragging; split layouts beyond four panes; ordered event multi-selection/copy; and remembered AWS access with existing-query cancellation.
+
+All 515 unit/integration tests in 68 files and all 100 packaged desktop regressions in 22 files passed, with no failures, skips or flaky results. Independent review reproduced and corrected preset consistency, interrupted regex-scan resumption, overlapping menu transitions, keyboard context-menu propagation and Insights cancellation after access revocation. No remaining material findings.
+
+TypeScript, formatting, whitespace, production build and Windows NSIS packaging passed. The standard launch folder contains 0.1.15, with the previous build retained. All five hidden standard-path checks passed. Evidence: `.tmp/final-verification-0.1.15.json`, `.tmp/unit-0.1.15-final.json`, `.tmp/test-results-0.1.15-verified/report.json` and `.tmp/standard-build-update-0.1.15-verified.json`. Artifact hashes: `release/0.1.15/artifact-manifest.json`; versioned executable: `release/0.1.15/win-unpacked/AWS Log Explorer.exe`.
+
+Build with `node node_modules/electron-builder/out/cli/cli.js --win nsis --config.directories.output=release/0.1.15 --config.electronDist=node_modules/electron/dist`, then `python build/artifact_manifest.py --release-dir release/0.1.15`. The superseded keyboard-fix package is retained separately. The installer is unsigned and was not installed. Verification stayed hidden and hard offline with isolated storage and fake transport/clipboard probes.
+
+## Earlier local verification build (0.1.14)
+
+Favorite menus follow the pointer and support alias renaming; mixed-source views show Source automatically; selected rows retain selection hover color. See [revision notes](view-polish-0.1.14.md).
+
+All 482 unit/integration tests in 62 files and 21 targeted packaged desktop regressions passed, with no failures, skips or flaky results. The targeted suite covers the four requested changes plus source editing and regional drops, exports/Insights, column drag/resize, highlight profiles, Hybrid geometry and table idle responsiveness. The previous full 88-case run belongs to 0.1.13; it is not counted as a full-suite run for this revision.
+
+The standard launch folder contains 0.1.14, with the previous build retained. All four hidden standard-path checks passed. Evidence: `.tmp/final-verification-0.1.14.json`, `.tmp/unit-0.1.14-final.json`, `.tmp/test-results-0.1.14-final/report.json`, `.tmp/standard-build-update-0.1.14.json` and the standard smoke report when available. The versioned executable is `release/0.1.14/win-unpacked/AWS Log Explorer.exe`.
+
+Build with `node node_modules/electron-builder/out/cli/cli.js --win nsis --config.directories.output=release/0.1.14 --config.electronDist=node_modules/electron/dist`, then `python build/artifact_manifest.py --release-dir release/0.1.14`. The installer is unsigned and not installed.
+
+## Earlier local verification build (0.1.13)
+
+All 477 unit/integration tests and all 88 packaged hidden desktop cases passed on 2026-10-19, with no failures, skips or flaky results. Favorites now save complete normal/combined tab configurations. AWS access choices persist separately from workspace imports and enabling access refreshes Explorer and AWS log views. The advanced connection editor is removed. See [revision notes](saved-views-and-access-0.1.13.md).
+
+The standard launch folder contains the matching 0.1.13 package, with the previous build retained. All four hidden standard-path checks passed. State: `.tmp/standard-build-update-0.1.13.json`; smoke report: `.tmp/test-results-standard-0.1.13/report.json` when available. The versioned executable is `release/0.1.13/win-unpacked/AWS Log Explorer.exe`. Evidence: `.tmp/unit-0.1.13-final.json`, `.tmp/test-results-0.1.13-final/report.json`, `.tmp/final-verification-0.1.13.json`.
+
+Build with `node node_modules/electron-builder/out/cli/cli.js --win nsis --config.directories.output=release/0.1.13 --config.electronDist=node_modules/electron/dist`, then `python build/artifact_manifest.py --release-dir release/0.1.13`. The installer is unsigned and not installed.
+
+## Earlier local verification build (0.1.12)
+
+All 466 unit/integration tests and all 84 packaged hidden desktop cases passed against the final package. Evidence: `.tmp/unit-0.1.12-verified.json`, `.tmp/test-results-0.1.12-final-verified/report.json` and `.tmp/final-verification-0.1.12.json`. Explorer pane drops, source badge/count presentation and header contrast are described in [the revision notes](explorer-splits-0.1.12.md).
+
+The current standard-path app is still running. A hidden helper will promote the matching staged build after natural exit, retain the previous folder, verify hashes and then run four hidden offline checks against the exact standard path. It never closes or launches the user app. Handoff: `.tmp/standard-build-update-0.1.12.json`; future smoke report: `.tmp/test-results-standard-0.1.12/report.json`. The versioned build is already available at `release/0.1.12/win-unpacked/AWS Log Explorer.exe`.
+
+Build with `node node_modules/electron-builder/out/cli/cli.js --win nsis --config.directories.output=release/0.1.12 --config.electronDist=node_modules/electron/dist`, then `python build/artifact_manifest.py --release-dir release/0.1.12`. The installer is unsigned and not installed.
+
+## Earlier local verification build (0.1.11)
+
+All 460 unit/integration tests passed. The full 81-case hidden desktop run passed before the final main-process query guard; all 11 source/investigation cases passed again against the final package. Reports: `.tmp/test-results-0.1.11-reviewed-verified/report.json` and `.tmp/test-results-0.1.11-budget-final/report.json`. Package comparison confirms only main-process guards changed. Source badges, automatic source queries, region isolation and newest-first streams are described in [the release notes](sources-0.1.11.md). The installer is unsigned and not installed. Build with `node node_modules/electron-builder/out/cli/cli.js --win nsis --config.directories.output=release/0.1.11 --config.electronDist=node_modules/electron/dist`, then generate `release/0.1.11/artifact-manifest.json` using `python build/artifact_manifest.py --release-dir release/0.1.11`.
+
+The normal-folder handoff state is `.tmp/standard-build-update-0.1.11.json`. Promotion requires all 81 full-run checks and 11 final-package checks, matching hashes and natural app exit; it retains the previous build and never launches/closes the user app. [Feature status](feature-status.md) records results and limitations.
+
+## Earlier local verification build (0.1.10)
+
+Build with `node node_modules/electron-builder/out/cli/cli.js --win nsis --config.directories.output=release/0.1.10 --config.electronDist=node_modules/electron/dist`, then run `python build/artifact_manifest.py --release-dir release/0.1.10` after packaging exits. All 78 hidden packaged desktop cases were verified across the full run and one corrected-expectation rerun; audited summary: `.tmp/desktop-verification-0.1.10.json`. Raw reports remain linked in [Feature status](feature-status.md). Two additional checks use 5,000 events and a stalled offscreen regex; another verifies formatted timestamp matching across a timezone/year boundary. The installer is unsigned and not installed.
+
+The normal-folder handoff state is `.tmp/standard-build-update-0.1.10.json`. Promotion requires all 78 passing checks, matching artifact hashes and natural app exit, with a retained backup. It never launches/closes the user app. [Feature status](feature-status.md) records results and limitations.
+
+## Earlier local verification build (0.1.9)
+
+Build with `node node_modules/electron-builder/out/cli/cli.js --win nsis --config.directories.output=release/0.1.9 --config.electronDist=node_modules/electron/dist`, then run `python build/artifact_manifest.py --release-dir release/0.1.9` after packaging exits. All 74 hidden packaged desktop checks passed against the corrected artifact; report: `.tmp/test-results-0.1.9-final-verified-corrected/report.json`. Two extra checks use 5,000 events and a stalled offscreen regex. The installer is unsigned and has not been installed.
+
+The normal-folder handoff is tracked in `.tmp/standard-build-update-0.1.9.json`. It promotes only matching corrected hashes after the full passing report and natural app exit, retaining the prior folder. It never launches/closes the user app. [Feature status](feature-status.md) records evidence and limits. Earlier build commands below retain their original version context.
+
 ## Local build
 
 Use Node.js 24 and the included npm lockfile:
@@ -48,4 +152,6 @@ For packaged verification, launch `AWS Log Explorer.exe --offline-verification`.
 
 Workspace configuration lives in Electron's per-user application-data directory as `workspace.json`, with a previous-file backup. Log payloads are kept in memory and exported only through an explicit local save dialog. Back up configuration before distributing an incompatible workspace migration. Preserve the original file and surface recovery warnings when loading fails.
 
-The current implementation is version `0.1.8`. The release configuration and offline tests provide a starting point for distribution; they do not establish a signed, security-audited or commercially validated production release.
+The current implementation is version `0.1.21`. The release configuration and offline tests provide a starting point for distribution; they do not establish a signed, security-audited or commercially validated production release.
+
+The standard launch folder was updated to 0.1.11 after natural app exit, with a retained backup and matching executable/ASAR/installer hashes. Two additional hidden checks passed against the exact standard path: `.tmp/test-results-standard-0.1.11/report.json`.

@@ -1,12 +1,20 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+  type MouseEvent,
+} from "react";
 import { createPortal } from "react-dom";
-import type { LogSource } from "../../shared/contracts";
+import {
+  announceResourceDragStart,
+  RESOURCE_DRAG_MOVE,
+  announceResourceDragEnd,
+  type ResourcePayload,
+} from "../resource-drag";
 
 export const SOURCE_DROP_EVENT = "explorer:add-sources";
-export interface ResourcePayload {
-  connectionId: string;
-  sources: LogSource[];
-}
+export type { ResourcePayload } from "../resource-drag";
 // Explorer is outside the tab drag context. This pointer gesture uses the same
 // captured-pointer approach as dividers, without entering Windows' modal native
 // drag loop. Drops carry the existing bounded resource payload.
@@ -20,7 +28,7 @@ export function ResourceDragLabel({
   payload: ResourcePayload;
   children: ReactNode;
   title?: string;
-  onClick(): void;
+  onClick(event?: MouseEvent<HTMLButtonElement>): void;
   onDoubleClick(): void;
 }) {
   const [preview, setPreview] = useState<{ x: number; y: number }>();
@@ -32,11 +40,17 @@ export function ResourceDragLabel({
       <button
         className="resource-label"
         title={title}
-        onClick={() => {
-          if (!suppressClick.current) onClick();
+        onClick={(event) => {
+          if (!suppressClick.current) onClick(event);
         }}
-        onDoubleClick={() => {
-          if (!suppressClick.current) onDoubleClick();
+        onDoubleClick={(event) => {
+          if (
+            !suppressClick.current &&
+            !event?.ctrlKey &&
+            !event?.metaKey &&
+            !event?.shiftKey
+          )
+            onDoubleClick();
         }}
         onPointerDown={(event) => {
           if (event.button !== 0) return;
@@ -57,15 +71,18 @@ export function ResourceDragLabel({
             target = null;
           };
           const finish = (drop: boolean) => {
-            const destination = target;
+            const destination = target,
+              wasDragging = dragging;
+            if (wasDragging) announceResourceDragEnd(drop && !destination);
+            dragging = false;
             cleanup.current();
-            if (dragging && drop && destination)
+            if (wasDragging && drop && destination)
               destination.dispatchEvent(
                 new CustomEvent(SOURCE_DROP_EVENT, { detail: payload }),
               );
             clearTarget();
             setPreview(undefined);
-            if (dragging) {
+            if (wasDragging) {
               suppressClick.current = true;
               setTimeout(() => {
                 suppressClick.current = false;
@@ -79,15 +96,24 @@ export function ResourceDragLabel({
               Math.hypot(move.clientX - start.x, move.clientY - start.y) < 6
             )
               return;
+            if (!dragging) announceResourceDragStart();
             dragging = true;
             move.preventDefault();
             document.body.style.userSelect = "none";
             document.body.style.cursor = "copy";
             setPreview({ x: move.clientX + 16, y: move.clientY + 12 });
+            window.dispatchEvent(
+              new CustomEvent(RESOURCE_DRAG_MOVE, {
+                detail: {
+                  payload,
+                  point: { x: move.clientX, y: move.clientY },
+                },
+              }),
+            );
             const next =
               document
                 .elementFromPoint(move.clientX, move.clientY)
-                ?.closest<HTMLElement>(".query-pane") ?? null;
+                ?.closest<HTMLElement>(".source-badges") ?? null;
             if (next !== target) {
               clearTarget();
               target = next;
@@ -97,7 +123,10 @@ export function ResourceDragLabel({
             }
           };
           const up = (event: PointerEvent) => {
-            if (event.pointerId === pointerId) finish(true);
+            if (event.pointerId === pointerId) {
+              if (dragging) move(event);
+              finish(true);
+            }
           };
           const cancel = () => finish(false);
           const key = (event: KeyboardEvent) => {
@@ -112,6 +141,8 @@ export function ResourceDragLabel({
           window.addEventListener("keydown", key);
           window.addEventListener("blur", cancel);
           cleanup.current = () => {
+            if (dragging) announceResourceDragEnd(false);
+            dragging = false;
             window.removeEventListener("pointermove", move);
             window.removeEventListener("pointerup", up);
             window.removeEventListener("pointercancel", cancel);

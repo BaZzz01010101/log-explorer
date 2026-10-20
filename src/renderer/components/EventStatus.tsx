@@ -11,22 +11,32 @@ export function EventStatus({ runtime, eventsShown, eventsLoaded }: Props) {
   const state = runtime?.state ?? "idle";
   const label =
     state === "error"
-      ? "Query failed"
-      : state === "cancelled"
-        ? "Cancelled"
-        : runtime?.live && (state === "queued" || state === "running")
-          ? "Live stream"
-          : runtime?.live && state === "complete"
-            ? "Live stream stopped"
-            : state === "queued"
-              ? "Queued"
-              : state === "running"
-                ? "Loading events"
-                : undefined;
+      ? runtime?.liveState
+        ? "Live Tail failed"
+        : "Query failed"
+      : runtime?.liveState === "stopped"
+        ? "Live stopped"
+        : runtime?.liveState === "connecting"
+          ? "Connecting to Live Tail"
+          : state === "cancelled"
+            ? "Cancelled"
+            : runtime?.live && (state === "queued" || state === "running")
+              ? runtime.liveState === "streaming"
+                ? "Live stream · connected"
+                : "Live stream"
+              : runtime?.live && state === "complete"
+                ? "Live stream stopped"
+                : state === "queued"
+                  ? "Queued"
+                  : state === "running"
+                    ? "Loading events"
+                    : undefined;
   return (
     <div
       className="query-status event-status"
       data-query-state={state}
+      data-live-state={runtime?.liveState}
+      data-live-received={runtime?.liveReceived}
       role="status"
       aria-live="polite"
     >
@@ -37,6 +47,11 @@ export function EventStatus({ runtime, eventsShown, eventsLoaded }: Props) {
             `${eventsShown.toLocaleString()} shown / `}
           {eventsLoaded.toLocaleString()} loaded
         </span>
+        {runtime?.liveReceived !== undefined && (
+          <span>
+            {runtime.liveReceived.toLocaleString()} new in this session
+          </span>
+        )}
         {runtime?.stats?.bytesScanned !== undefined && (
           <span>
             {(runtime.stats.bytesScanned / 1048576).toFixed(2)} MiB scanned

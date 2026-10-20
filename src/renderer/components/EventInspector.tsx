@@ -28,14 +28,17 @@ interface ResizeSession {
 export function EventInspector({ opened, onClose, children, eventId }: Props) {
   const container = useRef<HTMLElement>(null);
   const session = useRef<ResizeSession | null>(null);
-  const [desiredWidth, setDesiredWidth] = useState(400);
+  const [desiredWidth, setDesiredWidth] = useState<number | null>(null);
   const [draft, setDraft] = useState<number | null>(null);
   const [parentWidth, setParentWidth] = useState<number | null>(null);
-  const min = parentWidth === null ? 260 : Math.min(260, parentWidth * 0.65);
+  const min = parentWidth === null ? 260 : Math.min(260, parentWidth * 0.3);
   const max = parentWidth === null ? 400 : Math.max(min, parentWidth - 140);
   const bounds = useRef({ min, max });
   bounds.current = { min, max };
-  const width = Math.min(max, Math.max(min, draft ?? desiredWidth));
+  const width = Math.min(
+    max,
+    Math.max(min, draft ?? desiredWidth ?? (parentWidth ?? 1000) * 0.3),
+  );
 
   const finish = useCallback((commit: boolean, update = true) => {
     const active = session.current;
