@@ -6,15 +6,19 @@ import {
   IconChevronRight,
   IconColumns3,
   IconFilter,
+  IconDots,
+  IconBraces,
 } from "@tabler/icons-react";
 import type { LogEvent } from "../../shared/contracts";
 import {
   inspectionRows,
+  parseLogMessage,
   summarizeValue,
   type JsonValue,
   type LogLevel,
   type ParsedMessage,
 } from "../../shared/log-data";
+import { Menu } from "./AppMenu";
 
 export interface EventRow {
   event: LogEvent;
@@ -72,6 +76,90 @@ export const HighlightText = memo(function HighlightText({
   return <>{parts}</>;
 });
 
+function JsonFieldMenu({
+  path,
+  value,
+  onAddColumn,
+  onAddFilter,
+  onDeserialize,
+}: {
+  path: string;
+  value: JsonValue;
+  onAddColumn?: (path: string) => void;
+  onAddFilter?: (path: string, value: JsonValue) => void;
+  onDeserialize?: (path: string) => void;
+}) {
+  const [opened, setOpened] = useState(false);
+  const canDeserialize = useMemo(
+    () =>
+      opened &&
+      typeof value === "string" &&
+      parseLogMessage(value).kind === "json",
+    [opened, value],
+  );
+  const container = value !== null && typeof value === "object";
+  return (
+    <Menu
+      opened={opened}
+      onChange={setOpened}
+      withinPortal
+      position="bottom-start"
+      transitionProps={{ duration: 0 }}
+    >
+      <Menu.Target>
+        <button
+          type="button"
+          className="json-field-actions"
+          aria-label={`Field actions for ${path || "root"}`}
+          data-tooltip="Field actions"
+        >
+          <IconDots size={14} />
+        </button>
+      </Menu.Target>
+      <Menu.Dropdown
+        aria-label={`Field actions for ${path || "root"}`}
+        onKeyDown={(event) => {
+          event.stopPropagation();
+          if (event.key === "Escape") {
+            event.preventDefault();
+            setOpened(false);
+          }
+        }}
+      >
+        {onAddColumn && (
+          <Menu.Item
+            aria-label={`Add ${path || "root"} column`}
+            leftSection={<IconColumns3 size={14} />}
+            onClick={() => onAddColumn(path)}
+          >
+            Add as column
+          </Menu.Item>
+        )}
+        {onAddFilter && (
+          <Menu.Item
+            aria-label={`Add ${path || "root"} to filter`}
+            disabled={container}
+            leftSection={<IconFilter size={14} />}
+            onClick={() => onAddFilter(path, value)}
+          >
+            Add to filter
+          </Menu.Item>
+        )}
+        {onDeserialize && (
+          <Menu.Item
+            aria-label={`Deserialize ${path || "root"}`}
+            disabled={!canDeserialize}
+            leftSection={<IconBraces size={14} />}
+            onClick={() => onDeserialize(path)}
+          >
+            Deserialize
+          </Menu.Item>
+        )}
+      </Menu.Dropdown>
+    </Menu>
+  );
+}
+
 export function JsonTree({
   value,
   highlight,
@@ -79,6 +167,8 @@ export function JsonTree({
   onAddColumn,
   onAddFilter,
   controls = false,
+  onDeserialize,
+  deserializedPaths,
 }: {
   value: JsonValue;
   highlight: string;
@@ -86,6 +176,8 @@ export function JsonTree({
   onAddColumn?: (path: string) => void;
   onAddFilter?: (path: string, value: JsonValue) => void;
   controls?: boolean;
+  onDeserialize?: (path: string) => void;
+  deserializedPaths?: ReadonlySet<string>;
 }) {
   const [expanded, setExpanded] = useState(() => new Set([""]));
   const model = useMemo(
@@ -142,6 +234,15 @@ export function JsonTree({
         return (
           <div
             className="json-line"
+            data-json-path={row.path}
+            data-deserialized={
+              Array.from(deserializedPaths ?? []).some(
+                (path) =>
+                  path === "" ||
+                  row.path === path ||
+                  row.path.startsWith(path + "/"),
+              ) || undefined
+            }
             key={row.path}
             style={{ paddingLeft: row.depth * 17 }}
           >
@@ -160,12 +261,36 @@ export function JsonTree({
             ) : (
               <span className="json-toggle json-toggle-spacer" />
             )}
-            <span className="json-key" title={row.path || "Root"}>
+            {(onAddColumn || onAddFilter || onDeserialize) && (
+              <JsonFieldMenu
+                path={row.path}
+                value={row.value}
+                onAddColumn={onAddColumn}
+                onAddFilter={onAddFilter}
+                onDeserialize={
+                  onDeserialize
+                    ? (path) => {
+                        onDeserialize(path);
+                        setExpanded((previous) => new Set([...previous, path]));
+                      }
+                    : undefined
+                }
+              />
+            )}
+            <span className="json-key" data-tooltip={row.path || "Root"}>
               <HighlightText
                 text={row.label === "$" ? "$" : JSON.stringify(row.label)}
                 needle={highlight}
               />
             </span>
+            {deserializedPaths?.has(row.path) && (
+              <span
+                className="json-deserialized-label"
+                data-tooltip="Temporarily deserialized in this view"
+              >
+                deserialized
+              </span>
+            )}
             <span className="json-punctuation">: </span>
             <span
               className={`json-value json-${container ? "container" : type}`}
@@ -178,27 +303,6 @@ export function JsonTree({
             </span>
             {row.depthLimited && (
               <span className="inspection-note"> depth limit</span>
-            )}
-            {onAddColumn && (
-              <button
-                className="json-add-column"
-                title={`Add ${row.path || "$"} as a column`}
-                aria-label={`Add ${row.path || "root"} column`}
-                onClick={() => onAddColumn(row.path)}
-              >
-                <IconColumns3 size={13} />
-              </button>
-            )}
-            {onAddFilter && !container && (
-              <button
-                type="button"
-                className="json-add-column json-add-filter"
-                title={`Filter loaded events by ${row.path || "$"}`}
-                aria-label={`Add ${row.path || "root"} to filter`}
-                onClick={() => onAddFilter(row.path, row.value)}
-              >
-                <IconFilter size={13} />
-              </button>
             )}
           </div>
         );
@@ -221,6 +325,8 @@ export function MessageContent({
   onAddColumn,
   onAddFilter,
   controls = false,
+  onDeserialize,
+  deserializedPaths,
 }: {
   row: EventRow;
   highlight: string;
@@ -228,6 +334,8 @@ export function MessageContent({
   onAddColumn?: (path: string) => void;
   onAddFilter?: (path: string, value: JsonValue) => void;
   controls?: boolean;
+  onDeserialize?: (path: string) => void;
+  deserializedPaths?: ReadonlySet<string>;
 }) {
   if (row.parsed.kind === "json")
     return (
@@ -238,6 +346,8 @@ export function MessageContent({
         onAddColumn={onAddColumn}
         onAddFilter={onAddFilter}
         controls={controls}
+        onDeserialize={onDeserialize}
+        deserializedPaths={deserializedPaths}
       />
     );
   const displayLimit = compact ? 6000 : 200_000;

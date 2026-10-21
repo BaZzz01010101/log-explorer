@@ -1,6 +1,28 @@
 # Building and releasing
 
-## Latest local verification build (0.1.21)
+## Latest local verification build (0.1.24)
+
+Light-theme active tabs now use the white body background and inactive tabs use the pale gray hover surface. Multi-selected active tabs retain a lighter blue tint than inactive selections; drag feedback and dark-theme colors retain their existing behavior.
+
+TypeScript, formatting, production build and NSIS packaging passed. All 569 unit/integration tests and three focused packaged startup/tab/tooltip checks passed. Separate hidden packaged rendering checks verified actual normal and multi-selected colors in both themes. This is targeted verification, not a full desktop-suite run. Evidence: `.tmp/final-verification-0.1.24.json`, `.tmp/tab-colors-024-packaged.json`, `.tmp/unit-0.1.24-release.json` and `.tmp/test-results-0.1.24-release/report.json`. The verified standard-folder update waits for the running app to exit naturally, with the previous build retained.
+
+## Earlier local verification build (0.1.23)
+
+Application menus now close peers, outside clicks, window blur and Escape consistently. Group/stream row menus own copy-name and ARN actions. Custom tooltips follow the theme, allow hover and native text selection/copy, and preserve menu/popover ownership. Explorer defaults to case-insensitive matching across pages, with configurable Alt+E regex and Alt+C match-case shortcuts. Structured fields use one action menu before the key. Valid JSON strings can be decoded into temporary foldable violet-marked values; columns, local filters and record/CSV serialization use those values while original messages and full-event exports stay unchanged.
+
+All 569 unit/integration tests in 74 files and 88 targeted packaged desktop checks in 17 files passed, with no failures, skips or flaky results. This is targeted verification of 0.1.23, not a full desktop-suite run. Native checks cover menu exclusivity and Escape focus, tooltip geometry and real mouse selection/copy inside overlays, both themes, configurable shortcuts, nested escaped JSON paths, projection lifetime, CSV/record copies, Live selection, highlight scrolling, column dragging/resizing and split layouts. TypeScript, formatting, whitespace, production build and Windows NSIS packaging passed. Independent static review found no remaining material issues; native regressions reproduced and fixed tooltip trigger-style leakage, overlay tooltip selection ownership, wildcard stream ARNs and menu Escape closing the inspector. The verified standard-folder update waits for the running app to exit naturally, with the previous build retained. Three hidden exact-standard-path checks are queued after promotion. Evidence: `.tmp/final-verification-0.1.23.json`, `.tmp/unit-0.1.23-release.json`, `.tmp/test-results-0.1.23-release/report.json` and `.tmp/standard-build-update-0.1.23-release.json`.
+
+Artifact hashes: `release/0.1.23/artifact-manifest.json`; executable: `release/0.1.23/win-unpacked/AWS Log Explorer.exe`. Tests stayed hidden and hard offline with isolated storage and intercepted clipboard writes. No real AWS session was tested. The normal app was never stopped or launched; no installer was installed. Changes remain uncommitted.
+
+## Earlier local verification build (0.1.22)
+
+Regex workers now persist across scrolling and Live batches, retaining completed results and preparing loaded offscreen events in bounded batches. Visible cache misses take priority; the full-result cache is bounded to 10,000 entries and an estimated 32 MiB of payload. Unchecked rows show a brief preparation placeholder instead of false non-matching content. Rule/theme changes, event edits/removal, overview marks and timeout recovery remain covered. Live source context now remains stable across routine updates, preserving cell DOM and native text selection. Pausing follow cancels its in-flight scroll target; reception continues.
+
+All 560 unit/integration tests in 72 files and 39 targeted packaged desktop checks in eight files passed with no failures, skips or flaky results. This is targeted verification of 0.1.22, not a full desktop-suite run. Hidden painted-frame checks cover rapid scrolling with delayed workers in both themes and all event modes. Live selection checks drag both directions across literal/profile marks, receive events while dragging, retain the exact range after further arrivals and verify original text-node identity. Profile editing, preview timeout recovery, persistence, selected/hover colors, pinned columns, inspector/overview, copies and natural close/save are covered. TypeScript, formatting, whitespace, production build and NSIS packaging passed. The verified staged update waits for the running app to exit naturally, with the previous build retained. Three hidden exact-standard-path checks are queued after promotion. Evidence: `.tmp/final-verification-0.1.22.json`, `.tmp/unit-0.1.22-final-3.json`, `.tmp/test-results-0.1.22-final/report.json`, `.tmp/test-results-highlight-extra-0.1.22-final-2/report.json` and `.tmp/standard-build-update-0.1.22-final.json`.
+
+Artifact hashes: `release/0.1.22/artifact-manifest.json`; executable: `release/0.1.22/win-unpacked/AWS Log Explorer.exe`. Tests stayed hidden and hard offline with isolated storage and intercepted OS clipboard writes. The normal user app was never forcibly closed or launched. The installer was not installed. Changes remain uncommitted.
+
+## Earlier local verification build (0.1.21)
 
 Selected event rows now use the theme selection background and text color ahead of profile row colors, even without hover. Hover subtly mixes neutral gray into the current regular, selected or regex-highlighted background. Pinned and unpinned cells and the Hybrid gutter share one resolved color; the partial selection outline and inset shadow are removed. Expanded details keep their colors on hover, and text-match highlights remain available. The change is confined to row CSS.
 
@@ -152,6 +174,6 @@ For packaged verification, launch `AWS Log Explorer.exe --offline-verification`.
 
 Workspace configuration lives in Electron's per-user application-data directory as `workspace.json`, with a previous-file backup. Log payloads are kept in memory and exported only through an explicit local save dialog. Back up configuration before distributing an incompatible workspace migration. Preserve the original file and surface recovery warnings when loading fails.
 
-The current implementation is version `0.1.21`. The release configuration and offline tests provide a starting point for distribution; they do not establish a signed, security-audited or commercially validated production release.
+The current implementation is version `0.1.22`. The release configuration and offline tests provide a starting point for distribution; they do not establish a signed, security-audited or commercially validated production release.
 
 The standard launch folder was updated to 0.1.11 after natural app exit, with a retained backup and matching executable/ASAR/installer hashes. Two additional hidden checks passed against the exact standard path: `.tmp/test-results-standard-0.1.11/report.json`.

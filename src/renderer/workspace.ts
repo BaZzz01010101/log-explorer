@@ -134,6 +134,8 @@ const DEFAULT_PREFERENCES: Preferences = {
     splitPane: "Control+\\",
     toggleSidebar: "Control+B",
     runQuery: "Control+Enter",
+    explorerRegex: "Alt+E",
+    explorerCaseSensitive: "Alt+C",
   },
 };
 const GROUP_COLORS = new Set([

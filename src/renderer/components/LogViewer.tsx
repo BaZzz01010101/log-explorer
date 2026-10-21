@@ -14,15 +14,15 @@ import {
   Button,
   Checkbox,
   Group,
-  Menu,
   Modal,
   SegmentedControl,
   Select,
   Switch,
   Text,
   TextInput,
-  Tooltip,
 } from "@mantine/core";
+import { Tooltip } from "./AppTooltip";
+import { Menu } from "./AppMenu";
 import {
   IconArrowDown,
   IconArrowLeft,
@@ -106,6 +106,7 @@ import { EventLoadingIndicator } from "./EventLoadingIndicator";
 import { LevelFilter } from "./LevelFilter";
 import { formatTimestamp } from "../timestamp-format";
 import { useEventSelection } from "../useEventSelection";
+import { useDeserializedEvents } from "../useDeserializedEvents";
 import {
   EventHighlightContext,
   useEventHighlights,
@@ -253,7 +254,8 @@ export function LogViewer({
   const resizeSession = useRef<ColumnResizeSession | null>(null);
   const localSearch = useDeferredValue(view.localSearch);
   const filtering = localSearch !== view.localSearch;
-  const allRows = useMemo(() => events.map(prepare), [events]);
+  const deserialized = useDeserializedEvents(events, prepare);
+  const allRows = deserialized.rows;
   const filteredRows = useMemo(
     () =>
       allRows.filter((row) =>
@@ -416,7 +418,7 @@ export function LogViewer({
               sourceContext?.connectionId ?? "",
             );
             return (
-              <span className="event-source-label" title={source.detail}>
+              <span className="event-source-label" data-tooltip={source.detail}>
                 {source.label}
               </span>
             );
@@ -452,7 +454,7 @@ export function LogViewer({
           return (
             <span
               className={value === undefined ? "cell-missing" : ""}
-              title={text}
+              data-tooltip={text}
             >
               <HighlightText
                 text={text || (value === undefined ? "—" : "")}
@@ -572,6 +574,7 @@ export function LogViewer({
       )
         latest = index;
     virtualizer.scrollToIndex(latest, { align: "end" });
+    return () => virtualizer.cancelScroll();
   }, [events, rows, followLive, liveState, virtualizer]);
   useLayoutEffect(() => {
     const scroll = scrollRef.current;
@@ -586,19 +589,16 @@ export function LogViewer({
   const inspected =
     inspectedIndex >= 0 ? rows[inspectedIndex]?.original : undefined;
   const visibleItems = virtualizer.getVirtualItems();
-  const highlightEvents = [
-    ...new Map(
-      [
-        ...visibleItems.map((item) => rows[item.index]!.original.event),
-        ...(selection.opened && inspected ? [inspected.event] : []),
-      ].map((event) => [event.id, event]),
-    ).values(),
-  ];
-  const highlighting = useEventHighlights(highlightEvents, preferences, config);
   const overviewEvents = useMemo(
     () => allRows.map((row) => row.event),
     [allRows],
   );
+  const highlighting = useEventHighlights(overviewEvents, preferences, config, {
+    priority: [
+      ...visibleItems.map((item) => rows[item.index]!.original.event.id),
+      ...(selection.opened && inspected ? [inspected.event.id] : []),
+    ],
+  });
   const overview = useEventHighlights(overviewEvents, preferences, config, {
     overview: true,
     needle: highlightText,
@@ -665,7 +665,14 @@ export function LogViewer({
         ...table.getCenterVisibleLeafColumns(),
         ...table.getRightVisibleLeafColumns(),
       ].map((column) => columnPath(column.id));
-      await copy(serializeSelectedEvents(selected, format, columns));
+      await copy(
+        serializeSelectedEvents(
+          selected,
+          format,
+          columns,
+          deserialized.parsedFor,
+        ),
+      );
     } catch (error) {
       setNotice(
         error instanceof Error ? error.message : "Clipboard copy failed.",
@@ -683,6 +690,7 @@ export function LogViewer({
           ...table.getCenterVisibleLeafColumns(),
           ...table.getRightVisibleLeafColumns(),
         ].map((column) => columnPath(column.id)),
+        deserialized.parsedFor,
       );
       const written = await window.explorer.exportData(content, extension);
       setNotice(
@@ -1207,7 +1215,7 @@ export function LogViewer({
                         >
                           <button
                             className="column-sort"
-                            title={`Sort by ${titleFor(columnPath(header.id))}`}
+                            data-tooltip={`Sort by ${titleFor(columnPath(header.id))}`}
                             onClick={header.column.getToggleSortingHandler()}
                             draggable={false}
                             onDragStart={(event) => event.preventDefault()}
@@ -1373,6 +1381,8 @@ export function LogViewer({
                     const row = tableRow.original;
                     const expanded = expansion.isExpanded(row.event.id);
                     const highlight = highlighting.results.get(row.event.id);
+                    const highlightPending =
+                      highlighting.active && !highlight && !highlighting.error;
                     return (
                       <EventHighlightContext.Provider
                         key={tableRow.id}
@@ -1391,6 +1401,8 @@ export function LogViewer({
                             highlight?.row.background ||
                             highlight?.row.foreground,
                           )}
+                          data-highlight-pending={highlightPending}
+                          aria-busy={highlightPending || undefined}
                           onPointerDown={(event) => {
                             onPauseLiveFollow?.();
                             if (
@@ -1478,7 +1490,7 @@ export function LogViewer({
                                 </span>
                                 <span
                                   className="event-source"
-                                  title={`${row.event.logGroup} · ${row.event.logStream}`}
+                                  data-tooltip={`${row.event.logGroup} · ${row.event.logStream}`}
                                 >
                                   {row.event.logStream}
                                 </span>
@@ -1506,6 +1518,13 @@ export function LogViewer({
                                     highlight={highlightText}
                                     compact
                                     onAddColumn={addColumn}
+                                    onAddFilter={addFilter}
+                                    onDeserialize={(path) =>
+                                      deserialized.deserialize(row.event, path)
+                                    }
+                                    deserializedPaths={deserialized.pathsFor(
+                                      row.event,
+                                    )}
                                   />
                                 </div>
                               ) : (
@@ -1578,6 +1597,13 @@ export function LogViewer({
                                     highlight={highlightText}
                                     compact
                                     onAddColumn={addColumn}
+                                    onAddFilter={addFilter}
+                                    onDeserialize={(path) =>
+                                      deserialized.deserialize(row.event, path)
+                                    }
+                                    deserializedPaths={deserialized.pathsFor(
+                                      row.event,
+                                    )}
                                   />
                                   <Group gap="xs" mt={6}>
                                     {view.mode === "hybrid" && (
@@ -1849,6 +1875,10 @@ export function LogViewer({
                       row={inspected}
                       highlight={highlightText}
                       onAddColumn={addColumn}
+                      onDeserialize={(path) =>
+                        deserialized.deserialize(inspected.event, path)
+                      }
+                      deserializedPaths={deserialized.pathsFor(inspected.event)}
                       onAddFilter={addFilter}
                       controls
                       key={inspected.event.id}
@@ -1928,7 +1958,7 @@ export function LogViewer({
                   );
                 }}
               />
-              <span className="column-path" title={column.path}>
+              <span className="column-path" data-tooltip={column.path}>
                 {titleFor(column.path)}
               </span>
               <span className="column-width">
@@ -1936,7 +1966,7 @@ export function LogViewer({
               </span>
               <Select
                 aria-label={`Format ${titleFor(column.path)}`}
-                title="Format displayed values"
+                data-tooltip="Format displayed values"
                 size="xs"
                 style={{ flex: "0 0 116px", width: 116 }}
                 value={column.format ?? "auto"}

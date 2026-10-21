@@ -39,7 +39,7 @@ export function ResourceDragLabel({
     <>
       <button
         className="resource-label"
-        title={title}
+        data-tooltip={title}
         onClick={(event) => {
           if (!suppressClick.current) onClick(event);
         }}

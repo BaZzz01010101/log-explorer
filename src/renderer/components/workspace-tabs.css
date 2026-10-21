@@ -4,6 +4,10 @@
   background: var(--mantine-color-body);
   border-bottom: 1px solid var(--mantine-color-default-border);
 }
+[data-mantine-color-scheme="light"] .workspace-tab-bar {
+  --workspace-tab-background: var(--mantine-color-default-hover);
+  --workspace-tab-active-background: var(--mantine-color-body);
+}
 .workspace-tab-list {
   display: flex;
   flex: 1;
@@ -37,7 +41,7 @@
   min-width: 130px;
   border-right: 1px solid var(--mantine-color-default-border);
   color: var(--mantine-color-dimmed);
-  background: transparent;
+  background: var(--workspace-tab-background, transparent);
   user-select: none;
   -webkit-user-drag: none;
   touch-action: none;
@@ -47,11 +51,22 @@
 }
 .workspace-tab.is-active {
   color: var(--mantine-color-text);
-  background: var(--mantine-color-default-hover);
+  background: var(
+    --workspace-tab-active-background,
+    var(--mantine-color-default-hover)
+  );
   box-shadow: inset 0 -2px 0 var(--mantine-color-blue-5);
 }
 .workspace-tab.is-selected {
   background: color-mix(in srgb, var(--mantine-color-blue-5) 15%, transparent);
+}
+[data-mantine-color-scheme="light"]
+  .workspace-tab.is-active.is-selected:not(.is-dragging) {
+  background: color-mix(
+    in srgb,
+    var(--mantine-color-blue-5) 5%,
+    var(--mantine-color-body)
+  );
 }
 .workspace-tab.is-grouped {
   border-top: 2px solid var(--group-color);

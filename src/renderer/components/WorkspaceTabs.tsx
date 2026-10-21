@@ -37,14 +37,14 @@ import {
   ActionIcon,
   Button,
   Group,
-  Menu,
   Modal,
   Select,
   Stack,
   Text,
   TextInput,
-  Tooltip,
 } from "@mantine/core";
+import { Tooltip } from "./AppTooltip";
+import { Menu } from "./AppMenu";
 import {
   IconChevronDown,
   IconChevronLeft,
@@ -144,7 +144,7 @@ function SortableTab({
   onKeyDown: (event: KeyboardEvent<HTMLButtonElement>) => void;
 }) {
   const { selected: selection, setSelected } = useContext(WorkspaceSelection);
-  const { mode } = useContext(WorkspaceDragMode);
+  const { mode, sourceKind } = useContext(WorkspaceDragMode);
   const [menuOpen, setMenuOpen] = useState(false);
   const [renameOpened, setRenameOpened] = useState(false);
   const [name, setName] = useState(tab.title);
@@ -261,7 +261,7 @@ function SortableTab({
               openDelay={500}
               multiline
               w={330}
-              disabled={menuOpen}
+              disabled={menuOpen || sourceKind !== null}
             >
               <button
                 type="button"
@@ -510,7 +510,7 @@ function GroupChip({
       <button
         className="group-chip-name"
         aria-expanded={!group.collapsed}
-        title={`Drop tabs here to add to ${group.name}`}
+        data-tooltip={`Drop tabs here to add to ${group.name}`}
         onClick={() =>
           dispatch({
             type: "group/update",

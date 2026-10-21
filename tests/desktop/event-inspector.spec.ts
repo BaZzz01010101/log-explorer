@@ -271,7 +271,7 @@ test("structured inspector folds nested objects and adds columns and local filte
   });
   if (await expandRequest.count()) await expandRequest.click();
   const requestId = inspector().getByRole("button", {
-    name: "Add /request/id column",
+    name: "Field actions for /request/id",
     exact: true,
   });
   await expect(requestId).toBeVisible();
@@ -293,13 +293,22 @@ test("structured inspector folds nested objects and adds columns and local filte
     .click();
   await expect(requestId).toBeVisible();
   await inspector()
-    .getByRole("button", { name: "Add /service/version column", exact: true })
+    .getByRole("button", {
+      name: "Field actions for /service/version",
+      exact: true,
+    })
+    .click();
+  await page
+    .getByRole("menuitem", { name: "Add /service/version column", exact: true })
     .click();
   await expect(
     page.getByRole("columnheader").filter({ hasText: "/service/version" }),
   ).toBeAttached();
   await inspector()
-    .getByRole("button", { name: "Add /level to filter", exact: true })
+    .getByRole("button", { name: "Field actions for /level", exact: true })
+    .click();
+  await page
+    .getByRole("menuitem", { name: "Add /level to filter", exact: true })
     .click();
   await expect(
     page.getByRole("textbox", {

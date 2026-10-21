@@ -509,6 +509,7 @@ export function serializeEvents(
   events: LogEvent[],
   format: "json" | "jsonl" | "csv",
   columns: string[] = [...META_COLUMNS],
+  parsedFor?: (event: LogEvent) => ParsedMessage,
 ): string {
   const chunks: string[] = [];
   let length = 0;
@@ -524,7 +525,7 @@ export function serializeEvents(
     const escape = (value: string) => `"${value.replace(/"/g, '""')}"`;
     append(columns.map(escape).join(","));
     for (const event of events) {
-      const parsed = parseLogMessage(event.message);
+      const parsed = parsedFor?.(event) ?? parseLogMessage(event.message);
       const values = columns.map((path) => {
         const value = eventColumnValue(event, parsed, path);
         const text =

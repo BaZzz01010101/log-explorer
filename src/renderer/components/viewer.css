@@ -200,6 +200,18 @@
   font-size: var(--log-font-size, 12px);
   box-sizing: border-box;
 }
+.virtual-event[data-highlight-pending="true"] > * {
+  visibility: hidden;
+}
+.virtual-event[data-highlight-pending="true"]::after {
+  content: "Preparing highlights…";
+  position: absolute;
+  top: 8px;
+  left: 14px;
+  color: var(--mantine-color-dimmed);
+  font-family: var(--mantine-font-family);
+  font-size: 11px;
+}
 .log-table-header {
   display: flex;
   position: sticky;
@@ -490,18 +502,39 @@ body.resizing-columns * {
 .json-container {
   color: var(--mantine-color-dimmed);
 }
-.json-add-column {
+.json-field-actions {
   border: 0;
   background: transparent;
-  color: var(--mantine-color-cyan-6);
+  color: var(--mantine-color-dimmed);
   cursor: pointer;
-  padding: 0 7px;
-  opacity: 0;
+  padding: 0;
+  width: 18px;
+  height: 18px;
+  flex: 0 0 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 3px;
+  margin-right: 3px;
   align-self: center;
 }
-.json-line:hover .json-add-column,
-.json-line:focus-within .json-add-column {
-  opacity: 1;
+.json-field-actions:hover,
+.json-field-actions[aria-expanded="true"] {
+  background: var(--mantine-color-default-hover);
+  color: var(--mantine-color-text);
+}
+:where(.json-line[data-deserialized="true"]) .json-key,
+:where(.json-line[data-deserialized="true"]) .json-value {
+  color: light-dark(#7048b7, #c0a7f5);
+}
+.json-deserialized-label {
+  color: light-dark(#7048b7, #c0a7f5);
+  background: light-dark(#f1eafa, #302642);
+  border-radius: 3px;
+  padding: 0 4px;
+  margin-left: 6px;
+  font-family: var(--mantine-font-family);
+  font-size: 10px;
 }
 .inspection-note {
   font-family: var(--mantine-font-family);

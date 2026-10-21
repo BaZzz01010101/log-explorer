@@ -263,7 +263,7 @@ export function TimeRangePicker({
               type="button"
               aria-label="Time range"
               aria-pressed={customSelected}
-              title={
+              data-tooltip={
                 tab.timePreset === "clear"
                   ? "All available history through now"
                   : label
@@ -466,7 +466,7 @@ export function TimeRangePicker({
       </div>
       <Select
         aria-label="Timezone"
-        title={
+        data-tooltip={
           timezone === "utc"
             ? "Coordinated Universal Time"
             : Intl.DateTimeFormat().resolvedOptions().timeZone

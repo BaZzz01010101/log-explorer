@@ -1,8 +1,12 @@
 self.onmessage = ({
   data,
-}: MessageEvent<{ pattern: string; names: string[] }>) => {
+}: MessageEvent<{
+  pattern: string;
+  names: string[];
+  ignoreCase?: boolean;
+}>) => {
   try {
-    const expression = new RegExp(data.pattern);
+    const expression = new RegExp(data.pattern, data.ignoreCase ? "i" : "");
     const matches = data.names.flatMap((name, index) =>
       expression.test(name) ? [index] : [],
     );

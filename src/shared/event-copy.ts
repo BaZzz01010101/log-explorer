@@ -1,5 +1,9 @@
 import type { LogEvent } from "./contracts";
-import { eventColumnValue, parseLogMessage } from "./log-data";
+import {
+  eventColumnValue,
+  parseLogMessage,
+  type ParsedMessage,
+} from "./log-data";
 
 export type SelectedEventCopyFormat = "messages" | "records";
 export const COPY_TEXT_LIMIT = 50_000_000;
@@ -8,13 +12,14 @@ export function serializeSelectedEvents(
   events: readonly LogEvent[],
   format: SelectedEventCopyFormat,
   columns: readonly string[],
+  parsedFor?: (event: LogEvent) => ParsedMessage,
 ): string {
   const lines: string[] = [];
   let length = 0;
   for (const event of events) {
     let line = event.message;
     if (format === "records") {
-      const parsed = parseLogMessage(event.message);
+      const parsed = parsedFor?.(event) ?? parseLogMessage(event.message);
       line = JSON.stringify(
         Object.fromEntries(
           columns.map((path) => [

@@ -1,0 +1,19 @@
+.app-tooltip {
+  background: var(--mantine-color-body);
+  color: var(--mantine-color-text);
+  border: 1px solid var(--mantine-color-default-border);
+  box-shadow: 0 4px 16px #0002;
+  padding: 7px 10px;
+  max-width: min(600px, calc(100vw - 24px));
+  max-height: min(480px, calc(100vh - 24px));
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  pointer-events: auto;
+  user-select: text;
+  cursor: text;
+}
+.app-tooltip * {
+  user-select: text;
+  cursor: text;
+}

@@ -22,6 +22,7 @@ export const resourceScope = (
   connection: Connection,
   search: string,
   regex = false,
+  caseSensitive = true,
 ) =>
   JSON.stringify([
     connection.id,
@@ -30,6 +31,7 @@ export const resourceScope = (
     connection.mode,
     search,
     ...(regex ? ["regex"] : []),
+    ...(!caseSensitive ? ["ignore-case"] : []),
   ]);
 export function useExplorerResources(
   connections: Connection[],
@@ -37,17 +39,34 @@ export function useExplorerResources(
   search: string,
   refreshKey = 0,
   regex = false,
+  caseSensitive = true,
 ) {
   const [cache, setCache] = useState<Record<string, RegionResources>>({});
-  const refs = useRef({ connections, search, cache, regex, visibleRegions });
-  refs.current = { connections, search, cache, regex, visibleRegions };
+  const refs = useRef({
+    connections,
+    search,
+    cache,
+    regex,
+    caseSensitive,
+    visibleRegions,
+  });
+  refs.current = {
+    connections,
+    search,
+    cache,
+    regex,
+    caseSensitive,
+    visibleRegions,
+  };
   const mounted = useRef(true),
     sequence = useRef(0),
     pending = useRef(new Map<string, number>()),
     cursors = useRef(new Map<string, Set<string>>()),
     regexTasks = useRef(new Map<string, AbortController>());
   const identities = JSON.stringify(
-    connections.map((connection) => resourceScope(connection, search, regex)),
+    connections.map((connection) =>
+      resourceScope(connection, search, regex, caseSensitive),
+    ),
   );
   const visible = JSON.stringify(visibleRegions);
   const observedRefresh = useRef(refreshKey);
@@ -73,12 +92,17 @@ export function useExplorerResources(
   }, []);
   const current = (connection: Connection, scope: string) =>
     mounted.current &&
-    (!refs.current.regex ||
+    ((!refs.current.regex && refs.current.caseSensitive) ||
       refs.current.visibleRegions.includes(connection.id)) &&
     refs.current.connections.some(
       (item) =>
         item.id === connection.id &&
-        resourceScope(item, refs.current.search, refs.current.regex) === scope,
+        resourceScope(
+          item,
+          refs.current.search,
+          refs.current.regex,
+          refs.current.caseSensitive,
+        ) === scope,
     );
   const loadGroups = useCallback(async (connectionId: string, more = false) => {
     const connection = refs.current.connections.find(
@@ -89,6 +113,7 @@ export function useExplorerResources(
         connection,
         refs.current.search,
         refs.current.regex,
+        refs.current.caseSensitive,
       ),
       key = JSON.stringify([scope, "groups"]);
     const prior =
@@ -123,12 +148,20 @@ export function useExplorerResources(
       },
     }));
     try {
-      if (refs.current.regex && refs.current.search) {
+      if (
+        (refs.current.regex || !refs.current.caseSensitive) &&
+        refs.current.search
+      ) {
         const task = new AbortController();
         regexTasks.current.set(key, task);
-        const pattern = refs.current.search;
+        const {
+          search: pattern,
+          regex: useRegex,
+          caseSensitive: matchCase,
+        } = refs.current;
         // Validate before making any enumeration requests.
-        await matchGroupNames(pattern, [], task.signal);
+        if (useRegex)
+          await matchGroupNames(pattern, [], task.signal, !matchCase);
         const items = new Map<string, LogGroup>();
         const seen = new Set<string>();
         let cursor: string | undefined;
@@ -145,11 +178,18 @@ export function useExplorerResources(
           )
             return;
           const matches = new Set(
-            await matchGroupNames(
-              pattern,
-              page.items.map((item) => item.name),
-              task.signal,
-            ),
+            useRegex
+              ? await matchGroupNames(
+                  pattern,
+                  page.items.map((item) => item.name),
+                  task.signal,
+                  !matchCase,
+                )
+              : page.items
+                  .filter((item) =>
+                    item.name.toLowerCase().includes(pattern.toLowerCase()),
+                  )
+                  .map((item) => item.name),
           );
           if (
             !current(connection, scope) ||
@@ -160,7 +200,7 @@ export function useExplorerResources(
             if (matches.has(item.name)) items.set(item.name, item);
           if (page.cursor && seen.has(page.cursor))
             throw new Error(
-              "Regex scan received a repeated continuation; refresh to retry",
+              "Group search received a repeated continuation; refresh to retry",
             );
           cursor = page.cursor;
           if (cursor) seen.add(cursor);
@@ -252,6 +292,7 @@ export function useExplorerResources(
           connection,
           refs.current.search,
           refs.current.regex,
+          refs.current.caseSensitive,
         ),
         key = JSON.stringify([scope, "streams", group]);
       const entry = ownValue(refs.current.cache, connectionId);
@@ -362,9 +403,12 @@ export function useExplorerResources(
     const valid = new Set(
       connections
         .filter(
-          (connection) => !regex || visibleRegions.includes(connection.id),
+          (connection) =>
+            (!regex && caseSensitive) || visibleRegions.includes(connection.id),
         )
-        .map((connection) => resourceScope(connection, search, regex)),
+        .map((connection) =>
+          resourceScope(connection, search, regex, caseSensitive),
+        ),
     );
     for (const key of pending.current.keys())
       if (!valid.has(JSON.parse(key)[0])) {
@@ -380,8 +424,11 @@ export function useExplorerResources(
           connections.some(
             (connection) =>
               connection.id === id &&
-              entry.scope === resourceScope(connection, search, regex) &&
-              (!regex || visibleRegions.includes(id) || !entry.groups.loading),
+              entry.scope ===
+                resourceScope(connection, search, regex, caseSensitive) &&
+              ((!regex && caseSensitive) ||
+                visibleRegions.includes(id) ||
+                !entry.groups.loading),
           ),
         ),
       ),
@@ -394,7 +441,8 @@ export function useExplorerResources(
       if (
         connection &&
         (!entry ||
-          entry.scope !== resourceScope(connection, search, regex) ||
+          entry.scope !==
+            resourceScope(connection, search, regex, caseSensitive) ||
           (!entry.groups.loaded &&
             !entry.groups.loading &&
             !entry.groups.error))

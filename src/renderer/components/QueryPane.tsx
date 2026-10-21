@@ -1,18 +1,18 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActionIcon,
   Alert,
   Badge,
   Button,
   Group,
-  Menu,
   Modal,
   SegmentedControl,
   Text,
   Textarea,
   TextInput,
-  Tooltip,
 } from "@mantine/core";
+import { Tooltip } from "./AppTooltip";
+import { Menu } from "./AppMenu";
 import {
   IconBookmark,
   IconArrowDown,
@@ -75,6 +75,16 @@ export function QueryPane({
   const [saveKind, setSaveKind] = useState<"query" | "preset" | null>(null);
   const [saveName, setSaveName] = useState("");
   const [followLive, setFollowLive] = useState(true);
+  const sourceContext = useMemo(
+    () => ({
+      sources: runtime?.request?.sources ?? tab.sources,
+      connections: runtime?.request
+        ? [runtime.request.connection, ...(runtime.request.connections ?? [])]
+        : workspace.connections,
+      connectionId: runtime?.request?.connection.id ?? tab.connectionId,
+    }),
+    [runtime?.request, tab.sources, tab.connectionId, workspace.connections],
+  );
   useEffect(() => {
     if (runtime?.live) setFollowLive(true);
   }, [runtime?.live, runtime?.request?.requestId]);
@@ -210,7 +220,7 @@ export function QueryPane({
                     {workspace.history.slice(0, 8).map((query) => (
                       <Menu.Item
                         key={query.id}
-                        title={query.text}
+                        data-tooltip={query.text}
                         onClick={() =>
                           onPatch({
                             kind: query.kind,
@@ -402,16 +412,7 @@ export function QueryPane({
       <div className="viewer-container">
         <LogViewer
           events={runtime?.events ?? []}
-          sourceContext={{
-            sources: runtime?.request?.sources ?? tab.sources,
-            connections: runtime?.request
-              ? [
-                  runtime.request.connection,
-                  ...(runtime.request.connections ?? []),
-                ]
-              : workspace.connections,
-            connectionId: runtime?.request?.connection.id ?? tab.connectionId,
-          }}
+          sourceContext={sourceContext}
           view={tab.view}
           onViewChange={patchView}
           preferences={workspace.preferences}

@@ -34,6 +34,32 @@ test.beforeEach(async ({}, testInfo) => {
     { path: "@timestamp", width: 210, pinned: true },
     { path: "@message", width: 700 },
   ];
+  if (
+    testInfo.title.includes("light") &&
+    testInfo.title.includes("native text selection")
+  )
+    state.preferences.highlightProfiles = [
+      {
+        id: "selection",
+        name: "Selection",
+        enabled: true,
+        groupPattern: "",
+        groupIgnoreCase: false,
+        rules: [
+          {
+            id: "processed",
+            enabled: true,
+            scope: "structured",
+            path: "/message",
+            pattern: "processed",
+            ignoreCase: false,
+            target: "text",
+            colors: { background: "#ffdd66", foreground: "#111111" },
+            separateThemeColors: false,
+          },
+        ],
+      },
+    ];
   await writeFile(join(directory, "workspace.json"), JSON.stringify(state));
 
   const env: Record<string, string> = {};
@@ -275,6 +301,156 @@ test("native keyboard scrolling pauses Live following without stopping reception
     await expect(follow).toHaveAttribute("aria-pressed", "true");
   }
 });
+
+for (const mode of ["Table", "Hybrid"])
+  for (const theme of ["light", "dark"])
+    test(`${theme} ${mode} Live preserves forward and backward native text selection through event arrivals`, async () => {
+      await page
+        .locator("label")
+        .filter({ hasText: new RegExp(`^${mode}$`) })
+        .click();
+      await page
+        .getByPlaceholder("Highlight text…", { exact: true })
+        .fill("processed");
+      await page.getByRole("button", { name: "Live", exact: true }).click();
+      await expect.poll(received).toBeGreaterThanOrEqual(2);
+      for (const backwards of [false, true]) {
+        await app!.evaluate(async ({ BrowserWindow }) => {
+          await BrowserWindow.getAllWindows()[0].webContents.capturePage(
+            undefined,
+            { stayHidden: true, stayAwake: true },
+          );
+        });
+        let visibleId = "";
+        await expect
+          .poll(async () => {
+            visibleId = await page
+              .locator(".virtual-event")
+              .evaluateAll((elements) => {
+                const viewer = document
+                  .querySelector(".viewer-scroll")!
+                  .getBoundingClientRect();
+                return (
+                  elements
+                    .find((element) => {
+                      const rect = element.getBoundingClientRect();
+                      return (
+                        element.textContent?.includes("Request processed") &&
+                        rect.top >= viewer.top + viewer.height * 0.2 &&
+                        rect.bottom <= viewer.top + viewer.height * 0.8
+                      );
+                    })
+                    ?.getAttribute("data-event-id") ?? ""
+                );
+              });
+            return visibleId;
+          })
+          .not.toBe("");
+        const row = page.locator(`[data-event-id="${visibleId}"]`).first();
+        const cell = row.locator(".inspect-cell").nth(1);
+        await expect(cell).toBeVisible();
+        const id = (await row.getAttribute("data-event-id"))!;
+        const points = await cell.evaluate((element) => {
+          const walker = document.createTreeWalker(
+            element,
+            NodeFilter.SHOW_TEXT,
+          );
+          const nodes: Text[] = [];
+          while (walker.nextNode()) nodes.push(walker.currentNode as Text);
+          const pointAt = (index: number) => {
+            for (const node of nodes) {
+              if (index <= node.length) {
+                const range = document.createRange();
+                range.setStart(node, index);
+                range.collapse(true);
+                const rect = range.getBoundingClientRect();
+                return { x: rect.x, y: rect.y + rect.height / 2 };
+              }
+              index -= node.length;
+            }
+            throw new Error("Missing message glyphs");
+          };
+          // Observe DOM replacement, not just equal text after a re-render.
+          (window as any).__liveSelectedTextNode = nodes[0];
+          return { start: pointAt(2), end: pointAt(13) };
+        });
+        const from = backwards ? points.end : points.start;
+        const to = backwards ? points.start : points.end;
+        const beforeDrag = await received();
+        const geometry = async () => ({
+          rect: await row.boundingBox(),
+          scroll: await page
+            .locator(".viewer-scroll")
+            .evaluate((element) => element.scrollTop),
+          selection: await page.evaluate(() => {
+            const selection = window.getSelection();
+            return {
+              text: selection?.toString(),
+              anchorId: selection?.anchorNode?.parentElement
+                ?.closest(".virtual-event")
+                ?.getAttribute("data-event-id"),
+              anchorOffset: selection?.anchorOffset,
+            };
+          }),
+        });
+        const beforeGeometry = await geometry();
+        await page.mouse.move(from.x, from.y);
+        await page.mouse.down();
+        await page.mouse.move((from.x + to.x) / 2, (from.y + to.y) / 2, {
+          steps: 6,
+        });
+        await expect.poll(received).toBeGreaterThan(beforeDrag);
+        const duringGeometry = await geometry();
+        await page.mouse.move(to.x, to.y, { steps: 14 });
+        await page.mouse.up();
+        await mkdir(test.info().outputDir, { recursive: true });
+        await writeFile(
+          test.info().outputPath(`drag-${backwards}.json`),
+          JSON.stringify(
+            {
+              id,
+              points,
+              beforeGeometry,
+              duringGeometry,
+              after: await geometry(),
+            },
+            null,
+            2,
+          ),
+        );
+        expect
+          .soft(
+            await page.evaluate(() => window.getSelection()?.toString()),
+            `${mode}: correct ${backwards ? "backward" : "forward"} selection anchor`,
+          )
+          .toBe("quest proce");
+        const prior = await received();
+        await expect.poll(received).toBeGreaterThanOrEqual(prior + 2);
+        expect
+          .soft(
+            await page.evaluate(() => window.getSelection()?.toString()),
+            `${mode}: selection survives new events`,
+          )
+          .toBe("quest proce");
+        expect
+          .soft(
+            await page.evaluate(
+              () => (window as any).__liveSelectedTextNode.isConnected,
+            ),
+            `${mode}: selected text nodes remain mounted`,
+          )
+          .toBe(true);
+        await expect(
+          page.getByRole("button", { name: "Follow Live", exact: true }),
+        ).toHaveAttribute("aria-pressed", "false");
+        expect(await row.getAttribute("data-event-id")).toBe(id);
+        await page.evaluate(() => window.getSelection()?.removeAllRanges());
+        if (!backwards)
+          await page
+            .getByRole("button", { name: "Follow Live", exact: true })
+            .click();
+      }
+    });
 
 test.afterEach(async ({}, testInfo) => {
   if (

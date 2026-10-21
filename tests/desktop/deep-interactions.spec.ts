@@ -234,7 +234,9 @@ test("unsorted and sorted tables settle at idle and remain responsive to trusted
   await session.send("Performance.enable");
   try {
     await expectIdle(session, "unsorted");
-    const timestamp = page.locator('.column-sort[title="Sort by Timestamp"]');
+    const timestamp = page.locator(
+      '.column-sort[data-tooltip="Sort by Timestamp"]',
+    );
     const header = page.locator(".log-header-cell").filter({ has: timestamp });
     await expect(header).toHaveAttribute("aria-sort", "none");
     await timestamp.click({ timeout: 3000 });

@@ -4,6 +4,7 @@ export function matchGroupNames(
   pattern: string,
   names: string[],
   signal?: AbortSignal,
+  ignoreCase = false,
 ): Promise<string[]> {
   return new Promise((resolve, reject) => {
     if (signal?.aborted) {
@@ -49,7 +50,11 @@ export function matchGroupNames(
           () => finish("Regex search exceeded 500 ms; simplify the pattern"),
           500,
         );
-        worker.postMessage({ pattern, names });
+        worker.postMessage({
+          pattern,
+          names,
+          ...(ignoreCase ? { ignoreCase: true } : {}),
+        });
       } else finish(data.error, data.matches);
     };
   });

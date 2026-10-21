@@ -41,7 +41,7 @@ export function LevelFilter({ level, levels, onChange }: LevelFilterProps) {
           size="xs"
           variant="default"
           rightSection={<IconChevronDown size={12} />}
-          title={label}
+          data-tooltip={label}
           onClick={() => setOpened((value) => !value)}
           styles={{
             label: {
@@ -89,7 +89,7 @@ export function LevelFilter({ level, levels, onChange }: LevelFilterProps) {
                 variant="subtle"
                 color="gray"
                 aria-label={`Select only ${value.toUpperCase()}`}
-                title="Click to select only this level; Ctrl or Cmd click to toggle"
+                data-tooltip="Click to select only this level; Ctrl or Cmd click to toggle"
                 onClick={(event) => {
                   if (event.ctrlKey || event.metaKey) toggle(value);
                   else {

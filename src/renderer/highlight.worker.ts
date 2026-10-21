@@ -37,13 +37,13 @@ self.onmessage = (
     );
     if (overview) {
       if (result.overview!.length) batch.push({ id: item.id, result });
-      if (performance.now() - lastProgress > 16) {
-        self.postMessage({ batch });
-        batch = [];
-        lastProgress = performance.now();
-      }
-    } else self.postMessage({ id: item.id, result });
+    } else batch.push({ id: item.id, result });
+    if (performance.now() - lastProgress > 16) {
+      self.postMessage({ batch });
+      batch = [];
+      lastProgress = performance.now();
+    }
   }
-  if (overview) self.postMessage({ batch });
+  self.postMessage({ batch });
   self.postMessage({ done: true });
 };

@@ -109,7 +109,7 @@ export function EventOverview({
         <div
           key={lane}
           className={`event-overview-lane overview-${lane}`}
-          title={
+          data-tooltip={
             lane === "severity"
               ? "Warnings, errors and fatal events"
               : "Highlighted events"
@@ -138,7 +138,7 @@ export function EventOverview({
               data-event-end-index={mark.endIndex}
               data-level={mark.level}
               aria-label={`Jump to ${lane === "severity" ? mark.level.toUpperCase() : "highlighted"} event ${mark.index + 1}`}
-              title={`${lane === "severity" ? mark.level.toUpperCase() : "Highlight"} · event ${mark.index + 1} · Click to jump`}
+              data-tooltip={`${lane === "severity" ? mark.level.toUpperCase() : "Highlight"} · event ${mark.index + 1} · Click to jump`}
               style={{
                 top: mark.top,
                 height: mark.height,

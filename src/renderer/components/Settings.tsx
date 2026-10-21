@@ -275,14 +275,20 @@ export function Settings({
         </Tabs.Panel>
         <Tabs.Panel value="shortcuts" pt="md">
           <Text size="sm" c="dimmed" mb="sm">
-            Use Control or Meta, optional Shift/Alt, and a key. Ctrl+K opens
-            commands.
+            Use Control, Meta, Shift or Alt and a key. Explorer shortcuts apply
+            while the log group search field is focused. Ctrl+K opens commands.
           </Text>
           <Stack gap="xs">
             {Object.entries(preferences.shortcuts).map(([action, shortcut]) => (
               <TextInput
                 key={action}
-                label={action.replace(/([A-Z])/g, " $1")}
+                label={
+                  action === "explorerRegex"
+                    ? "Explorer regex"
+                    : action === "explorerCaseSensitive"
+                      ? "Explorer match case"
+                      : action.replace(/([A-Z])/g, " $1")
+                }
                 value={shortcut}
                 maxLength={80}
                 onChange={(e) =>

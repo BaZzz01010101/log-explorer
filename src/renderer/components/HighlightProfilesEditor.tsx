@@ -139,7 +139,7 @@ function RuleRow({
         />
       </td>
       <td
-        title={
+        data-tooltip={
           rule.scope === "structured"
             ? `Structured property: ${rule.path || "(root)"}`
             : "Entire message"
@@ -150,7 +150,9 @@ function RuleRow({
         </span>
       </td>
       <td>{rule.target === "row" ? "Entire row" : "Match text"}</td>
-      <td title={rule.pattern + (rule.ignoreCase ? " (ignore case)" : "")}>
+      <td
+        data-tooltip={rule.pattern + (rule.ignoreCase ? " (ignore case)" : "")}
+      >
         <code className="highlight-rule-ellipsis">{rule.pattern || "—"}</code>
       </td>
       <td>
@@ -161,7 +163,7 @@ function RuleRow({
               className="highlight-rule-color-pair"
               role="img"
               aria-label={`${label} foreground ${value.foreground || "inherited"}, background ${value.background || "inherited"}`}
-              title={`${label}: ${value.foreground || "inherit"} / ${value.background || "inherit"}`}
+              data-tooltip={`${label}: ${value.foreground || "inherit"} / ${value.background || "inherit"}`}
             >
               {rule.separateThemeColors && <small>{label[0]}</small>}
               <i style={{ backgroundColor: value.foreground }} />
@@ -540,7 +542,7 @@ export function HighlightProfilesEditor({
                     <thead>
                       <tr>
                         <th />
-                        <th title="Priority">#</th>
+                        <th data-tooltip="Priority">#</th>
                         <th>Enabled</th>
                         <th>Search in</th>
                         <th>Highlight</th>

@@ -2,6 +2,7 @@ import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { ResourceSidebar } from "../src/renderer/components/ResourceSidebar";
+import { Menu } from "../src/renderer/components/AppMenu";
 import { createWorkspace, restoreWorkspace } from "../src/renderer/workspace";
 
 // Keep the actual component state and handlers. Presentation and layout need no
@@ -339,7 +340,7 @@ it("keeps one resource context menu open and ignores a stale menu close", async 
   const menus = () =>
     renderer!.root.findAll(
       (node) =>
-        node.type !== "div" &&
+        node.type === Menu &&
         node.props.position === "bottom-start" &&
         node.props.width === 240,
     );
@@ -579,9 +580,15 @@ it("debounces substring searches through the server API and retains matching-pag
       .findAllByProps({ "aria-label": "Search log groups" })
       .at(-1)!;
     await act(async () =>
+      renderer!.root
+        .findAllByProps({ "aria-label": "Match case" })
+        .at(-1)!
+        .props.onClick(),
+    );
+    await act(async () =>
       input.props.onChange({ currentTarget: { value: "orders" } }),
     );
-    expect(listGroups).toHaveBeenCalledTimes(1);
+    expect(listGroups).toHaveBeenCalledTimes(2);
     await act(async () => {
       await vi.advanceTimersByTimeAsync(220);
     });

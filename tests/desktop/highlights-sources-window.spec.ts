@@ -196,7 +196,8 @@ test("highlight profiles edit, scope, color rows and structured text, and persis
     "rgb(85, 34, 17)",
   );
   await errorRow.locator(".inspect-cell").first().click();
-  await expect(errorRow).toHaveCSS("outline-width", "2px");
+  await expect(errorRow).toHaveCSS("outline-style", "none");
+  await expect(errorRow).toHaveAttribute("aria-selected", "true");
   await settings();
   await dialog()
     .getByRole("combobox", { name: "Search in", exact: true })
@@ -400,7 +401,7 @@ test("source-strip drops cancel with Escape and query another region", async () 
   await expect(page.locator(".query-status")).toContainText("1,080 loaded");
   await expect(
     page.locator('.source-badge[data-source-connection="other-fixtures"]'),
-  ).toHaveAttribute("title", /us-east-1/);
+  ).toHaveAttribute("data-tooltip", /us-east-1/);
   await capture("source-regions.png");
   await close();
   await launch();

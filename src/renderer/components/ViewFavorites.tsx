@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useDroppable } from "@dnd-kit/core";
-import { Button, Group, Menu, Modal, Text, TextInput } from "@mantine/core";
+import { Button, Group, Modal, Text, TextInput } from "@mantine/core";
+import { Menu } from "./AppMenu";
 import { IconLayoutColumns, IconStar, IconTrash } from "@tabler/icons-react";
 import type { ViewFavorite } from "../../shared/contracts";
 import "./view-favorites.css";
@@ -60,7 +61,7 @@ function FavoriteItem({
               favorite.split ? "Saved split view" : "Saved view"
             }
             data-favorite-id={favorite.id}
-            title={
+            data-tooltip={
               opened
                 ? undefined
                 : favorite.tabs

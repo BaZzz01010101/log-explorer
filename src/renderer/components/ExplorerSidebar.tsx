@@ -6,19 +6,18 @@ import {
   Button,
   Group,
   Loader,
-  Menu,
   Select,
   Text,
   TextInput,
-  Tooltip,
 } from "@mantine/core";
+import { Tooltip } from "./AppTooltip";
+import { Menu } from "./AppMenu";
 import {
   IconChevronDown,
   IconChevronRight,
   IconCloud,
   IconCopy,
   IconFolder,
-  IconInfoCircle,
   IconList,
   IconPlus,
   IconRefresh,
@@ -36,6 +35,7 @@ import type {
   Preferences,
 } from "../../shared/contracts";
 import { explorerProfiles } from "../explorer-configuration";
+import { shortcutMatches } from "../shortcuts";
 import {
   buildExplorerRows,
   navigateExplorer,
@@ -59,7 +59,8 @@ import "./explorer.css";
 interface Props {
   connections: Connection[];
   activeConnectionId: string;
-  preferences?: Pick<Preferences, "profileVisibility">;
+  preferences?: Pick<Preferences, "profileVisibility"> &
+    Partial<Pick<Preferences, "shortcuts">>;
   onConnectionChange?(id: string): void;
   onResourceAction?(payload: ResourcePayload, mode: ResourceActionMode): void;
   favorites: ViewFavorite[];
@@ -83,6 +84,10 @@ export function ExplorerSidebar(props: Props) {
   const [search, setSearch] = useState(""),
     [debounced, setDebounced] = useState("");
   const [regex, setRegex] = useState(false);
+  const [caseSensitive, setCaseSensitive] = useState(false);
+  const regexShortcut = props.preferences?.shortcuts?.explorerRegex ?? "Alt+E";
+  const caseShortcut =
+    props.preferences?.shortcuts?.explorerCaseSensitive ?? "Alt+C";
   const [groups, setGroups] = useState(new Set<string>());
   const [selected, setSelected] = useState(new Map<string, SelectedResource>());
   const selectionAnchor = useRef<string | null>(null);
@@ -113,6 +118,7 @@ export function ExplorerSidebar(props: Props) {
     debounced,
     props.refreshKey,
     regex,
+    caseSensitive,
   );
   const rows = buildExplorerRows(
     selectedConnection,
@@ -120,6 +126,7 @@ export function ExplorerSidebar(props: Props) {
     resources.cache,
     debounced,
     regex,
+    caseSensitive,
   );
   const missingStreams = rows.flatMap((row) =>
     row.kind === "group" &&
@@ -220,7 +227,7 @@ export function ExplorerSidebar(props: Props) {
     setContextKey(null);
     setActiveKey(null);
     if (tree.current) tree.current.scrollTop = 0;
-  }, [debounced, regex, selectedConnection?.id]);
+  }, [debounced, regex, caseSensitive, selectedConnection?.id]);
   const toggleSet = (setter: typeof setGroups, key: string) =>
     setter((previous) => {
       const next = new Set(previous);
@@ -304,7 +311,7 @@ export function ExplorerSidebar(props: Props) {
         {
           key: JSON.stringify([
             row.connection.id,
-            resourceScope(row.connection, debounced, regex),
+            resourceScope(row.connection, debounced, regex, caseSensitive),
             "groups",
             page?.cursor,
           ]),
@@ -322,7 +329,7 @@ export function ExplorerSidebar(props: Props) {
         {
           key: JSON.stringify([
             row.connection.id,
-            resourceScope(row.connection, debounced, regex),
+            resourceScope(row.connection, debounced, regex, caseSensitive),
             row.group.name,
             page?.cursor,
           ]),
@@ -338,8 +345,9 @@ export function ExplorerSidebar(props: Props) {
     scope: JSON.stringify([
       debounced,
       regex,
+      caseSensitive,
       connections.map((connection) =>
-        resourceScope(connection, debounced, regex),
+        resourceScope(connection, debounced, regex, caseSensitive),
       ),
     ]),
     targets,
@@ -448,13 +456,9 @@ export function ExplorerSidebar(props: Props) {
         <TextInput
           aria-label="Search log groups"
           placeholder="Search log groups…"
-          description={
-            regex
-              ? "Regular expression · case-sensitive · searches all groups"
-              : "Group name contains · case-sensitive"
-          }
+          description={`${regex ? "Regular expression" : "Group name contains"} · ${caseSensitive ? "case-sensitive" : "ignore case"}${regex || !caseSensitive ? " · searches all groups" : ""}`}
           error={
-            regex && search === debounced
+            search === debounced
               ? ownValue(resources.cache, selectedConnection?.id ?? "")?.groups
                   .error
               : undefined
@@ -463,7 +467,18 @@ export function ExplorerSidebar(props: Props) {
           leftSection={<IconSearch size={14} />}
           value={search}
           onChange={(event) => setSearch(event.currentTarget.value)}
-          rightSectionWidth={search ? 56 : 30}
+          onKeyDown={(event) => {
+            if (shortcutMatches(event, regexShortcut)) {
+              event.preventDefault();
+              event.stopPropagation();
+              setRegex((value) => !value);
+            } else if (shortcutMatches(event, caseShortcut)) {
+              event.preventDefault();
+              event.stopPropagation();
+              setCaseSensitive((value) => !value);
+            }
+          }}
+          rightSectionWidth={search ? 82 : 56}
           rightSectionPointerEvents="all"
           rightSection={
             <Group gap={2} wrap="nowrap">
@@ -480,8 +495,19 @@ export function ExplorerSidebar(props: Props) {
                   <IconX size={13} />
                 </ActionIcon>
               )}
+              <Tooltip label={`Match case (${caseShortcut || "unassigned"})`}>
+                <ActionIcon
+                  size={22}
+                  variant={caseSensitive ? "light" : "subtle"}
+                  aria-label="Match case"
+                  aria-pressed={caseSensitive}
+                  onClick={() => setCaseSensitive((value) => !value)}
+                >
+                  <span style={{ fontSize: 12, fontWeight: 600 }}>Aa</span>
+                </ActionIcon>
+              </Tooltip>
               <Tooltip
-                label="Use regular expression"
+                label={`Use regular expression (${regexShortcut || "unassigned"})`}
                 styles={{
                   tooltip: {
                     background: "var(--mantine-color-body)",
@@ -758,54 +784,6 @@ export function ExplorerSidebar(props: Props) {
                             <IconFolder size={14} />
                             <span>{row.group.name}</span>
                           </ResourceDragLabel>
-                          <Menu position="right-start" width={260}>
-                            <Menu.Target>
-                              <button
-                                className="favorite-button"
-                                aria-label={`Details for ${row.group.name}`}
-                              >
-                                <IconInfoCircle size={13} />
-                              </button>
-                            </Menu.Target>
-                            <Menu.Dropdown>
-                              <Menu.Label>Log group details</Menu.Label>
-                              <Text
-                                size="xs"
-                                px="xs"
-                                pb="xs"
-                                style={{ overflowWrap: "anywhere" }}
-                              >
-                                {row.group.name}
-                              </Text>
-                              <Text
-                                size="xs"
-                                c="dimmed"
-                                px="xs"
-                                pb="xs"
-                                style={{ whiteSpace: "pre-line" }}
-                              >
-                                {description(row.group)}
-                              </Text>
-                              <Text size="xs" c="dimmed" px="xs" pb="xs">
-                                {row.connection.name} · {row.connection.region}
-                              </Text>
-                              <Menu.Divider />
-                              <Menu.Item
-                                leftSection={<IconCopy size={13} />}
-                                onClick={() => copy(row.group.name)}
-                              >
-                                Copy group name
-                              </Menu.Item>
-                              {row.group.arn && (
-                                <Menu.Item
-                                  leftSection={<IconCopy size={13} />}
-                                  onClick={() => copy(row.group.arn!)}
-                                >
-                                  Copy ARN
-                                </Menu.Item>
-                              )}
-                            </Menu.Dropdown>
-                          </Menu>
                         </>
                       ) : row.kind === "stream" ? (
                         <>
@@ -846,7 +824,7 @@ export function ExplorerSidebar(props: Props) {
                         row.kind === "error-streams" ? (
                         <button
                           className="tree-more explorer-error"
-                          title={row.message}
+                          data-tooltip={row.message}
                           onClick={() => open(row)}
                         >
                           Retry{" "}
@@ -866,6 +844,41 @@ export function ExplorerSidebar(props: Props) {
                   </Menu.ContextMenu>
                   {selectable(row) && (
                     <Menu.Dropdown>
+                      {(row.kind === "group" || row.kind === "stream") && (
+                        <>
+                          <Menu.Item
+                            leftSection={<IconCopy size={13} />}
+                            onClick={() => copy(row.group.name)}
+                          >
+                            Copy group name
+                          </Menu.Item>
+                          {row.kind === "stream" && (
+                            <Menu.Item
+                              leftSection={<IconCopy size={13} />}
+                              onClick={() => copy(row.stream.name)}
+                            >
+                              Copy stream name
+                            </Menu.Item>
+                          )}
+                          {row.group.arn && (
+                            <Menu.Item
+                              leftSection={<IconCopy size={13} />}
+                              onClick={() =>
+                                copy(
+                                  row.kind === "stream"
+                                    ? row.group.arn!.replace(/:\*$/, "") +
+                                        ":log-stream:" +
+                                        row.stream.name
+                                    : row.group.arn!,
+                                )
+                              }
+                            >
+                              Copy ARN
+                            </Menu.Item>
+                          )}
+                          <Menu.Divider />
+                        </>
+                      )}
                       <Menu.Label>
                         {selected.has(row.key) && selectedSources.length > 1
                           ? `${selectedSources.length} selected resources`
@@ -943,7 +956,7 @@ export function ExplorerSidebar(props: Props) {
                 <button
                   key={index}
                   className="quick-resource"
-                  title={item.logGroup}
+                  data-tooltip={item.logGroup}
                   onClick={() => openFavorite(item)}
                   onDoubleClick={() => openFavorite(item, "permanent")}
                 >

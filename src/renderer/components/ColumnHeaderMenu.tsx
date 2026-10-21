@@ -1,4 +1,5 @@
-import { Menu } from "@mantine/core";
+import {} from "@mantine/core";
+import { Menu } from "./AppMenu";
 import type { ColumnConfig } from "../../shared/contracts";
 import { applyColumnAction, type ColumnAction } from "../column-actions";
 

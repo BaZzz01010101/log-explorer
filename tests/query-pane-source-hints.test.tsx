@@ -50,7 +50,7 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-it("keeps retained mixed results labelled with their executed sources and connection snapshots", async () => {
+it("keeps executed source snapshots stable through Live updates and refreshes them for a new request", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   const originalError = console.error.bind(console);
   vi.spyOn(console, "error").mockImplementation((...args) => {
@@ -102,8 +102,28 @@ it("keeps retained mixed results labelled with their executed sources and connec
     { logGroup: "/old-b" },
   ]);
   expect(context.connections).toEqual([original]);
+  const props = renderer.root.findByType(QueryPane)
+    .props as React.ComponentProps<typeof QueryPane>;
+  await act(async () =>
+    renderer.update(
+      <QueryPane
+        {...props}
+        runtime={{
+          ...props.runtime!,
+          live: true,
+          state: "running",
+          liveState: "streaming",
+          liveReceived: 2,
+        }}
+      />,
+    ),
+  );
+  expect(renderer.root.findByType(LogViewer).props.sourceContext).toBe(context);
+  await act(async () =>
+    renderer.root.findByType(LogViewer).props.onPauseLiveFollow(),
+  );
+  expect(renderer.root.findByType(LogViewer).props.sourceContext).toBe(context);
   const extra = { ...original, id: "extra", region: "us-east-2" };
-  request.connections.push(extra);
   await act(async () =>
     renderer.update(
       <QueryPane
@@ -114,7 +134,7 @@ it("keeps retained mixed results labelled with their executed sources and connec
           state: "complete",
           live: false,
           evicted: 0,
-          request,
+          request: { ...request, connections: [extra] },
         }}
         onPatch={noop}
         onTimezoneChange={noop}

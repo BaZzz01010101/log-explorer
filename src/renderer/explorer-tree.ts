@@ -33,12 +33,13 @@ export function buildExplorerRows(
   cache: Record<string, RegionResources>,
   search: string,
   regex = false,
+  caseSensitive = true,
 ): ExplorerRow[] {
   if (!connection) return [];
   const rows: ExplorerRow[] = [];
   const cached = ownValue(cache, connection.id);
   const data =
-    cached?.scope === resourceScope(connection, search, regex)
+    cached?.scope === resourceScope(connection, search, regex, caseSensitive)
       ? cached
       : undefined;
   const state = data?.groups;

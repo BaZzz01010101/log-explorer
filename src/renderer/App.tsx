@@ -12,9 +12,9 @@ import {
   Modal,
   Text,
   TextInput,
-  Tooltip,
   createTheme,
 } from "@mantine/core";
+import { Tooltip } from "./components/AppTooltip";
 import { Notifications, notifications } from "@mantine/notifications";
 import {
   IconAdjustments,
@@ -67,6 +67,8 @@ import { QueryPane } from "./components/QueryPane";
 import { Settings } from "./components/Settings";
 import "./components/workspace-tabs.css";
 import "./app.css";
+import { TextTooltips } from "./components/AppTooltip";
+import { shortcutMatches } from "./shortcuts";
 
 const theme = createTheme({
   primaryColor: "indigo",
@@ -90,17 +92,6 @@ const theme = createTheme({
   components: { Button: Button.extend({ defaultProps: { fw: 500 } }) },
 });
 
-function shortcutMatches(event: KeyboardEvent, shortcut: string): boolean {
-  const parts = shortcut.split("+");
-  const key = parts.pop()?.toLowerCase();
-  return (
-    event.key.toLowerCase() === key &&
-    event.ctrlKey === parts.includes("Control") &&
-    event.metaKey === parts.includes("Meta") &&
-    event.shiftKey === parts.includes("Shift") &&
-    event.altKey === parts.includes("Alt")
-  );
-}
 function localDate(time: number): string {
   const date = new Date(time);
   return new Date(time - date.getTimezoneOffset() * 60000)
@@ -296,7 +287,8 @@ export default function App() {
       }
       if (settingsOpen || commandsOpen) return;
       const entry = Object.entries(workspace.preferences.shortcuts).find(
-        ([, shortcut]) => shortcutMatches(event, shortcut),
+        ([action, shortcut]) =>
+          !action.startsWith("explorer") && shortcutMatches(event, shortcut),
       );
       if (!entry) return;
       if (isInput && entry[0] !== "runQuery") return;
@@ -403,6 +395,7 @@ export default function App() {
       forceColorScheme={workspace.preferences.theme}
     >
       <Notifications position="top-right" limit={4} />
+      <TextTooltips />
       <WorkspaceDragSurface workspace={workspace} dispatch={dispatch}>
         <div className="desktop-app" data-theme={workspace.preferences.theme}>
           <header className="app-header">
@@ -657,7 +650,7 @@ export default function App() {
                               <Text
                                 size="xs"
                                 className="pane-region"
-                                title={regions.join(", ")}
+                                data-tooltip={regions.join(", ")}
                               >
                                 {regions.length > 1
                                   ? `${regions.length} regions`
@@ -675,7 +668,7 @@ export default function App() {
                                       ? "Split side by side"
                                       : "Split above and below"
                                   }
-                                  title={
+                                  data-tooltip={
                                     splitAxis === "horizontal"
                                       ? "Split side by side"
                                       : "Split above and below"

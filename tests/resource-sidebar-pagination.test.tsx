@@ -235,7 +235,8 @@ it("preserves loaded streams and retries a failed continuation without restartin
   expect(renderer!.root.findAllByProps({ title: "first" })).not.toHaveLength(0);
   const retry = renderer!.root.findAll(
     (node) =>
-      node.type === "button" && node.props.title === "temporary failure",
+      node.type === "button" &&
+      node.props["data-tooltip"] === "temporary failure",
   )[0];
   await act(async () => retry.props.onClick());
   expect(listStreams).toHaveBeenCalledTimes(3);

@@ -99,7 +99,7 @@ it("toggles checkbox selections without closing and can explicitly select none",
     }),
   );
   expect(changed).toHaveBeenLastCalledWith([]);
-  expect(element("Local level filter").props.title).toBe("No levels");
+  expect(element("Local level filter").props["data-tooltip"]).toBe("No levels");
 });
 it.each(["ctrlKey", "metaKey"])(
   "uses %s text clicks to toggle levels without closing",

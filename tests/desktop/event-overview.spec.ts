@@ -103,7 +103,9 @@ test("profile overview follows theme colors, sorting and local filtering without
       "background-color",
       theme === "dark" ? "rgb(204, 102, 255)" : "rgb(1, 119, 170)",
     );
-    await page.locator('.column-sort[title="Sort by Timestamp"]').click();
+    await page
+      .locator('.column-sort[data-tooltip="Sort by Timestamp"]')
+      .click();
     await expect(marker).not.toHaveAttribute("data-event-index", before!);
     await marker.click();
     await expect(

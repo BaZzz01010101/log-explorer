@@ -210,7 +210,7 @@ test("level filter label and chevron share a centered horizontal row", async ({}
   await select("INFO").click({ modifiers: ["Control"] });
   await select("WARN").click({ modifiers: ["Control"] });
   await page.keyboard.press("Escape");
-  await expect(filter()).toHaveAttribute("title", "ERROR, INFO, WARN");
+  await expect(filter()).toHaveAttribute("data-tooltip", "ERROR, INFO, WARN");
   const overflow = await filter().evaluate((button) => {
     const text = button.querySelector(
       ".mantine-Button-label > span",

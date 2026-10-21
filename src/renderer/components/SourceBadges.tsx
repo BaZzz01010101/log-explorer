@@ -103,7 +103,7 @@ export function SourceBadges({
         className={`source-badges${dragging ? " source-drop-active" : ""}`}
         role="group"
         aria-label="Log sources"
-        title="Drag log groups or streams here to add sources"
+        data-tooltip="Drag log groups or streams here to add sources"
       >
         <span className="source-strip-label">{badges.length} Sources</span>
         <div className="source-badge-list">
@@ -118,7 +118,7 @@ export function SourceBadges({
               <span
                 className="source-badge"
                 key={JSON.stringify([sourceIndex, stream])}
-                title={`${fullName}\n${connection?.profile ?? ""} · ${connection?.region ?? ""}`}
+                data-tooltip={`${fullName}\n${connection?.profile ?? ""} · ${connection?.region ?? ""}`}
                 data-source-group={source.logGroup}
                 data-source-stream={stream}
                 data-source-connection={source.connectionId ?? connectionId}

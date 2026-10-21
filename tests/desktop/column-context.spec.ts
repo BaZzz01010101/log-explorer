@@ -157,7 +157,7 @@ test.afterEach(async ({}, testInfo) => {
 const header = (path: string) =>
   page.locator(".log-header-cell").filter({
     has: page.locator(
-      `.column-sort[title="Sort by ${path === "@timestamp" ? "Timestamp" : path === "@level" ? "Level" : path === "@message" ? "Message" : path}"]`,
+      `.column-sort[data-tooltip="Sort by ${path === "@timestamp" ? "Timestamp" : path === "@level" ? "Level" : path === "@message" ? "Message" : path}"]`,
     ),
   });
 const sequence = () =>

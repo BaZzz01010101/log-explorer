@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { LogEvent } from "../src/shared/contracts";
 import { serializeSelectedEvents } from "../src/shared/event-copy";
+import { serializeEvents } from "../src/shared/log-data";
 
 const event = (message: string, timestamp = 1000): LogEvent => ({
   id: `event-${timestamp}`,
@@ -12,6 +13,32 @@ const event = (message: string, timestamp = 1000): LogEvent => ({
 });
 
 describe("selected event copy", () => {
+  it("uses temporary view values for records and CSV while preserving raw message and JSON exports", () => {
+    const original = event('{"payload":"{\\"value\\":7}"}');
+    const parsedFor = () => ({
+      kind: "json" as const,
+      value: { payload: { value: 7 } },
+    });
+    expect(
+      JSON.parse(
+        serializeSelectedEvents(
+          [original],
+          "records",
+          ["/payload/value", "@message"],
+          parsedFor,
+        ),
+      ),
+    ).toEqual({ "/payload/value": 7, "@message": original.message });
+    expect(serializeSelectedEvents([original], "messages", [], parsedFor)).toBe(
+      original.message,
+    );
+    expect(
+      serializeEvents([original], "csv", ["/payload/value"], parsedFor),
+    ).toBe('"/payload/value"\r\n"7"');
+    expect(
+      JSON.parse(serializeEvents([original], "json", [], parsedFor))[0].message,
+    ).toBe(original.message);
+  });
   it("copies messages verbatim in supplied order, retaining newlines", () => {
     expect(
       serializeSelectedEvents(

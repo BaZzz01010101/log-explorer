@@ -156,9 +156,9 @@ for (const mode of ["Table", "Hybrid"]) {
       .filter({ hasText: new RegExp(`^${mode}$`) })
       .click();
     expect(await sequence()).toEqual(initial);
-    const source = page.locator('.column-sort[title="Sort by Level"]');
+    const source = page.locator('.column-sort[data-tooltip="Sort by Level"]');
     const destination = page.locator(
-      '.column-sort[title="Sort by /service/name"]',
+      '.column-sort[data-tooltip="Sort by /service/name"]',
     );
     const from = (await source.boundingBox())!,
       to = (await destination.boundingBox())!;
@@ -258,8 +258,12 @@ for (const mode of ["Table", "Hybrid"]) {
           .evaluate((element) => element.scrollLeft),
       )
       .toBeGreaterThan(0);
-    const request = page.locator('.column-sort[title="Sort by /request/id"]');
-    const message = page.locator('.column-sort[title="Sort by Message"]');
+    const request = page.locator(
+      '.column-sort[data-tooltip="Sort by /request/id"]',
+    );
+    const message = page.locator(
+      '.column-sort[data-tooltip="Sort by Message"]',
+    );
     await request.scrollIntoViewIfNeeded();
     const requestBox = (await request.boundingBox())!,
       messageBox = (await message.boundingBox())!;
@@ -285,7 +289,7 @@ for (const mode of ["Table", "Hybrid"]) {
           document
             .elementFromPoint(x, y)
             ?.closest(".column-sort")
-            ?.getAttribute("title"),
+            ?.getAttribute("data-tooltip"),
         { x: startX, y: requestBox.y + requestBox.height / 2 },
       ),
     ).toBe("Sort by /request/id");
@@ -295,7 +299,7 @@ for (const mode of ["Table", "Hybrid"]) {
           document
             .elementFromPoint(x, y)
             ?.closest(".column-sort")
-            ?.getAttribute("title"),
+            ?.getAttribute("data-tooltip"),
         { x: dropX, y: messageBox.y + messageBox.height / 2 },
       ),
     ).toBe("Sort by Message");
@@ -335,7 +339,7 @@ for (const mode of ["Table", "Hybrid"]) {
             document
               .elementFromPoint(x, y)
               ?.closest(".column-sort")
-              ?.getAttribute("title"),
+              ?.getAttribute("data-tooltip"),
           { x: beforeX, y: movedMessage.y + movedMessage.height / 2 },
         ),
       ).toBe("Sort by Message");

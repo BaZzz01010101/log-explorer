@@ -1,5 +1,23 @@
 # Implementation plan
 
+## Menus, tooltips and Explorer search (0.1.23)
+
+Coordinate all application context menus, dismiss outside clicks and window
+blur, and move resource copy actions into row context menus. Replace native
+title hints with selectable, hoverable tooltips following the selected theme.
+Add case-insensitive Explorer matching by default and configurable Alt+E/Alt+C
+regex/case shortcuts scoped to its filter. Track validation and delivery in
+[the 0.1.23 checklist](menus-tooltips-and-explorer-0.1.23.md).
+
+Replace structured-field action buttons with one menu before the key, and add
+temporary JSON-string decoding with foldable, color-marked children. Preserve
+raw records while using decoded values in local columns, filters and record/CSV
+serialization.
+
+## Highlight scrolling and Live text selection (0.1.22)
+
+Retain and prepare regex results across scrolling with bounded caching and visible-row priority, distinguish pending rows from non-matches, and preserve native text selection during Live updates. See [the checklist and verification notes](highlight-scroll-and-live-selection-0.1.22.md).
+
 ## Event row selection and hover colors (0.1.21)
 
 Give selection priority over profile row colors, apply a neutral hover tint to all primary row states, and remove the partial outline across pinned cells while preserving expanded details. See [the checklist and verification notes](row-colors-0.1.21.md).

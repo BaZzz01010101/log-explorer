@@ -11,7 +11,8 @@ import type {
 } from "../../shared/contracts";
 
 interface Props {
-  preferences?: Pick<Preferences, "profileVisibility">;
+  preferences?: Pick<Preferences, "profileVisibility"> &
+    Partial<Pick<Preferences, "shortcuts">>;
   connections: Connection[];
   activeConnectionId: string;
   onConnectionChange?(connectionId: string): void;

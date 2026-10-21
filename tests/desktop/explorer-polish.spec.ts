@@ -132,7 +132,7 @@ test("regex tooltip uses light theme colors and its glyph has a filled dot", asy
   });
   await toggle.hover();
   const tooltip = page.getByRole("tooltip", {
-    name: "Use regular expression",
+    name: "Use regular expression (Alt+E)",
     exact: true,
   });
   await expect(tooltip).toBeVisible();
@@ -264,12 +264,10 @@ test("group and stream top and bottom strips perform modifier selection and open
     .check();
   await expect(row(payments)).toHaveAttribute("aria-selected", "true");
   await expect(page.locator(".workspace-tab")).toHaveCount(tabCount);
-  // Dedicated controls keep their behavior and do not open a group view.
-  await page
-    .getByRole("button", { name: `Details for ${payments}`, exact: true })
-    .click();
+  // Resource actions live in the row's own context menu.
+  await row(payments).click({ button: "right", position: { x: 90, y: 16 } });
   await expect(
-    page.getByText("Log group details", { exact: true }),
+    page.getByRole("menuitem", { name: "Copy group name", exact: true }),
   ).toBeVisible();
   await page.keyboard.press("Escape");
 });

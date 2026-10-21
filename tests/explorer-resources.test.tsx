@@ -20,12 +20,14 @@ function Probe({
   connections = [east, west],
   refreshKey = 0,
   regex = false,
+  caseSensitive = true,
 }: {
   visible?: string[];
   search?: string;
   connections?: Connection[];
   refreshKey?: number;
   regex?: boolean;
+  caseSensitive?: boolean;
 }) {
   result = useExplorerResources(
     connections,
@@ -33,6 +35,7 @@ function Probe({
     search,
     refreshKey,
     regex,
+    caseSensitive,
   );
   return null;
 }
@@ -48,6 +51,30 @@ beforeEach(() => {
     if (!String(args[0]).includes("react-test-renderer is deprecated"))
       error(...args);
   });
+});
+
+it("finds case-insensitive literal matches across unfiltered pages and invalidates them when case changes", async () => {
+  groups.mockImplementation(async (_connection, search, cursor) => {
+    if (search) return { items: [{ name: "/orders.literal" }] };
+    return cursor
+      ? { items: [{ name: "/Orders.Literal" }, { name: "/orders.literal" }] }
+      : { items: [{ name: "/ordersXliteral" }], cursor: "next" };
+  });
+  await act(async () => {
+    renderer = create(<Probe search="orders.literal" caseSensitive={false} />);
+  });
+  expect(groups.mock.calls).toEqual([
+    [east, "", undefined],
+    [east, "", "next"],
+  ]);
+  expect(result.cache.east.groups.items.map((item) => item.name)).toEqual([
+    "/Orders.Literal",
+    "/orders.literal",
+  ]);
+  await act(async () =>
+    renderer.update(<Probe search="orders.literal" caseSensitive />),
+  );
+  expect(result.cache.east.groups.items).toEqual([{ name: "/orders.literal" }]);
 });
 
 it("scans unfiltered pages for regex matches beyond the first page without scrolling", async () => {
