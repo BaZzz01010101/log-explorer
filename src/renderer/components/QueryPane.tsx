@@ -347,7 +347,10 @@ export function QueryPane({
               : "Connecting to Live Tail…"}
           </Text>
           <Text size="xs" c="dimmed">
-            Time range buttons stop Live and load history.
+            <span>Time range buttons stop Live and load history.</span>{" "}
+            <span data-tooltip="Live pauses while this tab is inactive. Returning reconnects for new events and keeps the loaded history. Visible split panes stay live.">
+              Inactive tabs pause Live.
+            </span>
           </Text>
           <Tooltip label="Follow the newest event. Scrolling or selecting an event pauses following; the stream keeps receiving events.">
             <Button

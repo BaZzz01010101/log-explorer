@@ -378,6 +378,7 @@ body.resizing-columns * {
 }
 .hybrid-detail {
   position: sticky;
+  z-index: 4;
   left: 0;
   width: 100cqw;
   padding: 10px 14px 12px 35px;
@@ -386,6 +387,43 @@ body.resizing-columns * {
   background: var(--mantine-color-default);
   max-width: 100%;
   box-sizing: border-box;
+}
+.expanded-event-content {
+  overflow: auto;
+  min-height: 0;
+}
+.hybrid-detail .expanded-event-content .json-tree,
+.hybrid-detail .expanded-event-content .raw-content,
+.hybrid-detail .expanded-event-content .raw-content pre {
+  max-height: none;
+  overflow: visible;
+}
+.expanded-event-resizer {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -5px;
+  height: 9px;
+  z-index: 4;
+  cursor: row-resize;
+  touch-action: none;
+}
+.expanded-event-resizer::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 2px;
+  transform: translateY(-50%);
+}
+.expanded-event-resizer:hover::after,
+.hybrid-detail.is-resizing > .expanded-event-resizer::after,
+.expanded-event-resizer:focus-visible::after {
+  background: var(--mantine-primary-color-filled);
+}
+.expanded-event-resizer:focus-visible {
+  outline: none;
 }
 .json-event-card {
   padding: 10px 14px 12px;

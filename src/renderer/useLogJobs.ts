@@ -19,6 +19,7 @@ export interface TabRuntime {
   events: LogEvent[];
   state: QueryUpdate["state"] | "idle";
   live: boolean;
+  livePaused?: boolean;
   liveState?: LiveState;
   liveReceived?: number;
   cursor?: string;
@@ -58,13 +59,22 @@ export function useLogJobs(
   const observedSources = useRef(new Map<string, string>());
   const observedKinds = useRef(new Map<string, LogTab["kind"]>());
   const requests = useRef(
-    new Map<string, { tabId: string; live: boolean; generation: number }>(),
+    new Map<
+      string,
+      { tabId: string; live: boolean; generation: number; stopping?: boolean }
+    >(),
   );
   const current = useRef(new Map<string, string>());
   const latestRequest = useRef(
     new Map<string, { requestId: string; generation: number }>(),
   );
   const autoStarted = useRef(new Set<string>());
+  const sleepingLive = useRef(new Set<string>());
+  const isVisible = useCallback(
+    (tabId: string) =>
+      workspaceRef.current.panes.some((pane) => pane.tabId === tabId),
+    [],
+  );
   const observedTimeRanges = useRef(new Map<string, string>());
   const pendingTimeRefresh = useRef(
     new Map<string, ReturnType<typeof setTimeout>>(),
@@ -106,11 +116,18 @@ export function useLogJobs(
     mounted.current = true;
     const unsubscribe = window.explorer.onUpdate((update) => {
       const job = requests.current.get(update.requestId);
-      if (!job || !ownsRequest(job.tabId, job.generation, update.requestId))
+      if (
+        !job ||
+        (job.live && !isVisible(job.tabId)) ||
+        !ownsRequest(job.tabId, job.generation, update.requestId)
+      )
         return;
       setRuntimes((previous) => {
         // React may evaluate this updater after another run has taken ownership.
-        if (!ownsRequest(job.tabId, job.generation, update.requestId))
+        if (
+          (job.live && !isVisible(job.tabId)) ||
+          !ownsRequest(job.tabId, job.generation, update.requestId)
+        )
           return previous;
         const prior = previous[job.tabId] ?? empty();
         const merged =
@@ -180,16 +197,19 @@ export function useLogJobs(
       current.current.clear();
       latestRequest.current.clear();
       autoStarted.current.clear();
+      sleepingLive.current.clear();
       observedTimeRanges.current.clear();
       for (const timer of pendingTimeRefresh.current.values())
         clearTimeout(timer);
       pendingTimeRefresh.current.clear();
       for (const id of ids) void cancelQuietly(id);
     };
-  }, [cancelQuietly, ownsRequest]);
+  }, [cancelQuietly, ownsRequest, isVisible]);
 
   const cancel = useCallback(
-    async (tabId: string) => {
+    async (tabId: string, pause = false) => {
+      if (pause) sleepingLive.current.add(tabId);
+      else sleepingLive.current.delete(tabId);
       const generation = ++sequence.current;
       const state = workspaceRef.current;
       const tab = state.tabs.find((item) => item.id === tabId);
@@ -204,7 +224,22 @@ export function useLogJobs(
       if (id) latestRequest.current.set(tabId, { requestId: id, generation });
       const job = id ? requests.current.get(id) : undefined;
       // Cancellation updates belong to this operation, and may carry partial-result details.
-      if (id && job) requests.current.set(id, { ...job, generation });
+      if (id && job)
+        requests.current.set(id, { ...job, generation, stopping: !pause });
+      if (pause)
+        setRuntimes((previous) =>
+          ownsOperation(tabId, generation) && previous[tabId]
+            ? {
+                ...previous,
+                [tabId]: {
+                  ...previous[tabId],
+                  state: "idle",
+                  live: true,
+                  livePaused: true,
+                },
+              }
+            : previous,
+        );
       let cancellationError: string | undefined;
       if (id) {
         try {
@@ -214,6 +249,8 @@ export function useLogJobs(
             error instanceof Error ? error.message : "Cancellation failed";
         }
       }
+      if (pause && cancellationError)
+        cleanupErrorRef.current?.(cancellationError);
       if (
         !ownsOperation(tabId, generation) ||
         (id && current.current.get(tabId) !== id)
@@ -234,9 +271,16 @@ export function useLogJobs(
             state:
               cancellationError || prior.state === "error"
                 ? "error"
-                : "cancelled",
-            live: false,
-            liveState: prior.liveState ? "stopped" : undefined,
+                : pause
+                  ? "idle"
+                  : "cancelled",
+            live: pause && !cancellationError,
+            livePaused: pause || undefined,
+            liveState: pause
+              ? prior.liveState
+              : prior.liveState
+                ? "stopped"
+                : undefined,
             error: cancellationError ?? prior.error,
           },
         };
@@ -246,7 +290,34 @@ export function useLogJobs(
   );
 
   const run = useCallback(
-    async (tab: LogTab, live = false, more = false) => {
+    async (tab: LogTab, live = false, more = false, resume = false) => {
+      const prior = runtimesRef.current[tab.id];
+      // Pagination callbacks can outlive the historical result that scheduled them.
+      // Never let one take ownership from a newer Run, Live start, or cancellation.
+      if (
+        more &&
+        (live ||
+          !prior?.request ||
+          !prior.cursor ||
+          prior.state !== "complete" ||
+          prior.live ||
+          !!prior.liveState ||
+          !ownsRequest(
+            tab.id,
+            operations.current.get(tab.id)!,
+            prior.request.requestId,
+          ) ||
+          !requestMatchesTab(
+            prior.request,
+            tab,
+            workspaceRef.current.connections.find(
+              (item) => item.id === tab.connectionId,
+            ),
+            workspaceRef.current.connections,
+          ))
+      )
+        return;
+      sleepingLive.current.delete(tab.id);
       const pending = pendingTimeRefresh.current.get(tab.id);
       if (pending) clearTimeout(pending);
       pendingTimeRefresh.current.delete(tab.id);
@@ -265,7 +336,6 @@ export function useLogJobs(
       operationKinds.current.set(tab.id, tab.kind);
       operationSources.current.set(tab.id, source);
       if (!ownsOperation(tab.id, generation)) return;
-      const prior = runtimesRef.current[tab.id];
       const old = current.current.get(tab.id);
       current.current.delete(tab.id);
       if (old) {
@@ -277,6 +347,26 @@ export function useLogJobs(
         setRuntimes((previous) =>
           ownsOperation(tab.id, generation)
             ? { ...previous, [tab.id]: empty() }
+            : previous,
+        );
+        return;
+      }
+      if (live && !isVisible(tab.id)) {
+        sleepingLive.current.add(tab.id);
+        setRuntimes((previous) =>
+          ownsOperation(tab.id, generation)
+            ? {
+                ...previous,
+                [tab.id]: {
+                  ...(previous[tab.id] ?? empty()),
+                  state: "idle",
+                  live: true,
+                  livePaused: true,
+                  liveState: "connecting",
+                  cursor: undefined,
+                  error: undefined,
+                },
+              }
             : previous,
         );
         return;
@@ -363,7 +453,12 @@ export function useLogJobs(
                   state: "queued",
                   live,
                   liveState: live ? "connecting" : undefined,
-                  liveReceived: live ? 0 : undefined,
+                  livePaused: false,
+                  liveReceived: live
+                    ? resume && retainHistory
+                      ? (prior?.liveReceived ?? 0)
+                      : 0
+                    : undefined,
                   error: undefined,
                   cursor: undefined,
                   request: dispatched,
@@ -415,7 +510,7 @@ export function useLogJobs(
         });
       }
     },
-    [cancelQuietly, ownsOperation, ownsRequest],
+    [cancelQuietly, ownsOperation, ownsRequest, isVisible],
   );
 
   useEffect(() => {
@@ -436,6 +531,7 @@ export function useLogJobs(
         observedKinds.current.delete(tabId);
         latestRequest.current.delete(tabId);
         autoStarted.current.delete(tabId);
+        sleepingLive.current.delete(tabId);
         observedTimeRanges.current.delete(tabId);
         const pending = pendingTimeRefresh.current.get(tabId);
         if (pending) clearTimeout(pending);
@@ -619,7 +715,13 @@ export function useLogJobs(
         const runtime = runtimesRef.current[tab.id];
         // A changed source remains idle until explicitly queried.
         if (
+          isVisible(tab.id) &&
           runtime?.request &&
+          ownsRequest(
+            tab.id,
+            operations.current.get(tab.id)!,
+            runtime.request.requestId,
+          ) &&
           runtime.state !== "idle" &&
           !runtime.live &&
           !runtime.liveState &&
@@ -630,7 +732,39 @@ export function useLogJobs(
       }
     }, workspace.preferences.refreshSeconds * 1000);
     return () => clearInterval(timer);
-  }, [workspace.preferences.refreshSeconds, ready, run]);
+  }, [
+    workspace.preferences.refreshSeconds,
+    ready,
+    run,
+    isVisible,
+    ownsRequest,
+  ]);
+
+  useEffect(() => {
+    if (!ready) return;
+    for (const tab of workspace.tabs) {
+      if (isVisible(tab.id)) {
+        if (sleepingLive.current.has(tab.id)) void run(tab, true, false, true);
+      } else {
+        const id = current.current.get(tab.id);
+        if (
+          id &&
+          requests.current.get(id)?.live &&
+          !requests.current.get(id)?.stopping &&
+          !sleepingLive.current.has(tab.id)
+        )
+          void cancel(tab.id, true);
+      }
+    }
+  }, [
+    workspace.panes,
+    workspace.tabs,
+    ready,
+    runtimes,
+    run,
+    cancel,
+    isVisible,
+  ]);
   useEffect(() => {
     const previous = previousAccess.current;
     previousAccess.current = { ready, awsEnabled };

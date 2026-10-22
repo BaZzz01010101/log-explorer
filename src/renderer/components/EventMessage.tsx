@@ -8,6 +8,7 @@ import {
   IconFilter,
   IconDots,
   IconBraces,
+  IconCopy,
 } from "@tabler/icons-react";
 import type { LogEvent } from "../../shared/contracts";
 import {
@@ -19,6 +20,7 @@ import {
   type ParsedMessage,
 } from "../../shared/log-data";
 import { Menu } from "./AppMenu";
+import { decodeFieldText, type FieldDecoding } from "../json-deserialization";
 
 export interface EventRow {
   event: LogEvent;
@@ -81,13 +83,15 @@ function JsonFieldMenu({
   value,
   onAddColumn,
   onAddFilter,
+  onCopyValue,
   onDeserialize,
 }: {
   path: string;
   value: JsonValue;
   onAddColumn?: (path: string) => void;
   onAddFilter?: (path: string, value: JsonValue) => void;
-  onDeserialize?: (path: string) => void;
+  onCopyValue?: (text: string) => void;
+  onDeserialize?: (path: string, encoding?: FieldDecoding) => void;
 }) {
   const [opened, setOpened] = useState(false);
   const canDeserialize = useMemo(
@@ -95,6 +99,13 @@ function JsonFieldMenu({
       opened &&
       typeof value === "string" &&
       parseLogMessage(value).kind === "json",
+    [opened, value],
+  );
+  const canDecode = useMemo(
+    () => ({
+      url: opened && decodeFieldText(value, "url") !== undefined,
+      base64: opened && decodeFieldText(value, "base64") !== undefined,
+    }),
     [opened, value],
   );
   const container = value !== null && typeof value === "object";
@@ -126,6 +137,21 @@ function JsonFieldMenu({
           }
         }}
       >
+        {onCopyValue && (
+          <Menu.Item
+            aria-label={`Copy ${path || "root"} value`}
+            leftSection={<IconCopy size={14} />}
+            onClick={() =>
+              onCopyValue(
+                typeof value === "string"
+                  ? value
+                  : JSON.stringify(value, null, 2),
+              )
+            }
+          >
+            Copy value
+          </Menu.Item>
+        )}
         {onAddColumn && (
           <Menu.Item
             aria-label={`Add ${path || "root"} column`}
@@ -155,6 +181,20 @@ function JsonFieldMenu({
             Deserialize
           </Menu.Item>
         )}
+        {onDeserialize &&
+          (["url", "base64"] as const).map((encoding) => (
+            <Menu.Item
+              key={encoding}
+              aria-label={`${encoding === "url" ? "URL" : "Base64"} decode ${path || "root"}`}
+              disabled={!canDecode[encoding]}
+              leftSection={<IconBraces size={14} />}
+              onClick={() => onDeserialize(path, encoding)}
+            >
+              {encoding === "url"
+                ? "Decode URL encoding"
+                : "Decode Base64 text"}
+            </Menu.Item>
+          ))}
       </Menu.Dropdown>
     </Menu>
   );
@@ -166,18 +206,22 @@ export function JsonTree({
   compact = false,
   onAddColumn,
   onAddFilter,
+  onCopyValue,
   controls = false,
   onDeserialize,
   deserializedPaths,
+  decodedLabels,
 }: {
   value: JsonValue;
   highlight: string;
   compact?: boolean;
   onAddColumn?: (path: string) => void;
   onAddFilter?: (path: string, value: JsonValue) => void;
+  onCopyValue?: (text: string) => void;
   controls?: boolean;
-  onDeserialize?: (path: string) => void;
+  onDeserialize?: (path: string, encoding?: FieldDecoding) => void;
   deserializedPaths?: ReadonlySet<string>;
+  decodedLabels?: ReadonlyMap<string, string>;
 }) {
   const [expanded, setExpanded] = useState(() => new Set([""]));
   const model = useMemo(
@@ -261,16 +305,18 @@ export function JsonTree({
             ) : (
               <span className="json-toggle json-toggle-spacer" />
             )}
-            {(onAddColumn || onAddFilter || onDeserialize) && (
+            {(onCopyValue || onAddColumn || onAddFilter || onDeserialize) && (
               <JsonFieldMenu
                 path={row.path}
                 value={row.value}
+                onCopyValue={onCopyValue}
                 onAddColumn={onAddColumn}
                 onAddFilter={onAddFilter}
                 onDeserialize={
                   onDeserialize
-                    ? (path) => {
-                        onDeserialize(path);
+                    ? (path, encoding) => {
+                        if (encoding) onDeserialize(path, encoding);
+                        else onDeserialize(path);
                         setExpanded((previous) => new Set([...previous, path]));
                       }
                     : undefined
@@ -286,9 +332,9 @@ export function JsonTree({
             {deserializedPaths?.has(row.path) && (
               <span
                 className="json-deserialized-label"
-                data-tooltip="Temporarily deserialized in this view"
+                data-tooltip="Temporary change in this view; original message is preserved"
               >
-                deserialized
+                {decodedLabels?.get(row.path) ?? "deserialized"}
               </span>
             )}
             <span className="json-punctuation">: </span>
@@ -324,18 +370,22 @@ export function MessageContent({
   compact = false,
   onAddColumn,
   onAddFilter,
+  onCopyValue,
   controls = false,
   onDeserialize,
   deserializedPaths,
+  decodedLabels,
 }: {
   row: EventRow;
   highlight: string;
   compact?: boolean;
   onAddColumn?: (path: string) => void;
   onAddFilter?: (path: string, value: JsonValue) => void;
+  onCopyValue?: (text: string) => void;
   controls?: boolean;
-  onDeserialize?: (path: string) => void;
+  onDeserialize?: (path: string, encoding?: FieldDecoding) => void;
   deserializedPaths?: ReadonlySet<string>;
+  decodedLabels?: ReadonlyMap<string, string>;
 }) {
   if (row.parsed.kind === "json")
     return (
@@ -343,11 +393,13 @@ export function MessageContent({
         value={row.parsed.value!}
         highlight={highlight}
         compact={compact}
+        onCopyValue={onCopyValue}
         onAddColumn={onAddColumn}
         onAddFilter={onAddFilter}
         controls={controls}
         onDeserialize={onDeserialize}
         deserializedPaths={deserializedPaths}
+        decodedLabels={decodedLabels}
       />
     );
   const displayLimit = compact ? 6000 : 200_000;

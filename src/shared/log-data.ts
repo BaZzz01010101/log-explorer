@@ -420,6 +420,18 @@ export function matchesLocalFilter(
   return true;
 }
 
+/** The automatic message cell prefers meaningful msg text, then message. */
+export function messagePreview(
+  parsed: ParsedMessage,
+): { path: string; value: string } | undefined {
+  if (parsed.kind !== "json") return undefined;
+  for (const path of ["/msg", "/message"]) {
+    const value = getPointer(parsed.value, path);
+    if (typeof value === "string" && value.trim()) return { path, value };
+  }
+  return undefined;
+}
+
 export function eventColumnValue(
   event: LogEvent,
   parsed: ParsedMessage,

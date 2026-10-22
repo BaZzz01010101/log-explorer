@@ -118,7 +118,7 @@ const stored = async () =>
   );
 
 test("field menus deserialize nested values temporarily, preserve raw records and make decoded columns and filters work", async () => {
-  test.setTimeout(180000);
+  test.setTimeout(240000);
   await app.evaluate(({ ipcMain, clipboard }) => {
     (globalThis as any).__fieldCopies = [];
     (globalThis as any).__fieldExports = [];
@@ -147,6 +147,10 @@ test("field menus deserialize nested values temporarily, preserve raw records an
           invalid: "{bad",
           actual: { already: true },
           plain: "text",
+          url: "%7B%22message%22%3A%22caf%C3%A9%20%2B%22%7D",
+          base64: "JTdCJTIydmFsdWUlMjIlM0E3JTdE",
+          binary: "/w==",
+          invalidUrl: "%FF",
         }),
       }));
       (globalThis as any).__fieldEvents = events;
@@ -180,12 +184,46 @@ test("field menus deserialize nested values temporarily, preserve raw records an
       .click();
   const menuAction = (name: string) =>
     page.getByRole("menuitem", { name, exact: true });
+  const copiedField = async (path: string) => {
+    await actions(path);
+    await menuAction(`Copy ${path} value`).click();
+    return await app.evaluate(() => (globalThis as any).__fieldCopies.at(-1));
+  };
+  expect(await copiedField("/plain")).toBe("text");
   for (const path of ["/invalid", "/actual", "/plain"]) {
     await actions(path);
     await expect(menuAction("Deserialize " + path)).toBeDisabled();
     await page.keyboard.press("Escape");
     await expect(inspector).toBeVisible();
   }
+  for (const path of ["/binary", "/invalidUrl", "/actual"]) {
+    await actions(path);
+    await expect(menuAction("URL decode " + path)).toBeDisabled();
+    await expect(menuAction("Base64 decode " + path)).toBeDisabled();
+    await page.keyboard.press("Escape");
+  }
+  await actions("/url");
+  await menuAction("URL decode /url").click();
+  await expect(line("/url")).toContainText("URL decoded");
+  await expect(line("/url")).toContainText("café");
+  expect(await copiedField("/url")).toBe('{"message":"café +"}');
+  await actions("/url");
+  await menuAction("Deserialize /url").click();
+  await expect(line("/url/message")).toContainText("café +");
+  expect(JSON.parse(await copiedField("/url"))).toEqual({ message: "café +" });
+  expect(await copiedField("/url/message")).toBe("café +");
+  await actions("/base64");
+  await menuAction("Base64 decode /base64").click();
+  await expect(line("/base64")).toContainText("Base64 decoded");
+  await expect(line("/base64")).toContainText("%7B%22value%22%3A7%7D");
+  expect(await copiedField("/base64")).toBe("%7B%22value%22%3A7%7D");
+  await actions("/base64");
+  await menuAction("URL decode /base64").click();
+  await expect(line("/base64")).toContainText("URL decoded");
+  await actions("/base64");
+  await menuAction("Deserialize /base64").click();
+  await expect(line("/base64/value")).toContainText("7");
+  expect(await copiedField("/base64/value")).toBe("7");
   const geometry = await line("/payload").evaluate((element) => ({
     action: element
       .querySelector(".json-field-actions")!
@@ -215,6 +253,10 @@ test("field menus deserialize nested values temporarily, preserve raw records an
   await actions("/payload/a~1b/inner");
   await menuAction("Deserialize /payload/a~1b/inner").click();
   await expect(line("/payload/a~1b/inner/0")).toContainText("1");
+  expect(JSON.parse(await copiedField("/payload"))["a/b"].inner).toEqual([
+    1,
+    { ok: true },
+  ]);
   await actions("/payload/a~1b/value");
   await menuAction("Add /payload/a~1b/value column").click();
   await expect(event.getByRole("cell").last()).toHaveText("7");

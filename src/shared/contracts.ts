@@ -88,6 +88,7 @@ export interface ViewConfig {
 }
 export interface LogTab {
   id: string;
+  pinned?: boolean;
   preview?: boolean;
   title: string;
   customTitle?: string;
@@ -125,6 +126,7 @@ export type PaneLayout =
     };
 export interface SplitTab {
   id: string;
+  pinned?: boolean;
   title?: string;
   groupId?: string;
   panes: Pane[];
@@ -164,6 +166,7 @@ export interface Preferences {
   theme: "dark" | "light";
   density: "compact" | "comfortable";
   tabBarLayout: "scroll" | "wrap";
+  pinnedTabsSeparateRow?: boolean;
   fontSize: number;
   maxEvents: number;
   refreshSeconds: number;

@@ -1,5 +1,27 @@
 # Implementation plan
 
+## Hybrid details and message previews (0.1.27)
+
+Make Hybrid primary-row double-click toggle inline details, add independent
+resizable detail scroll regions, retain valid row measurements across individual
+expansions and share `msg`-first non-empty preview selection with highlighting.
+See [the checklist and root cause](hybrid-details-0.1.27.md).
+
+## Tab drag rendering and inspector decoding (0.1.26)
+
+Preserve tab dimensions and opaque surfaces during reordering, with stable
+neighbours and the existing insertion marker. Add explicit bounded URL and
+canonical UTF-8 Base64 decoding through the existing temporary field projection.
+See [the checklist and decoding decisions](tab-drag-and-field-decoding-0.1.26.md).
+
+## Pinned tabs, resource insertion and live font edits (0.1.25)
+
+Persist pin state for normal and split entries, protect pinned tabs from ordinary
+closing, offer shared/separate pin sections and reuse stable insertion geometry
+for tab/header and Explorer drags. Preserve delayed hover activation and existing
+split/source destinations. Improve inactive-tab contrast/hover and apply valid
+font-size edits before blur. See [the current checklist](pinned-tabs-and-resource-insertion-0.1.25.md).
+
 ## Menus, tooltips and Explorer search (0.1.23)
 
 Coordinate all application context menus, dismiss outside clicks and window
@@ -156,3 +178,11 @@ Extend resource dragging into pane splits while retaining source-strip additions
 ## Explorer selection and larger split views (0.1.15)
 
 Implement the current favorite aliases, regex filtering, fixed dropdown choices, batch resource context/drag actions, larger splits, remembered access and event multi-selection requirements using [the checklist](explorer-selection-0.1.15.md). Preserve previous behavior and verify the integrated application in hidden offline windows.
+
+## Tab reorder motion (0.1.28)
+
+Complete the coordinated tab preview, wrapped height, inactive Live suspension and inspector value-copy changes using [the checklist](tab-reorder-motion-0.1.28.md). Preserve insertion, delayed activation, splits and view state; verify hidden offline and stage a hash-checked update after natural app exit.
+
+## Live after empty history (0.1.29)
+
+Investigate the reported empty five-minute history to Live transition using [the investigation and checklist](live-empty-history-0.1.29.md). Guard newer Live operations against automatic historical refresh and obsolete pagination, preserve valid continuation, and verify quiet streams and new arrivals with isolated tests.

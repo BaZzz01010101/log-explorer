@@ -69,6 +69,7 @@ const viewSchema = z.object({
   sort: z.object({ path: z.string().max(2048), desc: z.boolean() }).optional(),
 });
 const tabSchema = z.object({
+  pinned: z.boolean().optional(),
   id,
   title: z.string().max(512),
   customTitle: z.string().max(512).optional(),
@@ -102,6 +103,7 @@ function boundedPaneLayoutSchema(): z.ZodType<PaneLayout> {
     .transform((layout) => normalizeLayout(layout, layoutPaneIds(layout))!);
 }
 const splitSchema = z.object({
+  pinned: z.boolean().optional(),
   id,
   title: z.string().max(512).optional(),
   groupId: id.optional(),
@@ -172,6 +174,7 @@ export const workspaceSchema = z
     splitTabs: z
       .array(
         z.object({
+          pinned: z.boolean().optional(),
           id,
           title: z.string().max(512).optional(),
           groupId: id.optional(),
@@ -242,6 +245,7 @@ export const workspaceSchema = z
       refreshSeconds: z.number().int().min(0).max(3600),
       timezone: z.enum(["local", "utc"]),
       tabBarLayout: z.enum(["scroll", "wrap"]).optional(),
+      pinnedTabsSeparateRow: z.boolean().optional(),
       highlightText: z.string().max(1000),
       highlightProfiles: highlightProfilesSchema.optional(),
       shortcuts: z.record(z.string().max(60), z.string().max(80)),

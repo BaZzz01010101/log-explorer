@@ -35,6 +35,8 @@ export function ResourceDropSurface({
   } | null>(null);
   const [placement, setPlacement] =
     useState<ReturnType<typeof dragDestination>["placement"]>(null);
+  const [insertion, setInsertion] =
+    useState<ReturnType<typeof dragDestination>["insertion"]>(null);
   const refresh = () => {
     const drag = session.current;
     const sourceStrip =
@@ -50,10 +52,17 @@ export function ResourceDropSurface({
             drag.point,
             false,
             drag.tabs,
-          ).placement
+          )
         : null;
     setPlacement((previous) =>
-      JSON.stringify(previous) === JSON.stringify(next) ? previous : next,
+      JSON.stringify(previous) === JSON.stringify(next?.placement ?? null)
+        ? previous
+        : (next?.placement ?? null),
+    );
+    setInsertion((previous) =>
+      JSON.stringify(previous) === JSON.stringify(next?.insertion ?? null)
+        ? previous
+        : (next?.insertion ?? null),
     );
     return next;
   };
@@ -139,12 +148,19 @@ export function ResourceDropSurface({
       const destination =
         (event as CustomEvent<{ drop: boolean }>).detail.drop &&
         refreshRef.current();
-      if (destination)
+      if (destination && destination.insertion)
+        dispatch({
+          type: "tabs/insert",
+          tabs: drag.tabs,
+          beforeTabId: destination.insertion.beforeTabId,
+          pinned: destination.insertion.pinned ?? false,
+        });
+      else if (destination && destination.placement)
         dispatch({
           type: "pane/drop-resource",
           tab: drag.tabs,
-          paneId: destination.paneId,
-          edge: destination.edge,
+          paneId: destination.placement.paneId,
+          edge: destination.placement.edge,
         });
       else if (
         drag.hovered &&
@@ -160,6 +176,7 @@ export function ResourceDropSurface({
         });
       session.current = null;
       setPlacement(null);
+      setInsertion(null);
     };
     window.addEventListener(RESOURCE_DRAG_MOVE, move);
     window.addEventListener(RESOURCE_DRAG_END, finish);
@@ -175,16 +192,29 @@ export function ResourceDropSurface({
     return () => cancelAnimationFrame(frame);
   }, [workspace]);
   return (
-    placement &&
+    (placement || insertion) &&
     createPortal(
-      <div
-        className="pane-drop-overlay"
-        data-resource-split-preview={placement.edge ?? "center"}
-        style={placement.rect}
-        aria-hidden="true"
-      >
-        <span>Split {placement.edge ?? "pane"}</span>
-      </div>,
+      <>
+        {insertion && (
+          <div
+            className="workspace-tab-insertion"
+            data-resource-tab-insertion={insertion.beforeTabId ?? "__end__"}
+            data-pin-drop={insertion.pinned ? "true" : "false"}
+            style={insertion.rect}
+            aria-hidden="true"
+          />
+        )}
+        {placement && (
+          <div
+            className="pane-drop-overlay"
+            data-resource-split-preview={placement.edge ?? "center"}
+            style={placement.rect}
+            aria-hidden="true"
+          >
+            <span>Split {placement.edge ?? "pane"}</span>
+          </div>
+        )}
+      </>,
       document.body,
     )
   );

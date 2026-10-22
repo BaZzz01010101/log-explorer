@@ -2,7 +2,12 @@ import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { StrictMode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useLogJobs } from "../src/renderer/useLogJobs";
-import { createWorkspace } from "../src/renderer/workspace";
+import {
+  createWorkspace,
+  createTab,
+  workspaceReducer,
+} from "../src/renderer/workspace";
+import { workspaceEntries } from "../src/renderer/workspace-entries";
 import type {
   LogEvent,
   QueryRequest,
@@ -99,6 +104,226 @@ async function emit(update: QueryUpdate) {
     for (const listener of listeners) listener(update);
   });
 }
+
+function twoTabs() {
+  const first = workspace.tabs[0];
+  const second = createTab(first.connectionId, [
+    { logGroup: "/aws/lambda/payments-worker" },
+  ]);
+  workspace = workspaceReducer(workspace, { type: "tab/open", tab: second });
+  workspace = workspaceReducer(workspace, {
+    type: "tab/select",
+    tabId: first.id,
+  });
+  return { first, second };
+}
+it("sleeps inactive Live sessions, rejects late packets and resumes preserved events and counts", async () => {
+  const { first, second } = twoTabs();
+  await mount();
+  await act(async () => jobs.run(first, true));
+  const old = liveRequests[0];
+  await emit({
+    requestId: old.requestId,
+    state: "running",
+    liveState: "streaming",
+    events: [logEvent],
+  });
+  await replaceWorkspace(
+    workspaceReducer(workspace, { type: "tab/select", tabId: second.id }),
+  );
+  expect(cancellations).toContain(old.requestId);
+  expect(jobs.runtimes[first.id]).toMatchObject({
+    livePaused: true,
+    events: [logEvent],
+    liveReceived: 1,
+  });
+  await emit({
+    requestId: old.requestId,
+    state: "running",
+    events: [{ ...logEvent, id: "late" }],
+  });
+  expect(jobs.runtimes[first.id].events).toEqual([logEvent]);
+  await replaceWorkspace(
+    workspaceReducer(workspace, { type: "tab/select", tabId: first.id }),
+  );
+  expect(liveRequests).toHaveLength(2);
+  expect(jobs.runtimes[first.id]).toMatchObject({
+    live: true,
+    liveReceived: 1,
+    events: [logEvent],
+  });
+  expect(liveRequests[1].requestId).not.toBe(old.requestId);
+  await act(async () => jobs.cancel(first.id));
+  await replaceWorkspace(
+    workspaceReducer(workspace, { type: "tab/select", tabId: second.id }),
+  );
+  await replaceWorkspace(
+    workspaceReducer(workspace, { type: "tab/select", tabId: first.id }),
+  );
+  expect(liveRequests).toHaveLength(2);
+});
+it("keeps all visible split panes live even when another pane has focus", async () => {
+  const { first, second } = twoTabs();
+  workspace = workspaceReducer(workspace, {
+    type: "pane/show-tabs",
+    tabIds: [first.id, second.id],
+  });
+  const split = workspaceEntries(workspace).find(
+    (entry) => entry.kind === "split",
+  )!;
+  await mount();
+  await act(async () => {
+    await jobs.run(first, true);
+    await jobs.run(second, true);
+  });
+  expect(liveRequests).toHaveLength(2);
+  const before = cancellations.length;
+  await replaceWorkspace(
+    workspaceReducer(workspace, {
+      type: "pane/activate",
+      paneId: workspace.panes[0].id,
+    }),
+  );
+  expect(cancellations).toHaveLength(before);
+  const third = createTab(first.connectionId, [{ logGroup: "/ecs/checkout" }]);
+  await replaceWorkspace(
+    workspaceReducer(workspace, { type: "tab/open", tab: third }),
+  );
+  expect(cancellations).toEqual(
+    expect.arrayContaining(liveRequests.map((item) => item.requestId)),
+  );
+  await replaceWorkspace(
+    workspaceReducer(workspace, { type: "tab/select", tabId: split.id }),
+  );
+  expect(liveRequests).toHaveLength(4);
+});
+it("defers hidden Live starts and historical refresh ticks until the tab is visible", async () => {
+  vi.useFakeTimers();
+  const { first, second } = twoTabs();
+  workspace.preferences.refreshSeconds = 1;
+  await mount();
+  for (const request of requests)
+    await emit({ requestId: request.requestId, state: "complete" });
+  await act(async () => jobs.run(second, true));
+  expect(liveRequests).toHaveLength(0);
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(2000);
+  });
+  expect(
+    requests
+      .slice(2)
+      .every(
+        (request) => request.sources[0].logGroup === first.sources[0].logGroup,
+      ),
+  ).toBe(true);
+  await replaceWorkspace(
+    workspaceReducer(workspace, { type: "tab/select", tabId: second.id }),
+  );
+  expect(liveRequests).toHaveLength(1);
+});
+it("does not let a delayed sleeping cancellation overwrite a resumed session", async () => {
+  const { first, second } = twoTabs();
+  await mount();
+  await act(async () => jobs.run(first, true));
+  const old = liveRequests[0];
+  const pending = deferred();
+  let calls = 0;
+  cancelHandler = (id) =>
+    id === old.requestId && ++calls === 1 ? pending.promise : Promise.resolve();
+  await replaceWorkspace(
+    workspaceReducer(workspace, { type: "tab/select", tabId: second.id }),
+  );
+  await replaceWorkspace(
+    workspaceReducer(workspace, { type: "tab/select", tabId: first.id }),
+  );
+  await act(async () => pending.resolve());
+  expect(liveRequests).toHaveLength(2);
+  await emit({
+    requestId: liveRequests[1].requestId,
+    state: "running",
+    liveState: "streaming",
+    events: [logEvent],
+  });
+  expect(jobs.runtimes[first.id]).toMatchObject({
+    live: true,
+    state: "running",
+    events: [logEvent],
+  });
+});
+
+it("keeps a failed sleeping cancellation addressable and reports it before retrying on return", async () => {
+  const { first, second } = twoTabs();
+  await mount();
+  await act(async () => jobs.run(first, true));
+  const id = liveRequests[0].requestId;
+  let attempts = 0;
+  cancelHandler = async (requestId) => {
+    if (requestId === id && ++attempts === 1)
+      throw new Error("Sleep cancellation failed");
+  };
+  await replaceWorkspace(
+    workspaceReducer(workspace, { type: "tab/select", tabId: second.id }),
+  );
+  expect(cleanupErrors).toEqual(["Sleep cancellation failed"]);
+  expect(jobs.runtimes[first.id]).toMatchObject({
+    state: "error",
+    livePaused: true,
+  });
+  await replaceWorkspace(
+    workspaceReducer(workspace, { type: "tab/select", tabId: first.id }),
+  );
+  expect(attempts).toBe(2);
+  expect(liveRequests).toHaveLength(2);
+});
+it("changing sources while a Live tab sleeps clears its resume intent", async () => {
+  const { first, second } = twoTabs();
+  await mount();
+  await act(async () => jobs.run(first, true));
+  await replaceWorkspace(
+    workspaceReducer(workspace, { type: "tab/select", tabId: second.id }),
+  );
+  await replaceWorkspace({
+    ...workspace,
+    tabs: workspace.tabs.map((tab) =>
+      tab.id === first.id
+        ? { ...tab, sources: [{ logGroup: "/ecs/checkout" }] }
+        : tab,
+    ),
+  });
+  await replaceWorkspace(
+    workspaceReducer(workspace, { type: "tab/select", tabId: first.id }),
+  );
+  expect(liveRequests).toHaveLength(1);
+  expect(jobs.runtimes[first.id].live).toBe(false);
+  expect(requests.at(-1)?.sources[0].logGroup).toBe("/ecs/checkout");
+});
+
+it("switching tabs during an explicit Stop never turns that stop into a resumable sleep", async () => {
+  const { first, second } = twoTabs();
+  await mount();
+  await act(async () => jobs.run(first, true));
+  const pending = deferred();
+  cancelHandler = () => pending.promise;
+  let stopping!: Promise<void>;
+  await act(async () => {
+    stopping = jobs.cancel(first.id);
+  });
+  await replaceWorkspace(
+    workspaceReducer(workspace, { type: "tab/select", tabId: second.id }),
+  );
+  await replaceWorkspace(
+    workspaceReducer(workspace, { type: "tab/select", tabId: first.id }),
+  );
+  await act(async () => {
+    pending.resolve();
+    await stopping;
+  });
+  expect(liveRequests).toHaveLength(1);
+  expect(jobs.runtimes[first.id]).toMatchObject({
+    live: false,
+    liveState: "stopped",
+  });
+});
 
 it("Live retains matching history and counts appended events independently of loaded history", async () => {
   await mount();
@@ -199,6 +424,123 @@ it("Live clears history that belongs to a different filter and reports a stopped
     live: false,
     liveState: "stopped",
   });
+});
+
+it("does not let automatic history refresh supersede Live startup after an empty result", async () => {
+  vi.useFakeTimers();
+  workspace.preferences.refreshSeconds = 1;
+  workspace.tabs[0]!.timePreset = "5m";
+  await mount();
+  const tab = workspace.tabs[0]!;
+  await emit({
+    requestId: requests[0]!.requestId,
+    state: "complete",
+    events: [],
+  });
+  const pending = deferred();
+  cancelHandler = async () => pending.promise;
+  let starting!: Promise<void>;
+  await act(async () => {
+    starting = jobs.run(tab, true);
+  });
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(1000);
+  });
+  await act(async () => {
+    pending.resolve();
+    await starting;
+  });
+  expect(requests).toHaveLength(1);
+  expect(liveRequests).toHaveLength(1);
+  await emit({
+    requestId: liveRequests[0]!.requestId,
+    state: "running",
+    liveState: "streaming",
+    events: [logEvent],
+  });
+  expect(jobs.runtimes[tab.id]).toMatchObject({
+    live: true,
+    liveReceived: 1,
+    events: [logEvent],
+  });
+});
+
+it("ignores an obsolete history pagination callback after Live starts from an empty page", async () => {
+  await mount();
+  const tab = workspace.tabs[0]!;
+  await emit({
+    requestId: requests[0]!.requestId,
+    state: "complete",
+    events: [],
+    cursor: "empty-page-next",
+  });
+  await act(async () => jobs.run(tab, true));
+  await act(async () => jobs.run(tab, false, true));
+  expect(requests).toHaveLength(1);
+  expect(cancellations).not.toContain(liveRequests[0]!.requestId);
+  await emit({
+    requestId: liveRequests[0]!.requestId,
+    state: "running",
+    liveState: "streaming",
+    events: [logEvent],
+  });
+  expect(jobs.runtimes[tab.id]).toMatchObject({
+    live: true,
+    events: [logEvent],
+  });
+});
+
+it("ignores history pagination while Live is still cancelling an empty historical request", async () => {
+  await mount();
+  const tab = workspace.tabs[0]!;
+  await emit({
+    requestId: requests[0]!.requestId,
+    state: "complete",
+    events: [],
+    cursor: "empty-page-next",
+  });
+  const pending = deferred();
+  cancelHandler = async () => pending.promise;
+  let starting!: Promise<void>;
+  await act(async () => {
+    starting = jobs.run(tab, true);
+    await jobs.run(tab, false, true);
+  });
+  await act(async () => {
+    pending.resolve();
+    await starting;
+  });
+  expect(requests).toHaveLength(1);
+  expect(liveRequests).toHaveLength(1);
+  expect(jobs.runtimes[tab.id].live).toBe(true);
+});
+
+it("continues a current empty historical page once and preserves its query time bounds", async () => {
+  await mount();
+  const tab = workspace.tabs[0]!;
+  const original = requests[0]!;
+  await emit({
+    requestId: original.requestId,
+    state: "complete",
+    events: [],
+    cursor: "empty-page-next",
+  });
+  await act(async () => {
+    await jobs.run(tab, false, true);
+    await jobs.run(tab, false, true);
+  });
+  expect(requests).toHaveLength(2);
+  expect(requests[1]).toMatchObject({
+    cursor: "empty-page-next",
+    startTime: original.startTime,
+    endTime: original.endTime,
+  });
+  await emit({
+    requestId: requests[1]!.requestId,
+    state: "complete",
+    events: [logEvent],
+  });
+  expect(jobs.runtimes[tab.id].events).toEqual([logEvent]);
 });
 
 it("Stop Live retains events and stays stopped even when historical automatic refresh is enabled", async () => {

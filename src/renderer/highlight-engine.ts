@@ -9,6 +9,7 @@ import {
   flattenJson,
   formatColumnValue,
   getPointer,
+  messagePreview,
   parseLogMessage,
   summarizeValue,
 } from "../shared/log-data";
@@ -98,13 +99,10 @@ export function highlightEvent(
         (!column.format || column.format === "auto") &&
         parsed.kind === "json"
       ) {
-        for (const candidate of ["/message", "/msg"]) {
-          const value = getPointer(parsed.value, candidate);
-          if (typeof value === "string") {
-            path = candidate;
-            text = summarizeValue(value, 1500);
-            break;
-          }
+        const preview = messagePreview(parsed);
+        if (preview) {
+          path = preview.path;
+          text = summarizeValue(preview.value, 1500);
         }
       }
       add(path, text);

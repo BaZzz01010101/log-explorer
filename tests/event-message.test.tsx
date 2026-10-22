@@ -46,6 +46,25 @@ const openField = async (path: string) =>
       .props.onChange(true),
   );
 
+it("copies full current scalar and object values from the field menu", async () => {
+  const copy = vi.fn();
+  const value = {
+    decoded: "café +\n" + "x".repeat(5000),
+    payload: { list: [7, false, null] },
+  };
+  await act(async () => {
+    renderer = create(
+      <JsonTree value={value} highlight="" onCopyValue={copy} />,
+    );
+  });
+  await openField("/decoded");
+  await act(async () => button("Copy /decoded value")!.props.onClick());
+  expect(copy).toHaveBeenLastCalledWith(value.decoded);
+  await openField("/payload");
+  await act(async () => button("Copy /payload value")!.props.onClick());
+  expect(copy).toHaveBeenLastCalledWith(JSON.stringify(value.payload, null, 2));
+});
+
 it("unfolds nested structured values and folds the entire object", async () => {
   await act(async () => {
     renderer = create(
@@ -126,4 +145,36 @@ it("uses one menu before each property and only permits bounded valid JSON value
   expect(button("Deserialize /encoded")!.props.disabled).toBe(false);
   await act(async () => button("Deserialize /encoded")!.props.onClick());
   expect(deserialize).toHaveBeenCalledExactlyOnceWith("/encoded");
+});
+
+it("only offers valid URL and Base64 text decoding and forwards the requested encoding", async () => {
+  const transform = vi.fn();
+  await act(async () => {
+    renderer = create(
+      <JsonTree
+        value={{
+          url: "%7B%22ok%22%3Atrue%7D",
+          base64: "aGVsbG8=",
+          binary: "/w==",
+          bad: "%FF",
+          number: 4,
+        }}
+        highlight=""
+        onDeserialize={transform}
+      />,
+    );
+  });
+  for (const path of ["/binary", "/bad", "/number"]) {
+    await openField(path);
+    expect(button("URL decode " + path)!.props.disabled).toBe(true);
+    expect(button("Base64 decode " + path)!.props.disabled).toBe(true);
+  }
+  await openField("/url");
+  expect(button("URL decode /url")!.props.disabled).toBe(false);
+  await act(async () => button("URL decode /url")!.props.onClick());
+  expect(transform).toHaveBeenLastCalledWith("/url", "url");
+  await openField("/base64");
+  expect(button("Base64 decode /base64")!.props.disabled).toBe(false);
+  await act(async () => button("Base64 decode /base64")!.props.onClick());
+  expect(transform).toHaveBeenLastCalledWith("/base64", "base64");
 });

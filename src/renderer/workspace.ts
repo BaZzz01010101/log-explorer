@@ -48,12 +48,30 @@ export type WorkspaceAction =
   | { type: "tab/open"; tab: LogTab; paneId?: string }
   | { type: "tab/preview" | "tab/open-resource"; tab: LogTab; paneId?: string }
   | { type: "tab/promote"; tabId: string }
+  | { type: "tab/pin"; tabId: string; pinned: boolean }
+  | {
+      type: "tab/move";
+      tabId: string;
+      beforeTabId: string | null;
+      pinned: boolean;
+    }
+  | {
+      type: "tabs/insert";
+      tabs: LogTab[];
+      beforeTabId: string | null;
+      pinned: boolean;
+    }
   | { type: "tab/duplicate"; tabId: string }
   | { type: "tab/rename"; tabId: string; title: string }
   | { type: "split/exit"; tabId: string }
   | { type: "connection/select"; connectionId: string }
   | { type: "pane/swap"; paneId: string; overPaneId: string }
-  | { type: "pane/detach"; tabId: string; beforeTabId: string | null }
+  | {
+      type: "pane/detach";
+      tabId: string;
+      beforeTabId: string | null;
+      pinned?: boolean;
+    }
   | {
       type: "tab/select";
       tabId: string;
@@ -61,7 +79,7 @@ export type WorkspaceAction =
       preserveConnection?: boolean;
     }
   | { type: "tab/update"; tabId: string; patch: Partial<LogTab> }
-  | { type: "tab/close"; tabId: string }
+  | { type: "tab/close"; tabId: string; allowPinned?: boolean }
   | { type: "tab/reopen" }
   | { type: "tab/reorder"; tabId: string; beforeTabId: string | null }
   | { type: "tab/group"; tabIds: string[]; groupId?: string }
@@ -121,6 +139,7 @@ const DEFAULT_PREFERENCES: Preferences = {
   theme: "dark",
   density: "compact",
   tabBarLayout: "scroll",
+  pinnedTabsSeparateRow: false,
   fontSize: 12,
   maxEvents: 10000,
   refreshSeconds: 0,
@@ -345,6 +364,9 @@ function parseTab(
   return {
     ...defaults,
     ...(typeof raw.preview === "boolean" ? { preview: raw.preview } : {}),
+    ...(typeof raw.pinned === "boolean"
+      ? { pinned: raw.pinned, ...(raw.pinned ? { preview: false } : {}) }
+      : {}),
     title: string(raw.title, defaults.title, 512),
     ...(typeof raw.customTitle === "string" && raw.customTitle.trim()
       ? { customTitle: string(raw.customTitle, "", 512) }
@@ -412,6 +434,7 @@ function parsePreferences(value: unknown): Preferences {
     theme: raw.theme === "light" ? "light" : "dark",
     density: raw.density === "comfortable" ? "comfortable" : "compact",
     tabBarLayout: raw.tabBarLayout === "wrap" ? "wrap" : "scroll",
+    pinnedTabsSeparateRow: raw.pinnedTabsSeparateRow === true,
     fontSize: number(raw.fontSize, 12, 10, 20),
     maxEvents: Math.round(number(raw.maxEvents, 10000, 100, 100000)),
     refreshSeconds:
@@ -1635,6 +1658,7 @@ function normalizeWorkspaceEntries(
     const groupId = string(item.groupId, "", 160);
     splits.push({
       id,
+      ...(typeof item.pinned === "boolean" ? { pinned: item.pinned } : {}),
       panes,
       layout,
       activePaneId: ids.includes(String(item.activePaneId))
@@ -1764,6 +1788,7 @@ function closeViews(state: Workspace, ids: string[]): Workspace {
     entries.findIndex((entry) => entry.id === active),
   );
   const replacements = new Map<string, string[]>();
+  const remainingPins = new Map<string, boolean>();
   const splitTabs: SplitTab[] = [];
   for (const split of state.splitTabs ?? []) {
     const removed = split.panes.filter(
@@ -1777,6 +1802,8 @@ function closeViews(state: Workspace, ids: string[]): Workspace {
       (pane) => pane.tabId && !closing.has(pane.tabId),
     );
     if (panes.length < 2) {
+      if (panes[0]?.tabId && split.pinned !== undefined)
+        remainingPins.set(panes[0].tabId, split.pinned);
       replacements.set(
         split.id,
         panes.flatMap((pane) => (pane.tabId ? [pane.tabId] : [])),
@@ -1794,7 +1821,13 @@ function closeViews(state: Workspace, ids: string[]): Workspace {
         : panes[0].id,
     });
   }
-  const tabs = state.tabs.filter((tab) => !closing.has(tab.id));
+  const tabs = state.tabs
+    .filter((tab) => !closing.has(tab.id))
+    .map((tab) =>
+      remainingPins.has(tab.id)
+        ? { ...tab, pinned: remainingPins.get(tab.id)! }
+        : tab,
+    );
   const closed = state.tabs
     .filter((tab) => closing.has(tab.id))
     .map((tab) => {
@@ -1918,6 +1951,10 @@ function combineEntries(state: Workspace, ids: string[]): Workspace {
   }));
   const split: SplitTab = {
     ...previous,
+    ...(previous?.pinned !== undefined ||
+    entries.some((entry) => entry.pinned !== undefined)
+      ? { pinned: previous?.pinned ?? entries[0].pinned ?? false }
+      : {}),
     id,
     panes,
     layout: legacyLayout(panes.map((pane) => pane.id)),
@@ -2001,6 +2038,12 @@ function extractSplitPanel(state: Workspace, tabId: string): Workspace | null {
     {
       ...state,
       splitTabs,
+      tabs: state.tabs.map((tab) =>
+        (tab.id === tabId || (panes.length === 1 && tab.id === remaining)) &&
+        split.pinned !== undefined
+          ? { ...tab, pinned: split.pinned }
+          : tab,
+      ),
       tabOrder: (state.tabOrder ?? []).flatMap((id) =>
         id === split.id ? [remaining, tabId] : [id],
       ),
@@ -2115,6 +2158,9 @@ export function projectWorkspaceDrop(
   const id = destinationSplit?.id ?? nextId("split", entryIdentities(state));
   const split: SplitTab = {
     ...destinationSplit,
+    ...(destination.pinned !== undefined || source.pinned !== undefined
+      ? { pinned: destination.pinned ?? false }
+      : {}),
     id,
     panes,
     layout,
@@ -2345,6 +2391,44 @@ export function projectResourceAction(
   }
 }
 
+function setEntryPinned(
+  state: Workspace,
+  id: string,
+  pinned: boolean,
+): Workspace {
+  const entry = entryFor(state, id);
+  if (!entry) return state;
+  return entry.kind === "split"
+    ? {
+        ...state,
+        splitTabs: state.splitTabs?.map((split) =>
+          split.id === entry.id ? { ...split, pinned } : split,
+        ),
+      }
+    : {
+        ...state,
+        tabs: state.tabs.map((tab) =>
+          tab.id === entry.id
+            ? { ...tab, pinned, ...(pinned ? { preview: false } : {}) }
+            : tab,
+        ),
+      };
+}
+
+function moveStripEntry(
+  state: Workspace,
+  id: string,
+  before: string | null,
+): Workspace {
+  const entries = workspaceEntries(state);
+  const order = reorder(entries, id, before).map((entry) => entry.id);
+  const next = { ...state, tabOrder: order };
+  return orderedFlatTabs({
+    ...next,
+    tabOrder: workspaceEntries(next).map((entry) => entry.id),
+  });
+}
+
 export function workspaceReducer(
   input: Workspace,
   action: WorkspaceAction,
@@ -2353,6 +2437,65 @@ export function workspaceReducer(
     return restoreWorkspace(action.workspace);
   const state = modelState(input);
   switch (action.type) {
+    case "tab/pin": {
+      const entry = entryFor(state, action.tabId);
+      if (!entry) return input;
+      const next = setEntryPinned(state, entry.id, action.pinned);
+      const remaining = workspaceEntries(next).filter(
+        (item) => item.id !== entry.id,
+      );
+      const boundary = remaining.find((item) => !item.pinned)?.id ?? null;
+      return moveStripEntry(next, entry.id, boundary);
+    }
+    case "tab/move": {
+      if (
+        !entryFor(state, action.tabId) ||
+        (action.beforeTabId !== null &&
+          !workspaceEntries(state).some(
+            (entry) => entry.id === action.beforeTabId,
+          ))
+      )
+        return input;
+      return moveStripEntry(
+        setEntryPinned(state, action.tabId, action.pinned),
+        action.tabId,
+        action.beforeTabId,
+      );
+    }
+    case "tabs/insert": {
+      const entries = workspaceEntries(state);
+      if (
+        !action.tabs.length ||
+        state.tabs.length + action.tabs.length > 100 ||
+        (action.beforeTabId !== null &&
+          !entries.some((entry) => entry.id === action.beforeTabId))
+      )
+        return input;
+      const parsed = action.tabs.map((tab) =>
+        parseTab(tab, state.connections, state.groups),
+      );
+      if (parsed.some((tab) => !tab)) return input;
+      let next = state;
+      const added: string[] = [];
+      for (const tab of parsed) {
+        next = addView(
+          next,
+          {
+            ...resourceTabWithPreset(state, tab!),
+            pinned: action.pinned,
+            preview: false,
+          },
+          false,
+        );
+        added.push(activeEntryId(next)!);
+      }
+      for (const id of added)
+        next = moveStripEntry(next, id, action.beforeTabId);
+      return addResourceRecents(
+        projectEntry(next, added[0], true),
+        added.flatMap((id) => next.tabs.find((tab) => tab.id === id) ?? []),
+      );
+    }
     case "resources/apply":
       return projectResourceAction(input, action.payload, action.mode)
         .workspace;
@@ -2527,6 +2670,7 @@ export function workspaceReducer(
       const entry = workspaceEntries(state).find(
         (entry) => entry.id === action.tabId,
       );
+      if (entry?.pinned && !action.allowPinned) return input;
       const ids =
         entry?.tabIds ??
         (state.tabs.some((tab) => tab.id === action.tabId)
@@ -2553,10 +2697,7 @@ export function workspaceReducer(
           !entries.some((entry) => entry.id === action.beforeTabId))
       )
         return input;
-      const order = reorder(entries, source.id, action.beforeTabId).map(
-        (entry) => entry.id,
-      );
-      return orderedFlatTabs({ ...state, tabOrder: order });
+      return moveStripEntry(state, source.id, action.beforeTabId);
     }
     case "tab/group": {
       if (
@@ -2608,6 +2749,7 @@ export function workspaceReducer(
                 ...tab,
                 preview: false,
                 ...(split.groupId ? { groupId: split.groupId } : {}),
+                ...(split.pinned !== undefined ? { pinned: split.pinned } : {}),
               }
             : tab,
         ),
@@ -2633,7 +2775,11 @@ export function workspaceReducer(
       const split = state.splitTabs?.find((split) =>
         split.panes.some((pane) => pane.tabId === action.tabId),
       );
-      const extracted = extractSplitPanel(state, action.tabId);
+      const panel = extractSplitPanel(state, action.tabId);
+      const extracted =
+        panel && action.pinned !== undefined
+          ? setEntryPinned(panel, action.tabId, action.pinned)
+          : panel;
       if (!split || !extracted) return input;
       const before =
         action.beforeTabId === split.id && split.panes.length === 2

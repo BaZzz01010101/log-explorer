@@ -597,6 +597,78 @@ describe("AWS adapter with isolated command transport", () => {
     expect(updates[0]).toMatchObject({ liveState: "streaming" });
   });
 
+  it("receives new AWS events after empty five-minute history and a quiet healthy Live session", async () => {
+    vi.useFakeTimers();
+    try {
+      const now = Date.now();
+      const commands: CloudWatchCommand[] = [];
+      async function* stream() {
+        yield { sessionStart: { sessionId: "after-empty" } };
+        for (let index = 0; index < 4; index++) {
+          await new Promise((resolve) => setTimeout(resolve, 10_000));
+          yield { sessionUpdate: { sessionResults: [] } };
+        }
+        yield {
+          sessionUpdate: {
+            sessionResults: [
+              {
+                logGroupIdentifier:
+                  "arn:aws:logs:eu-west-1:000000000000:log-group:group",
+                logStreamName: "new-service-stream",
+                timestamp: Date.now(),
+                ingestionTime: Date.now(),
+                message: "service started",
+              },
+            ],
+          },
+        };
+      }
+      const adapter = createAwsAdapter(aws, {
+        allowAws: () => true,
+        transportFactory: async () =>
+          transport(async (command) => {
+            commands.push(command);
+            return command.constructor.name === "FilterLogEventsCommand"
+              ? { events: [] }
+              : { responseStream: stream() };
+          }),
+      });
+      const input = request({
+        connection: aws,
+        startTime: now - 300_000,
+        endTime: now,
+        sources: [
+          { logGroup: "arn:aws:logs:eu-west-1:000000000000:log-group:group" },
+        ],
+      });
+      expect(
+        (await adapter.events(input, new AbortController().signal)).events,
+      ).toEqual([]);
+      const updates: QueryUpdate[] = [];
+      const live = adapter.live(input, new AbortController().signal, (update) =>
+        updates.push(update),
+      );
+      await vi.advanceTimersByTimeAsync(40_001);
+      await live;
+      expect(commands.map((command) => command.constructor.name)).toEqual([
+        "FilterLogEventsCommand",
+        "StartLiveTailCommand",
+      ]);
+      expect(commands[1]!.input).not.toHaveProperty("startTime");
+      expect(commands[1]!.input).not.toHaveProperty("endTime");
+      const events = updates.flatMap((update) => update.events ?? []);
+      expect(events).toHaveLength(1);
+      expect(events[0]).toMatchObject({
+        message: "service started",
+        logStream: "new-service-stream",
+      });
+      expect(events[0]!.timestamp).toBeGreaterThan(input.endTime);
+      expect(updates.some((update) => update.state === "error")).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("ends a silent Live response with a useful timeout and aborts its transport", async () => {
     vi.useFakeTimers();
     try {

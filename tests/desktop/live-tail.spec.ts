@@ -126,6 +126,50 @@ const rows = () => page.locator(".virtual-event");
 const received = async () =>
   Number(await status().getAttribute("data-live-received"));
 
+for (const mode of ["Table", "Hybrid", "JSON"])
+  test(`${mode} Live starts receiving after an empty five-minute query without Run`, async () => {
+    await app!.evaluate(({ ipcMain }) => {
+      (globalThis as any).__emptyHistoryRequests = [];
+      ipcMain.removeHandler("explorer:query");
+      ipcMain.handle("explorer:query", (event, request) => {
+        (globalThis as any).__emptyHistoryRequests.push(request);
+        setImmediate(() =>
+          event.sender.send("explorer:update", {
+            requestId: request.requestId,
+            state: "complete",
+            events: [],
+            replace: true,
+          }),
+        );
+      });
+    });
+    await page
+      .getByRole("button", { name: "Set last 5 minutes", exact: true })
+      .click();
+    await expect(status()).toHaveAttribute("data-query-state", "complete");
+    await expect(page.locator(".viewer-scroll")).toHaveAttribute(
+      "aria-rowcount",
+      "0",
+    );
+    await page
+      .locator("label")
+      .filter({ hasText: new RegExp(`^${mode}$`) })
+      .click();
+    await page.getByRole("button", { name: "Live", exact: true }).click();
+    await expect(status()).toHaveAttribute("data-live-state", "streaming");
+    await expect.poll(received).toBeGreaterThan(0);
+    await expect.poll(() => rows().count()).toBeGreaterThan(0);
+    const requests = await app!.evaluate(
+      () => (globalThis as any).__emptyHistoryRequests,
+    );
+    expect(requests).toHaveLength(1);
+    expect(requests[0].endTime - requests[0].startTime).toBe(300000);
+    await expect(
+      page.getByRole("button", { name: "Stop Live", exact: true }),
+    ).toBeVisible();
+    await capture(`empty-five-minute-live-${mode.toLowerCase()}.png`);
+  });
+
 async function capture(filename: string) {
   let png = "";
   for (let index = 0; index < 3; index++) {
@@ -216,6 +260,88 @@ test("Live preserves matching history, appends events automatically, and Stop re
   expect(
     Number(await page.locator(".viewer-scroll").getAttribute("aria-rowcount")),
   ).toBeGreaterThan(before);
+});
+
+test("inactive Live tabs cancel reception, resume history on activation and stay stopped after Stop", async () => {
+  await page.evaluate(() => {
+    (window as any).__liveVisibilityUpdates = [];
+    window.explorer.onUpdate((update) =>
+      (window as any).__liveVisibilityUpdates.push({
+        id: update.requestId,
+        state: update.state,
+        live: update.liveState,
+        count: update.events?.length ?? 0,
+      }),
+    );
+  });
+  await page.getByRole("button", { name: "Live", exact: true }).click();
+  await expect.poll(received).toBeGreaterThan(0);
+  const previousReceived = await received();
+  const oldId = await page.evaluate(
+    () =>
+      (window as any).__liveVisibilityUpdates.findLast(
+        (update: any) => update.live === "streaming",
+      ).id,
+  );
+  const orders = page.locator(
+    '.workspace-tab[data-tab-id="tab-orders"] [role="tab"]',
+  );
+  await page
+    .getByRole("treeitem", { name: "/aws/lambda/payments-worker", exact: true })
+    .getByRole("button", { name: "/aws/lambda/payments-worker", exact: true })
+    .dblclick();
+  await expect
+    .poll(() =>
+      page.evaluate(
+        (id) =>
+          (window as any).__liveVisibilityUpdates.some(
+            (update: any) => update.id === id && update.state === "cancelled",
+          ),
+        oldId,
+      ),
+    )
+    .toBe(true);
+  const packetCount = await page.evaluate(
+    (id) =>
+      (window as any).__liveVisibilityUpdates.filter(
+        (update: any) => update.id === id,
+      ).length,
+    oldId,
+  );
+  // Observe beyond a fixture generation interval; canceled sessions emit nothing.
+  await page.evaluate(() => new Promise((done) => setTimeout(done, 1500)));
+  expect(
+    await page.evaluate(
+      (id) =>
+        (window as any).__liveVisibilityUpdates.filter(
+          (update: any) => update.id === id,
+        ).length,
+      oldId,
+    ),
+  ).toBe(packetCount);
+  await orders.click();
+  await expect(
+    page.getByRole("button", { name: "Stop Live", exact: true }),
+  ).toBeVisible();
+  await expect.poll(received).toBeGreaterThan(previousReceived);
+  const newId = await page.evaluate(
+    () =>
+      (window as any).__liveVisibilityUpdates.findLast(
+        (update: any) => update.live === "streaming",
+      ).id,
+  );
+  expect(newId).not.toBe(oldId);
+  await page.getByRole("button", { name: "Stop Live", exact: true }).click();
+  await page
+    .locator('.workspace-tab:not([data-tab-id="tab-orders"]) [role="tab"]')
+    .click();
+  await orders.click();
+  await expect(
+    page.getByRole("button", { name: "Live", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Stop Live", exact: true }),
+  ).toHaveCount(0);
 });
 
 test("reading older rows pauses following while events continue and Follow Live returns to the newest event", async () => {
@@ -315,6 +441,16 @@ for (const mode of ["Table", "Hybrid"])
       await page.getByRole("button", { name: "Live", exact: true }).click();
       await expect.poll(received).toBeGreaterThanOrEqual(2);
       for (const backwards of [false, true]) {
+        // Coordinates are measured through separate CDP commands. Auto-follow
+        // may move a different event under those coordinates before mouse-down.
+        // Pause following while reception continues, then test selection through
+        // real arrivals; following behavior has its own native regression cases.
+        const follow = page.getByRole("button", {
+          name: "Follow Live",
+          exact: true,
+        });
+        if ((await follow.getAttribute("aria-pressed")) === "true")
+          await follow.click();
         await app!.evaluate(async ({ BrowserWindow }) => {
           await BrowserWindow.getAllWindows()[0].webContents.capturePage(
             undefined,

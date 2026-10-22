@@ -10,6 +10,7 @@ export const logTabLabel = (tab: LogTab) =>
 
 export interface WorkspaceEntry {
   id: string;
+  pinned?: boolean;
   title: string;
   groupId?: string;
   preview?: boolean;
@@ -32,6 +33,7 @@ export function workspaceEntries(workspace: Workspace): WorkspaceEntry[] {
       title: logTabLabel(tab),
       groupId: tab.groupId,
       preview: tab.preview,
+      ...(tab.pinned !== undefined ? { pinned: tab.pinned } : {}),
       kind: "single",
       tabIds: [tab.id],
     }));
@@ -49,6 +51,7 @@ export function workspaceEntries(workspace: Workspace): WorkspaceEntry[] {
       id: split.id,
       title: split.title ?? `Mixed Sources (${count})`,
       groupId: split.groupId,
+      ...(split.pinned !== undefined ? { pinned: split.pinned } : {}),
       kind: "split",
       tabIds,
     });
@@ -59,7 +62,11 @@ export function workspaceEntries(workspace: Workspace): WorkspaceEntry[] {
     if (entry) byId.delete(id);
     return entry ? [entry] : [];
   });
-  return [...ordered, ...byId.values()];
+  const all = [...ordered, ...byId.values()];
+  return [
+    ...all.filter((entry) => entry.pinned),
+    ...all.filter((entry) => !entry.pinned),
+  ];
 }
 
 export function activeEntryId(workspace: Workspace): string | null {

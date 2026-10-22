@@ -75,6 +75,7 @@ import {
   getPointer,
   inferLevel,
   matchesLocalFilter,
+  messagePreview,
   META_COLUMNS,
   parseLogMessage,
   propertyFilterTerm,
@@ -101,6 +102,7 @@ import { useScrollPagination } from "../useScrollPagination";
 import { useMessageExpansion } from "../useMessageExpansion";
 import { HighlightText, MessageContent } from "./EventMessage";
 import { EventInspector } from "./EventInspector";
+import { ExpandedEventDetails } from "./ExpandedEventDetails";
 import { EventOverview } from "./EventOverview";
 import { EventLoadingIndicator } from "./EventLoadingIndicator";
 import { LevelFilter } from "./LevelFilter";
@@ -234,6 +236,7 @@ export function LogViewer({
       : [],
   });
   const expansion = useMessageExpansion(view.mode);
+  const detailHeights = useRef(new WeakMap<LogEvent, number>());
   const [inspectorMode, setInspectorMode] = useState("structured");
   const [columnsOpened, setColumnsOpened] = useState(false);
   const [columnInput, setColumnInput] = useState("");
@@ -440,17 +443,11 @@ export function LogViewer({
             column.format,
             preferences.timezone,
           );
-          if (
-            automatic &&
-            column.path === "@message" &&
-            row.parsed.kind === "json"
-          ) {
-            const message =
-              getPointer(row.parsed.value, "/message") ??
-              getPointer(row.parsed.value, "/msg");
-            if (typeof message === "string")
-              text = summarizeValue(message, 1500);
-          }
+          const preview =
+            automatic && column.path === "@message"
+              ? messagePreview(row.parsed)
+              : undefined;
+          if (preview) text = summarizeValue(preview.value, 1500);
           return (
             <span
               className={value === undefined ? "cell-missing" : ""}
@@ -459,18 +456,7 @@ export function LogViewer({
               <HighlightText
                 text={text || (value === undefined ? "—" : "")}
                 needle={highlightText}
-                path={
-                  column.path === "@message" &&
-                  automatic &&
-                  row.parsed.kind === "json"
-                    ? typeof getPointer(row.parsed.value, "/message") ===
-                      "string"
-                      ? "/message"
-                      : typeof getPointer(row.parsed.value, "/msg") === "string"
-                        ? "/msg"
-                        : "@message"
-                    : column.path
-                }
+                path={preview?.path ?? column.path}
               />
             </span>
           );
@@ -542,6 +528,9 @@ export function LogViewer({
   const virtualizer = useVirtualizer({
     count: rows.length,
     getScrollElement: () => scrollRef.current,
+    // Preserve fractional border heights so the following row cannot cover a
+    // detail separator at display scales where borders are subpixel-sized.
+    measureElement: (element) => element.getBoundingClientRect().height,
     estimateSize: (index) =>
       expansion.isExpanded(rows[index]!.id)
         ? view.mode === "json"
@@ -554,13 +543,18 @@ export function LogViewer({
     overscan: 7,
   });
   useEffect(() => {
+    // Reset only global layout changes. A single expansion must retain other
+    // measured heights; ResizeObserver measures the row that actually changes.
     virtualizer.measure();
+    scrollRef.current
+      ?.querySelectorAll<HTMLElement>(".virtual-event")
+      .forEach((element) => virtualizer.measureElement(element));
   }, [
     view.mode,
     view.wrap,
     preferences.density,
     preferences.fontSize,
-    expansion,
+    expansion.all,
     virtualizer,
   ]);
   const inspectedIndex = selection.index;
@@ -1443,7 +1437,14 @@ export function LogViewer({
                               )
                             )
                               return;
-                            selection.inspect(row.event.id);
+                            if (view.mode === "hybrid") {
+                              if (
+                                (event.target as HTMLElement).closest(
+                                  ".log-table-row",
+                                )
+                              )
+                                toggleExpand(row.event.id);
+                            } else selection.inspect(row.event.id);
                           }}
                           data-index={virtualRow.index}
                           ref={virtualizer.measureElement}
@@ -1452,10 +1453,9 @@ export function LogViewer({
                               "--event-highlight-bg": highlight?.row.background,
                               "--event-highlight-fg": highlight?.row.foreground,
                               position: "absolute",
-                              top: 0,
+                              top: virtualRow.start,
                               left: 0,
                               width: "100%",
-                              transform: `translateY(${virtualRow.start}px)`,
                             } as CSSProperties
                           }
                         >
@@ -1519,9 +1519,16 @@ export function LogViewer({
                                     compact
                                     onAddColumn={addColumn}
                                     onAddFilter={addFilter}
-                                    onDeserialize={(path) =>
-                                      deserialized.deserialize(row.event, path)
+                                    onDeserialize={(path, encoding) =>
+                                      deserialized.deserialize(
+                                        row.event,
+                                        path,
+                                        encoding,
+                                      )
                                     }
+                                    decodedLabels={deserialized.labelsFor(
+                                      row.event,
+                                    )}
                                     deserializedPaths={deserialized.pathsFor(
                                       row.event,
                                     )}
@@ -1591,60 +1598,83 @@ export function LogViewer({
                                 ))}
                               </div>
                               {expanded && (
-                                <div className="hybrid-detail event-message-details">
+                                <ExpandedEventDetails
+                                  initialHeight={detailHeights.current.get(
+                                    row.event,
+                                  )}
+                                  onHeightChange={(height) => {
+                                    if (height === undefined)
+                                      detailHeights.current.delete(row.event);
+                                    else
+                                      detailHeights.current.set(
+                                        row.event,
+                                        height,
+                                      );
+                                  }}
+                                  onResizeStart={onPauseLiveFollow}
+                                  footer={
+                                    <Group gap="xs" mt={6}>
+                                      {view.mode === "hybrid" && (
+                                        <Button
+                                          size="compact-xs"
+                                          variant="subtle"
+                                          onClick={() =>
+                                            toggleExpand(row.event.id)
+                                          }
+                                        >
+                                          Fold message
+                                        </Button>
+                                      )}
+                                      <Button
+                                        size="compact-xs"
+                                        variant="subtle"
+                                        onClick={() =>
+                                          selection.inspect(row.event.id)
+                                        }
+                                      >
+                                        Open inspector
+                                      </Button>
+                                      <Button
+                                        size="compact-xs"
+                                        variant="subtle"
+                                        leftSection={<IconCopy size={12} />}
+                                        onClick={() => copy(row.event.message)}
+                                      >
+                                        Copy raw
+                                      </Button>
+                                      {onContext && (
+                                        <Button
+                                          size="compact-xs"
+                                          variant="subtle"
+                                          onClick={() => onContext(row.event)}
+                                        >
+                                          Surrounding context
+                                        </Button>
+                                      )}
+                                    </Group>
+                                  }
+                                >
                                   <MessageContent
                                     row={row}
                                     highlight={highlightText}
                                     compact
                                     onAddColumn={addColumn}
                                     onAddFilter={addFilter}
-                                    onDeserialize={(path) =>
-                                      deserialized.deserialize(row.event, path)
+                                    onDeserialize={(path, encoding) =>
+                                      deserialized.deserialize(
+                                        row.event,
+                                        path,
+                                        encoding,
+                                      )
                                     }
+                                    decodedLabels={deserialized.labelsFor(
+                                      row.event,
+                                    )}
                                     deserializedPaths={deserialized.pathsFor(
                                       row.event,
                                     )}
                                   />
-                                  <Group gap="xs" mt={6}>
-                                    {view.mode === "hybrid" && (
-                                      <Button
-                                        size="compact-xs"
-                                        variant="subtle"
-                                        onClick={() =>
-                                          toggleExpand(row.event.id)
-                                        }
-                                      >
-                                        Fold message
-                                      </Button>
-                                    )}
-                                    <Button
-                                      size="compact-xs"
-                                      variant="subtle"
-                                      onClick={() =>
-                                        selection.inspect(row.event.id)
-                                      }
-                                    >
-                                      Open inspector
-                                    </Button>
-                                    <Button
-                                      size="compact-xs"
-                                      variant="subtle"
-                                      leftSection={<IconCopy size={12} />}
-                                      onClick={() => copy(row.event.message)}
-                                    >
-                                      Copy raw
-                                    </Button>
-                                    {onContext && (
-                                      <Button
-                                        size="compact-xs"
-                                        variant="subtle"
-                                        onClick={() => onContext(row.event)}
-                                      >
-                                        Surrounding context
-                                      </Button>
-                                    )}
-                                  </Group>
-                                </div>
+                                </ExpandedEventDetails>
                               )}
                             </>
                           )}
@@ -1874,10 +1904,16 @@ export function LogViewer({
                     <MessageContent
                       row={inspected}
                       highlight={highlightText}
+                      onCopyValue={(text) => void copy(text)}
                       onAddColumn={addColumn}
-                      onDeserialize={(path) =>
-                        deserialized.deserialize(inspected.event, path)
+                      onDeserialize={(path, encoding) =>
+                        deserialized.deserialize(
+                          inspected.event,
+                          path,
+                          encoding,
+                        )
                       }
+                      decodedLabels={deserialized.labelsFor(inspected.event)}
                       deserializedPaths={deserialized.pathsFor(inspected.event)}
                       onAddFilter={addFilter}
                       controls

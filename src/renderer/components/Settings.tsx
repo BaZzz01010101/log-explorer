@@ -4,6 +4,7 @@ import {
   Alert,
   Badge,
   Button,
+  Checkbox,
   Group,
   Modal,
   NumberInput,
@@ -27,9 +28,11 @@ import { ProfileConnectionsEditor } from "./ProfileConnectionsEditor";
 function NumericPreference({
   value,
   onCommit,
+  live = false,
   ...props
 }: Omit<NumberInputProps, "value" | "onChange" | "onBlur" | "onKeyDown"> & {
   value: number;
+  live?: boolean;
   onCommit(value: number): void;
 }) {
   // Preserve intermediate input such as `1` while the user is entering `14`.
@@ -47,7 +50,17 @@ function NumericPreference({
       clampBehavior="none"
       allowDecimal={false}
       allowNegative={false}
-      onChange={setDraft}
+      onChange={(next) => {
+        setDraft(next);
+        if (
+          live &&
+          typeof next === "number" &&
+          Number.isFinite(next) &&
+          next >= (props.min ?? -Infinity) &&
+          next <= (props.max ?? Infinity)
+        )
+          onCommit(next);
+      }}
       onBlur={commit}
       onKeyDown={(event) => {
         if (event.key === "Enter") {
@@ -168,6 +181,7 @@ export function Settings({
             <Group grow>
               <Select
                 label="Theme"
+                allowDeselect={false}
                 value={preferences.theme}
                 data={["dark", "light"]}
                 onChange={(v) =>
@@ -205,9 +219,20 @@ export function Settings({
                   });
               }}
             />
+            <Checkbox
+              label="Put pinned tabs on a separate row"
+              checked={preferences.pinnedTabsSeparateRow === true}
+              onChange={(event) =>
+                dispatch({
+                  type: "preferences/update",
+                  patch: { pinnedTabsSeparateRow: event.currentTarget.checked },
+                })
+              }
+            />
             <Group grow>
               <NumericPreference
                 label="Log font size"
+                live
                 min={10}
                 max={20}
                 value={preferences.fontSize}

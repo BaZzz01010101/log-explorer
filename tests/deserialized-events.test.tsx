@@ -65,3 +65,24 @@ it("discards a projection when the same event ID arrives with a new message", as
   expect(result.rows[0].parsed.value).toEqual({ payload: "invalid" });
   expect(result.pathsFor(changed)).toBeUndefined();
 });
+
+it("chains text decoding and JSON deserialization with view-only provenance", async () => {
+  const encoded = {
+    ...event,
+    message: JSON.stringify({ payload: "JTdCJTIydmFsdWUlMjIlM0E3JTdE" }),
+  };
+  await act(async () => {
+    renderer = create(<Probe events={[encoded]} />);
+  });
+  await act(async () => result.deserialize(encoded, "/payload", "base64"));
+  expect(getPointer(result.rows[0].parsed.value, "/payload")).toBe(
+    "%7B%22value%22%3A7%7D",
+  );
+  expect(result.labelsFor(encoded)?.get("/payload")).toBe("Base64 decoded");
+  await act(async () => result.deserialize(encoded, "/payload", "url"));
+  expect(result.labelsFor(encoded)?.get("/payload")).toBe("URL decoded");
+  await act(async () => result.deserialize(encoded, "/payload"));
+  expect(getPointer(result.rows[0].parsed.value, "/payload/value")).toBe(7);
+  expect(result.labelsFor(encoded)?.get("/payload")).toBe("deserialized");
+  expect(result.rows[0].event.message).toBe(encoded.message);
+});

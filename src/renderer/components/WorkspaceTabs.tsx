@@ -1,6 +1,7 @@
 import {
   useState,
   useEffect,
+  useLayoutEffect,
   createContext,
   useContext,
   useRef,
@@ -11,6 +12,7 @@ import {
   type SetStateAction,
 } from "react";
 import { createPortal } from "react-dom";
+import { TabRowCrossingPreview } from "./TabRowCrossingPreview";
 import {
   DndContext,
   DragOverlay,
@@ -56,6 +58,7 @@ import {
   IconLayoutColumns,
   IconLayoutRows,
   IconPlus,
+  IconPin,
   IconRestore,
   IconTerminal2,
   IconStack2,
@@ -90,6 +93,12 @@ import {
   type WorkspaceEntry,
 } from "../workspace-entries";
 import { selectWorkspaceEntry } from "../tab-selection";
+import { tabInsertionAt } from "../tab-insertion";
+import {
+  tabReorderPreview,
+  tabSlotRect,
+  type TabReorderPreview,
+} from "../tab-reorder-preview";
 import "./workspace-tabs.css";
 
 type Props = { workspace: Workspace; dispatch: Dispatch<WorkspaceAction> };
@@ -144,7 +153,8 @@ function SortableTab({
   onKeyDown: (event: KeyboardEvent<HTMLButtonElement>) => void;
 }) {
   const { selected: selection, setSelected } = useContext(WorkspaceSelection);
-  const { mode, sourceKind } = useContext(WorkspaceDragMode);
+  const { mode, sourceKind, reorderPreview, pointerDrag } =
+    useContext(WorkspaceDragMode);
   const [menuOpen, setMenuOpen] = useState(false);
   const [renameOpened, setRenameOpened] = useState(false);
   const [name, setName] = useState(tab.title);
@@ -158,6 +168,7 @@ function SortableTab({
   } = useSortable({
     id: `tab:${tab.id}`,
     data: { kind: "tab", tabId: tab.id },
+    animateLayoutChanges: () => false,
   });
   const entries = workspaceEntries(workspace);
   const index = entries.findIndex((item) => item.id === tab.id);
@@ -208,19 +219,33 @@ function SortableTab({
             role="presentation"
             data-tab-id={tab.id}
             data-entry-kind={tab.kind}
+            data-pinned={tab.pinned ? "true" : "false"}
             className={`workspace-tab ${active ? "is-active" : ""} ${selected ? "is-selected" : ""} ${group ? "is-grouped" : ""} ${isDragging ? "is-dragging" : ""} ${tab.preview ? "is-preview" : ""}`}
             style={{
               ...colorStyle(group?.color),
-              transform: CSS.Transform.toString(
-                isDragging
-                  ? mode === "reorder" && transform
-                    ? workspace.preferences.tabBarLayout === "wrap"
-                      ? transform
-                      : { ...transform, y: 0 }
-                    : null
-                  : transform,
+              visibility:
+                reorderPreview?.crossingSource?.id === tab.id
+                  ? "hidden"
+                  : undefined,
+              transform: CSS.Translate.toString(
+                mode === "reorder"
+                  ? (reorderPreview?.translations[tab.id] ??
+                      (pointerDrag
+                        ? null
+                        : transform && {
+                            ...transform,
+                            y:
+                              workspace.preferences.tabBarLayout === "wrap"
+                                ? transform.y
+                                : 0,
+                          }))
+                  : null,
               ),
-              transition,
+              transition: reorderPreview
+                ? "transform 160ms ease"
+                : sourceKind !== null
+                  ? transition
+                  : undefined,
             }}
             onPointerDown={(event) => {
               if (event.button === 1) {
@@ -237,7 +262,7 @@ function SortableTab({
               if (event.button !== 1) return;
               event.preventDefault();
               event.stopPropagation();
-              dispatch({ type: "tab/close", tabId: tab.id });
+              if (!tab.pinned) dispatch({ type: "tab/close", tabId: tab.id });
             }}
             onDragStart={(event) => event.preventDefault()}
             onContextMenu={(event) => {
@@ -311,10 +336,17 @@ function SortableTab({
               type="button"
               data-tab-control
               className="tab-close"
-              aria-label={`Close ${tab.title}`}
-              onClick={() => dispatch({ type: "tab/close", tabId: tab.id })}
+              aria-label={`${tab.pinned ? "Unpin" : "Close"} ${tab.title}`}
+              data-tooltip={tab.pinned ? "Unpin tab" : "Close tab"}
+              onClick={() =>
+                dispatch(
+                  tab.pinned
+                    ? { type: "tab/pin", tabId: tab.id, pinned: false }
+                    : { type: "tab/close", tabId: tab.id },
+                )
+              }
             >
-              <IconX size={13} />
+              {tab.pinned ? <IconPin size={13} /> : <IconX size={13} />}
             </button>
           </div>
         </Menu.Target>
@@ -327,6 +359,15 @@ function SortableTab({
               Keep tab open
             </Menu.Item>
           )}
+          <Menu.Item
+            leftSection={<IconPin size={14} />}
+            onClick={() => {
+              for (const id of chosen)
+                dispatch({ type: "tab/pin", tabId: id, pinned: !tab.pinned });
+            }}
+          >
+            {tab.pinned ? "Unpin tab" : "Pin tab"}
+          </Menu.Item>
           <Menu.Item
             leftSection={<IconEdit size={14} />}
             onClick={() => {
@@ -432,7 +473,9 @@ function SortableTab({
           <Menu.Item
             color="red"
             leftSection={<IconX size={14} />}
-            onClick={() => dispatch({ type: "tab/close", tabId: tab.id })}
+            onClick={() =>
+              dispatch({ type: "tab/close", tabId: tab.id, allowPinned: true })
+            }
           >
             Close tab
           </Menu.Item>
@@ -618,12 +661,18 @@ type DragSource = {
 type DragDestination = {
   mode: "reorder" | "placement";
   placement: DragPlacement | null;
-  insertion: { beforeTabId: string | null; rect: LayoutRect } | null;
+  insertion: {
+    beforeTabId: string | null;
+    pinned?: boolean;
+    rect: LayoutRect;
+  } | null;
 };
 const WorkspaceDragMode = createContext<
   DragDestination & {
     panelsDraggable: boolean;
     sourceKind: DragSource["kind"] | null;
+    reorderPreview?: TabReorderPreview | null;
+    pointerDrag?: boolean;
   }
 >({
   mode: "reorder",
@@ -649,7 +698,9 @@ export function dragDestination(
         Math.max(strip.top - point.y, 0, point.y - strip.bottom),
       )
     : Infinity;
-  const mode = !resource && distance <= 28 ? "reorder" : "placement";
+  const stripInsertion = tabInsertionAt(workspace, point);
+  const mode =
+    !resource && (stripInsertion || distance <= 28) ? "reorder" : "placement";
   let placement: DragPlacement | null = null;
   let insertion: DragDestination["insertion"] = null;
   if (
@@ -712,7 +763,8 @@ export function dragDestination(
       },
     };
   }
-  if (mode === "placement") {
+  insertion = stripInsertion ?? insertion;
+  if (mode === "placement" && !insertion) {
     for (const element of document.querySelectorAll<HTMLElement>(
       "[data-pane-drop-target]",
     )) {
@@ -805,6 +857,8 @@ export function WorkspaceDragSurface({
     placement: null,
     insertion: null,
   });
+  const [reorderPreview, setReorderPreview] =
+    useState<TabReorderPreview | null>(null);
   const destinationRef = useRef(dragMode);
   const workspaceRef = useRef(workspace);
   workspaceRef.current = workspace;
@@ -871,6 +925,24 @@ export function WorkspaceDragSurface({
     });
     return () => cancelAnimationFrame(frame);
   }, [workspace, draggedSource]);
+  const pointerDrag =
+    draggedSource?.kind === "tab" && lastPoint.current !== null;
+  useLayoutEffect(() => {
+    const insertion = dragMode.mode === "reorder" ? dragMode.insertion : null;
+    const next =
+      pointerDrag && draggedSource && insertion
+        ? tabReorderPreview(workspace, draggedSource.tabId, {
+            beforeTabId: insertion.beforeTabId,
+            pinned:
+              insertion.pinned ??
+              !!entries.find((entry) => entry.id === draggedSource.tabId)
+                ?.pinned,
+          })
+        : null;
+    setReorderPreview((previous) =>
+      JSON.stringify(previous) === JSON.stringify(next) ? previous : next,
+    );
+  }, [workspace, draggedSource, dragMode, pointerDrag, reorderPreview]);
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
     useSensor(KeyboardSensor, {
@@ -890,25 +962,34 @@ export function WorkspaceDragSurface({
         : destinationRef.current;
     const target = over?.data.current;
     finishDrag();
-    if (!over || active.id === over.id) {
+    if ((!over || active.id === over.id) && !destination.insertion) {
       restoreActivation();
       return;
     }
     if (source) {
-      if (source.kind === "tab" && target?.kind === "view-favorites") {
+      if (destination.insertion) {
+        if (source.kind === "pane-header")
+          dispatch({
+            type: "pane/detach",
+            tabId: source.tabId,
+            beforeTabId: destination.insertion.beforeTabId,
+            ...(destination.insertion.pinned !== undefined
+              ? { pinned: destination.insertion.pinned }
+              : {}),
+          });
+        else
+          dispatch({
+            type: "tab/move",
+            tabId: source.tabId,
+            beforeTabId: destination.insertion.beforeTabId,
+            pinned:
+              destination.insertion.pinned ??
+              !!entries.find((entry) => entry.id === source.tabId)?.pinned,
+          });
+        restoreActivation();
+      } else if (source.kind === "tab" && target?.kind === "view-favorites") {
         saveFavorite(workspaceRef.current, dispatch, source.tabId);
         restoreActivation();
-      } else if (
-        source.kind === "pane-header" &&
-        target?.kind === "tab-strip" &&
-        destination.insertion
-      ) {
-        dispatch({
-          type: "pane/detach",
-          tabId: source.tabId,
-          beforeTabId: destination.insertion.beforeTabId,
-        });
-        hoverActivated.current = false;
       } else if (
         target?.kind === "pane" &&
         destination.placement &&
@@ -969,6 +1050,8 @@ export function WorkspaceDragSurface({
       <WorkspaceDragMode.Provider
         value={{
           ...dragMode,
+          reorderPreview,
+          pointerDrag,
           panelsDraggable: workspace.panes.length > 1,
           sourceKind: draggedSource?.kind ?? null,
         }}
@@ -992,8 +1075,7 @@ export function WorkspaceDragSurface({
             const eligible = args.droppableContainers.filter((container) =>
               source
                 ? mode === "reorder"
-                  ? container.data.current?.kind ===
-                    (source.kind === "pane-header" ? "tab-strip" : "tab")
+                  ? ["tab", "tab-strip"].includes(container.data.current?.kind)
                   : container.data.current?.kind === "pane" ||
                     (source.kind === "tab" &&
                       ["group", "view-favorites"].includes(
@@ -1019,13 +1101,13 @@ export function WorkspaceDragSurface({
             const element = [
               ...document.querySelectorAll<HTMLElement>("[data-tab-id]"),
             ].find((element) => {
-              const rect = element.getBoundingClientRect();
+              const rect = tabSlotRect(element);
               return (
                 element.dataset.tabId !== source.tabId &&
                 point.x >= rect.left &&
-                point.x <= rect.right &&
+                point.x <= rect.left + rect.width &&
                 point.y >= rect.top &&
-                point.y <= rect.bottom
+                point.y <= rect.top + rect.height
               );
             });
             const id = element?.dataset.tabId;
@@ -1060,7 +1142,7 @@ export function WorkspaceDragSurface({
               }, 450),
             };
           }}
-          onDragStart={({ active }) => {
+          onDragStart={({ active, activatorEvent }) => {
             clearHover();
             hoverActivated.current = false;
             originRef.current = activeEntryId(workspace);
@@ -1088,6 +1170,13 @@ export function WorkspaceDragSurface({
                   entryKind: "single",
                 };
             }
+            lastPoint.current =
+              activatorEvent && "clientX" in activatorEvent
+                ? {
+                    x: (activatorEvent as MouseEvent).clientX,
+                    y: (activatorEvent as MouseEvent).clientY,
+                  }
+                : null;
             sourceRef.current = source;
             destinationRef.current = {
               mode: source?.kind === "pane-header" ? "placement" : "reorder",
@@ -1096,6 +1185,8 @@ export function WorkspaceDragSurface({
             };
             setDragMode(destinationRef.current);
             setDraggedSource(source);
+            if (source && lastPoint.current)
+              updateDestination(lastPoint.current, source);
           }}
           onDragCancel={() => {
             finishDrag();
@@ -1103,6 +1194,7 @@ export function WorkspaceDragSurface({
           }}
         >
           {children}
+          <TabRowCrossingPreview source={reorderPreview?.crossingSource} />
           {createPortal(
             <>
               <DragOverlay dropAnimation={null}>
@@ -1126,10 +1218,14 @@ export function WorkspaceDragSurface({
                     dragMode.insertion.beforeTabId ?? "__end__"
                   }
                   style={{
-                    left: dragMode.insertion.rect.left,
-                    top: dragMode.insertion.rect.top,
-                    width: dragMode.insertion.rect.width,
-                    height: dragMode.insertion.rect.height,
+                    left: (reorderPreview?.marker ?? dragMode.insertion.rect)
+                      .left,
+                    top: (reorderPreview?.marker ?? dragMode.insertion.rect)
+                      .top,
+                    width: (reorderPreview?.marker ?? dragMode.insertion.rect)
+                      .width,
+                    height: (reorderPreview?.marker ?? dragMode.insertion.rect)
+                      .height,
                   }}
                   aria-hidden="true"
                 />
@@ -1194,11 +1290,11 @@ export function PaneDropTarget({
 
 export function WorkspaceTabs({ workspace, dispatch }: Props) {
   const { selected, setSelected } = useContext(WorkspaceSelection);
-  const { sourceKind } = useContext(WorkspaceDragMode);
+  const { sourceKind, reorderPreview } = useContext(WorkspaceDragMode);
   const { setNodeRef: setTabStripRef } = useDroppable({
     id: "workspace-tab-strip",
     data: { kind: "tab-strip" },
-    disabled: sourceKind !== "pane-header",
+    disabled: sourceKind === null,
   });
   const [editing, setEditing] = useState<TabGroup | "new" | null>(null);
   const [groupName, setGroupName] = useState("");
@@ -1226,6 +1322,7 @@ export function WorkspaceTabs({ workspace, dispatch }: Props) {
       : [];
   const visibleTabs = entries.filter(
     (tab) =>
+      tab.pinned ||
       !workspace.groups.find((group) => group.id === tab.groupId)?.collapsed ||
       tab.id === activeTabId,
   );
@@ -1263,6 +1360,39 @@ export function WorkspaceTabs({ workspace, dispatch }: Props) {
     }
   };
 
+  const renderTab = (tab: WorkspaceEntry) => (
+    <SortableTab
+      key={tab.id}
+      tab={tab}
+      group={workspace.groups.find((group) => group.id === tab.groupId)}
+      active={tab.id === activeTabId}
+      selected={selectedIds.includes(tab.id)}
+      workspace={workspace}
+      dispatch={dispatch}
+      onKeyDown={(event) => onTabKey(event, tab)}
+      onSelect={(event) => {
+        const next = selectWorkspaceEntry(
+          { ids: selectedIds, anchorId: anchorRef.current },
+          visibleTabs.map((entry) => entry.id),
+          activeTabId,
+          tab.id,
+          {
+            shift: event.shiftKey,
+            toggle: event.ctrlKey || event.metaKey,
+          },
+        );
+        anchorRef.current = next.anchorId;
+        setSelected(next.ids);
+        if (event.ctrlKey || event.metaKey || event.shiftKey) {
+          event.preventDefault();
+        } else {
+          dispatch({ type: "tab/select", tabId: tab.id });
+        }
+      }}
+    />
+  );
+  const separate = workspace.preferences.pinnedTabsSeparateRow === true;
+
   return (
     <>
       <div
@@ -1271,54 +1401,59 @@ export function WorkspaceTabs({ workspace, dispatch }: Props) {
         <SortableContext
           items={visibleTabs.map((tab) => `tab:${tab.id}`)}
           strategy={
-            workspace.preferences.tabBarLayout === "wrap"
+            workspace.preferences.tabBarLayout === "wrap" || separate
               ? rectSortingStrategy
               : horizontalListSortingStrategy
           }
         >
-          <div
-            ref={setTabStripRef}
-            className={`workspace-tab-list ${workspace.preferences.tabBarLayout === "wrap" ? "is-wrapped" : ""}`}
-            role="tablist"
-            aria-label="Log views"
-          >
-            {visibleTabs.map((tab) => (
-              <SortableTab
-                key={tab.id}
-                tab={tab}
-                group={workspace.groups.find(
-                  (group) => group.id === tab.groupId,
+          {separate ? (
+            <div ref={setTabStripRef} className="workspace-tab-strips">
+              <div
+                className={`workspace-tab-list pinned-tab-row ${workspace.preferences.tabBarLayout === "wrap" ? "is-wrapped" : ""}`}
+                data-tab-strip="pinned"
+                style={{ height: reorderPreview?.heights.pinned }}
+                role="tablist"
+                aria-label="Pinned log views"
+              >
+                {visibleTabs.filter((tab) => tab.pinned).map(renderTab)}
+                {!visibleTabs.some((tab) => tab.pinned) && (
+                  <span className="empty-pinned-tabs">
+                    Drag tabs here to pin
+                  </span>
                 )}
-                active={tab.id === activeTabId}
-                selected={selectedIds.includes(tab.id)}
-                workspace={workspace}
-                dispatch={dispatch}
-                onKeyDown={(event) => onTabKey(event, tab)}
-                onSelect={(event) => {
-                  const next = selectWorkspaceEntry(
-                    { ids: selectedIds, anchorId: anchorRef.current },
-                    visibleTabs.map((entry) => entry.id),
-                    activeTabId,
-                    tab.id,
-                    {
-                      shift: event.shiftKey,
-                      toggle: event.ctrlKey || event.metaKey,
-                    },
-                  );
-                  anchorRef.current = next.anchorId;
-                  setSelected(next.ids);
-                  if (event.ctrlKey || event.metaKey || event.shiftKey) {
-                    event.preventDefault();
-                  } else {
-                    dispatch({ type: "tab/select", tabId: tab.id });
-                  }
-                }}
-              />
-            ))}
-            {!entries.length && (
-              <span className="empty-tabs">Open a log group to begin</span>
-            )}
-          </div>
+              </div>
+              <div
+                className={`workspace-tab-list ${workspace.preferences.tabBarLayout === "wrap" ? "is-wrapped" : ""}`}
+                data-tab-strip="regular"
+                style={{ height: reorderPreview?.heights.regular }}
+                role="tablist"
+                aria-label="Log views"
+              >
+                {visibleTabs.filter((tab) => !tab.pinned).map(renderTab)}
+                {!visibleTabs.some((tab) => !tab.pinned) && (
+                  <span className="empty-tabs">
+                    {entries.length
+                      ? "Drop to open an unpinned tab"
+                      : "Open a log group to begin"}
+                  </span>
+                )}
+              </div>
+            </div>
+          ) : (
+            <div
+              ref={setTabStripRef}
+              className={`workspace-tab-list ${workspace.preferences.tabBarLayout === "wrap" ? "is-wrapped" : ""}`}
+              data-tab-strip="shared"
+              style={{ height: reorderPreview?.heights.shared }}
+              role="tablist"
+              aria-label="Log views"
+            >
+              {visibleTabs.map(renderTab)}
+              {!entries.length && (
+                <span className="empty-tabs">Open a log group to begin</span>
+              )}
+            </div>
+          )}
         </SortableContext>
         <div className="workspace-tab-tools">
           <Tooltip label="New view">
