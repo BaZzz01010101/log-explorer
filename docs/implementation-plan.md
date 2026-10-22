@@ -186,3 +186,11 @@ Complete the coordinated tab preview, wrapped height, inactive Live suspension a
 ## Live after empty history (0.1.29)
 
 Investigate the reported empty five-minute history to Live transition using [the investigation and checklist](live-empty-history-0.1.29.md). Guard newer Live operations against automatic historical refresh and obsolete pagination, preserve valid continuation, and verify quiet streams and new arrivals with isolated tests.
+
+## Pointer-following tab reorder (0.1.30)
+
+Apply [the pointer-motion changes](tab-pointer-motion-0.1.30.md): immediate horizontal pickup tracking, row-bound vertical animation, strict midpoint neighbor movement using stable geometry, occupied-row endpoint clamps, no blue tab-reorder marker and a consistently topmost dragged surface. Preserve pins, hover activation, split/panel and resource drops; verify using hidden offline native tests.
+
+## Overlap-based drag activation (0.1.31)
+
+Fix [delayed activation during tab dragging](tab-hover-overlap-0.1.31.md) using a 20% overlap threshold relative to the smaller tab and the shifted reorder rectangles. Revalidate at activation time and preserve dwell cancellation, original-view restoration, split drops and pane/resource behavior. Reproduce both reported cases against 0.1.30 and verify the integrated package in hidden offline windows.

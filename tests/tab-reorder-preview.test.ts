@@ -1,6 +1,7 @@
 import { afterEach, expect, it, vi } from "vitest";
 import {
   projectTabSlots,
+  pointerTabSlots,
   tabReorderPreview,
 } from "../src/renderer/tab-reorder-preview";
 import {
@@ -183,4 +184,128 @@ it("reserves border-box height and retains taller natural strip content", () => 
     tabReorderPreview(workspace, ids[0], { beforeTabId: null, pinned: false })!
       .heights.shared,
   ).toBe(60);
+});
+
+it("follows the pickup point horizontally without snapping to the proposed slot", () => {
+  const { workspace, ids } = measuredWorkspace();
+  const result = tabReorderPreview(
+    workspace,
+    ids[1],
+    { beforeTabId: ids[2], pinned: false },
+    {
+      point: { x: 365, y: 55 },
+      grabX: 30,
+    },
+  )!;
+  expect(result.translations[ids[1]].x).toBe(25);
+  expect(result.crossingSource?.rect).toEqual({
+    left: 335,
+    top: 40,
+    width: 130,
+    height: 40,
+  });
+  expect(result.translations[ids[2]].x).toBe(0);
+});
+
+it("moves the neighbor only after its midpoint and remains stable at the boundary", () => {
+  const { workspace, ids } = measuredWorkspace();
+  for (const shift of [104.99, 105, 105.01, 150, 105.01, 105, 104.99]) {
+    const result = tabReorderPreview(
+      workspace,
+      ids[1],
+      { beforeTabId: ids[2], pinned: false },
+      {
+        point: { x: 340 + shift, y: 60 },
+        grabX: 30,
+      },
+    )!;
+    expect(result.translations[ids[2]].x).toBe(shift > 105 ? -130 : 0);
+    expect(result.crossingSource!.rect.left).toBeCloseTo(310 + shift);
+  }
+});
+
+it("keeps the existing gap at exactly 50 percent in either direction", () => {
+  for (const preferred of ["b", "c"]) {
+    const result = pointerTabSlots(
+      items,
+      1000,
+      false,
+      "a",
+      ["b", "c", null],
+      {
+        point: { x: 65 + 27, y: 20 },
+        grabX: 27,
+      },
+      preferred,
+    )!;
+    expect(result.beforeTabId).toBe(preferred);
+    expect(result.rect.left).toBe(65);
+  }
+});
+
+it("handles narrow and wide dragged tabs with fractional boundaries and no stationary oscillation", () => {
+  for (const width of [90.25, 130.5, 310.75]) {
+    const sized = [
+      { id: "a", width, height: 40 },
+      { id: "b", width: 310.5, height: 40 },
+    ];
+    let preferred: string | null = "b";
+    for (const left of [155.24, 155.25, 155.26, 200, 155.26, 155.25, 155.24]) {
+      const point = { x: left + 17.5, y: 20 };
+      const result: NonNullable<ReturnType<typeof pointerTabSlots>> =
+        pointerTabSlots(
+          sized,
+          1000,
+          false,
+          "a",
+          ["b", null],
+          { point, grabX: 17.5 },
+          preferred,
+        )!;
+      expect(result.beforeTabId).toBe(
+        left < 155.25 ? "b" : left > 155.25 ? null : preferred,
+      );
+      preferred = result.beforeTabId;
+      for (let tick = 0; tick < 10; tick++)
+        expect(
+          pointerTabSlots(
+            sized,
+            1000,
+            false,
+            "a",
+            ["b", null],
+            { point, grabX: 17.5 },
+            preferred,
+          )!.beforeTabId,
+        ).toBe(preferred);
+    }
+  }
+});
+
+it("locks vertical position to a row, jumps between legal rows and clamps at row ends", () => {
+  const run = (x: number, y: number, preferred: string | null = "b") =>
+    pointerTabSlots(
+      items,
+      450,
+      true,
+      "a",
+      ["b", "c", null],
+      {
+        point: { x: x + 30, y },
+        grabX: 30,
+      },
+      preferred,
+    )!;
+  expect(run(30, 10).rect).toMatchObject({ left: 30, top: 0 });
+  expect(run(30, 35).rect).toMatchObject({ left: 30, top: 0 });
+  expect(run(-100, 20).rect.left).toBe(0);
+  expect(run(900, 20).rect.left).toBe(130);
+  expect(run(100, 60)).toMatchObject({
+    beforeTabId: null,
+    rect: { left: 0, top: 40 },
+  });
+  expect(run(30, 20, null)).toMatchObject({
+    beforeTabId: "b",
+    rect: { left: 30, top: 0 },
+  });
 });

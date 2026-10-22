@@ -7,6 +7,8 @@ export function TabRowCrossingPreview({
 }: {
   source: TabReorderPreview["crossingSource"];
 }) {
+  // Reuse the same top-level presentation for every pointer reorder so row
+  // transitions are never clipped by a strip or covered by another tab.
   const preview = useRef<HTMLElement | null>(null);
   useLayoutEffect(() => {
     if (!source) return;
@@ -30,12 +32,12 @@ export function TabRowCrossingPreview({
     const style = getComputedStyle(original);
     Object.assign(clone.style, {
       position: "fixed",
-      left: "0",
-      top: "0",
+      left: `${(source.origin ?? source.rect).left}px`,
+      top: `${(source.origin ?? source.rect).top}px`,
       margin: "0",
       visibility: "visible",
       pointerEvents: "none",
-      zIndex: "300",
+      zIndex: "1000",
       boxSizing: "border-box",
       minWidth: "0",
       maxWidth: "none",
@@ -43,8 +45,8 @@ export function TabRowCrossingPreview({
       borderBottom: style.borderBottom,
       width: `${source.rect.width}px`,
       height: `${source.rect.height}px`,
-      transform: `translate3d(${source.rect.left}px, ${source.rect.top}px, 0)`,
-      transition: "transform 160ms ease",
+      transform: "none",
+      transition: "top 160ms ease",
     });
     document.body.appendChild(clone);
     preview.current = clone;
@@ -59,7 +61,8 @@ export function TabRowCrossingPreview({
     Object.assign(preview.current.style, {
       width: `${width}px`,
       height: `${height}px`,
-      transform: `translate3d(${left}px, ${top}px, 0)`,
+      left: `${left}px`,
+      top: `${top}px`,
     });
   }, [source]);
   return null;

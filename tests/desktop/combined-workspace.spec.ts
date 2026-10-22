@@ -333,6 +333,7 @@ test("dragging selects a destination split, pane headers reorder in place, and a
   ]);
   await combined().hover();
   await expect(page.getByRole("tooltip")).toBeVisible();
+  const combinedOrigin = (await combined().boundingBox())!;
   await startDrag(combined());
   rect = (await page.locator("[data-pane-drop-target]").first().boundingBox())!;
   await page.mouse.move(rect.x + rect.width / 2, rect.y + rect.height / 2, {
@@ -341,7 +342,9 @@ test("dragging selects a destination split, pane headers reorder in place, and a
   await expect(page.getByRole("tooltip")).toHaveCount(0);
   const normal = (await regular("media-pipeline").boundingBox())!;
   await page.mouse.move(
-    normal.x + normal.width / 2,
+    // Dwell while covering 30% of the smaller neighbor, before it shifts
+    // across the gap. Its old center no longer identifies the hovered tab.
+    combinedOrigin.x + 35 + normal.width * 0.3,
     normal.y + normal.height / 2,
     { steps: 3 },
   );

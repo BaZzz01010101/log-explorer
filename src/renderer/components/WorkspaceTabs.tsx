@@ -94,6 +94,7 @@ import {
 } from "../workspace-entries";
 import { selectWorkspaceEntry } from "../tab-selection";
 import { tabInsertionAt } from "../tab-insertion";
+import { tabOverlapTarget } from "../tab-hover";
 import {
   tabReorderPreview,
   tabSlotRect,
@@ -153,7 +154,7 @@ function SortableTab({
   onKeyDown: (event: KeyboardEvent<HTMLButtonElement>) => void;
 }) {
   const { selected: selection, setSelected } = useContext(WorkspaceSelection);
-  const { mode, sourceKind, reorderPreview, pointerDrag } =
+  const { mode, sourceKind, reorderPreview, pointerDrag, insertion } =
     useContext(WorkspaceDragMode);
   const [menuOpen, setMenuOpen] = useState(false);
   const [renameOpened, setRenameOpened] = useState(false);
@@ -220,6 +221,11 @@ function SortableTab({
             data-tab-id={tab.id}
             data-entry-kind={tab.kind}
             data-pinned={tab.pinned ? "true" : "false"}
+            data-tab-reorder-before={
+              isDragging && insertion
+                ? (insertion.beforeTabId ?? "__end__")
+                : undefined
+            }
             className={`workspace-tab ${active ? "is-active" : ""} ${selected ? "is-selected" : ""} ${group ? "is-grouped" : ""} ${isDragging ? "is-dragging" : ""} ${tab.preview ? "is-preview" : ""}`}
             style={{
               ...colorStyle(group?.color),
@@ -868,6 +874,7 @@ export function WorkspaceDragSurface({
   const originRef = useRef<string | null>(null);
   const hoverActivated = useRef(false);
   const lastPoint = useRef<{ x: number; y: number } | null>(null);
+  const grabX = useRef<number | null>(null);
   const hover = useRef<{
     id: string;
     point: { x: number; y: number };
@@ -881,22 +888,156 @@ export function WorkspaceDragSurface({
     if (hover.current) clearTimeout(hover.current.timer);
     hover.current = null;
   };
-  const updateDestination = (
+  const resolveDestination = (
     point: { x: number; y: number },
     source: DragSource,
   ) => {
-    const destination = dragDestination(
+    let destination = dragDestination(
       workspaceRef.current,
       source.tabId,
       point,
       source.kind === "pane-header",
     );
+    let preview: TabReorderPreview | null = null;
+    if (
+      source.kind === "tab" &&
+      grabX.current !== null &&
+      destination.mode === "reorder"
+    ) {
+      const base = destination.insertion ?? destinationRef.current.insertion;
+      if (base) {
+        const pinned =
+          base.pinned ??
+          !!workspaceEntries(workspaceRef.current).find(
+            (entry) => entry.id === source.tabId,
+          )?.pinned;
+        const previous = destinationRef.current.insertion;
+        preview = tabReorderPreview(
+          workspaceRef.current,
+          source.tabId,
+          {
+            beforeTabId:
+              previous && previous.pinned === pinned
+                ? previous.beforeTabId
+                : base.beforeTabId,
+            pinned,
+          },
+          { point, grabX: grabX.current },
+        );
+        if (preview)
+          destination = {
+            ...destination,
+            insertion: { ...preview.insertion, rect: preview.marker },
+          };
+      }
+    }
+    return { destination, preview };
+  };
+  const hoverTarget = (
+    source: DragSource,
+    point: { x: number; y: number },
+    preview: TabReorderPreview | null,
+    preferredId?: string,
+  ) => {
+    const targets = [...document.querySelectorAll<HTMLElement>("[data-tab-id]")]
+      .filter((element) => element.dataset.tabId !== source.tabId)
+      .map((element) => {
+        const id = element.dataset.tabId!;
+        const slot = preview
+          ? tabSlotRect(element)
+          : element.getBoundingClientRect();
+        const shift = preview?.translations[id];
+        return {
+          id,
+          rect: {
+            left: slot.left + (shift?.x ?? 0),
+            top: slot.top + (shift?.y ?? 0),
+            width: slot.width,
+            height: slot.height,
+          },
+          clip: element.closest?.("[data-tab-strip]")?.getBoundingClientRect(),
+        };
+      });
+    if (source.kind === "tab" && preview?.crossingSource)
+      return tabOverlapTarget(
+        preview.crossingSource.rect,
+        targets,
+        preferredId,
+      );
+    // Pane-header previews retain point-based tab activation, using the visible
+    // positions rather than the original slots of any shifted tabs.
+    return (
+      targets.find(
+        ({ rect, clip }) =>
+          point.x >= Math.max(rect.left, clip?.left ?? -Infinity) &&
+          point.x <=
+            Math.min(
+              rect.left + rect.width,
+              clip ? clip.left + clip.width : Infinity,
+            ) &&
+          point.y >= Math.max(rect.top, clip?.top ?? -Infinity) &&
+          point.y <=
+            Math.min(
+              rect.top + rect.height,
+              clip ? clip.top + clip.height : Infinity,
+            ),
+      )?.id ?? null
+    );
+  };
+  const updateDestination = (
+    point: { x: number; y: number },
+    source: DragSource,
+  ) => {
+    const { destination, preview } = resolveDestination(point, source);
     destinationRef.current = destination;
+    setReorderPreview((previous) =>
+      JSON.stringify(previous) === JSON.stringify(preview) ? previous : preview,
+    );
     setDragMode((previous) =>
       JSON.stringify(previous) === JSON.stringify(destination)
         ? previous
         : destination,
     );
+    const id = hoverTarget(source, point, preview, hover.current?.id);
+    if (!id || id === activeEntryId(workspaceRef.current)) {
+      clearHover();
+      return;
+    }
+    if (
+      hover.current?.id === id &&
+      Math.hypot(
+        point.x - hover.current.point.x,
+        point.y - hover.current.point.y,
+      ) <= 8
+    )
+      return;
+    clearHover();
+    hover.current = {
+      id,
+      point,
+      timer: setTimeout(() => {
+        const currentSource = sourceRef.current;
+        const currentPoint = lastPoint.current;
+        if (
+          currentSource &&
+          currentPoint &&
+          hover.current?.id === id &&
+          hoverTarget(
+            currentSource,
+            currentPoint,
+            resolveDestination(currentPoint, currentSource).preview,
+            id,
+          ) === id &&
+          workspaceEntries(workspaceRef.current).some(
+            (entry) => entry.id === id,
+          )
+        ) {
+          hoverActivated.current = true;
+          dispatch({ type: "tab/select", tabId: id });
+        }
+        hover.current = null;
+      }, 450),
+    };
   };
   const restoreActivation = () => {
     if (
@@ -913,36 +1054,19 @@ export function WorkspaceDragSurface({
     clearHover();
     sourceRef.current = null;
     lastPoint.current = null;
+    grabX.current = null;
+    setReorderPreview(null);
     setDraggedSource(null);
     setDragMode({ mode: "reorder", placement: null, insertion: null });
   };
   useEffect(() => () => clearHover(), []);
-  useEffect(() => {
+  const previewHeights = JSON.stringify(reorderPreview?.heights ?? {});
+  useLayoutEffect(() => {
     if (!draggedSource || !lastPoint.current) return;
-    const frame = requestAnimationFrame(() => {
-      if (sourceRef.current && lastPoint.current)
-        updateDestination(lastPoint.current, sourceRef.current);
-    });
-    return () => cancelAnimationFrame(frame);
-  }, [workspace, draggedSource]);
+    updateDestination(lastPoint.current, draggedSource);
+  }, [workspace, draggedSource, previewHeights]);
   const pointerDrag =
     draggedSource?.kind === "tab" && lastPoint.current !== null;
-  useLayoutEffect(() => {
-    const insertion = dragMode.mode === "reorder" ? dragMode.insertion : null;
-    const next =
-      pointerDrag && draggedSource && insertion
-        ? tabReorderPreview(workspace, draggedSource.tabId, {
-            beforeTabId: insertion.beforeTabId,
-            pinned:
-              insertion.pinned ??
-              !!entries.find((entry) => entry.id === draggedSource.tabId)
-                ?.pinned,
-          })
-        : null;
-    setReorderPreview((previous) =>
-      JSON.stringify(previous) === JSON.stringify(next) ? previous : next,
-    );
-  }, [workspace, draggedSource, dragMode, pointerDrag, reorderPreview]);
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
     useSensor(KeyboardSensor, {
@@ -953,12 +1077,7 @@ export function WorkspaceDragSurface({
     const source = sourceRef.current;
     const destination =
       source && lastPoint.current
-        ? dragDestination(
-            workspaceRef.current,
-            source.tabId,
-            lastPoint.current,
-            source.kind === "pane-header",
-          )
+        ? resolveDestination(lastPoint.current, source).destination
         : destinationRef.current;
     const target = over?.data.current;
     finishDrag();
@@ -1098,49 +1217,6 @@ export function WorkspaceDragSurface({
             };
             lastPoint.current = point;
             updateDestination(point, source);
-            const element = [
-              ...document.querySelectorAll<HTMLElement>("[data-tab-id]"),
-            ].find((element) => {
-              const rect = tabSlotRect(element);
-              return (
-                element.dataset.tabId !== source.tabId &&
-                point.x >= rect.left &&
-                point.x <= rect.left + rect.width &&
-                point.y >= rect.top &&
-                point.y <= rect.top + rect.height
-              );
-            });
-            const id = element?.dataset.tabId;
-            if (!id || id === activeEntryId(workspaceRef.current)) {
-              clearHover();
-              return;
-            }
-            if (
-              hover.current?.id === id &&
-              Math.hypot(
-                point.x - hover.current.point.x,
-                point.y - hover.current.point.y,
-              ) <= 8
-            )
-              return;
-            clearHover();
-            hover.current = {
-              id,
-              point,
-              timer: setTimeout(() => {
-                if (
-                  sourceRef.current &&
-                  hover.current?.id === id &&
-                  workspaceEntries(workspaceRef.current).some(
-                    (entry) => entry.id === id,
-                  )
-                ) {
-                  hoverActivated.current = true;
-                  dispatch({ type: "tab/select", tabId: id });
-                }
-                hover.current = null;
-              }, 450),
-            };
           }}
           onDragStart={({ active, activatorEvent }) => {
             clearHover();
@@ -1178,6 +1254,16 @@ export function WorkspaceDragSurface({
                   }
                 : null;
             sourceRef.current = source;
+            const sourceNode =
+              source?.kind === "tab"
+                ? [
+                    ...document.querySelectorAll<HTMLElement>("[data-tab-id]"),
+                  ].find((element) => element.dataset.tabId === source.tabId)
+                : null;
+            grabX.current =
+              sourceNode && lastPoint.current
+                ? lastPoint.current.x - tabSlotRect(sourceNode).left
+                : null;
             destinationRef.current = {
               mode: source?.kind === "pane-header" ? "placement" : "reorder",
               placement: null,
@@ -1211,21 +1297,17 @@ export function WorkspaceDragSurface({
                     </div>
                   )}
               </DragOverlay>
-              {dragMode.insertion && (
+              {dragMode.insertion && !reorderPreview && (
                 <div
                   className="workspace-tab-insertion"
                   data-tab-insertion-before={
                     dragMode.insertion.beforeTabId ?? "__end__"
                   }
                   style={{
-                    left: (reorderPreview?.marker ?? dragMode.insertion.rect)
-                      .left,
-                    top: (reorderPreview?.marker ?? dragMode.insertion.rect)
-                      .top,
-                    width: (reorderPreview?.marker ?? dragMode.insertion.rect)
-                      .width,
-                    height: (reorderPreview?.marker ?? dragMode.insertion.rect)
-                      .height,
+                    left: dragMode.insertion.rect.left,
+                    top: dragMode.insertion.rect.top,
+                    width: dragMode.insertion.rect.width,
+                    height: dragMode.insertion.rect.height,
                   }}
                   aria-hidden="true"
                 />

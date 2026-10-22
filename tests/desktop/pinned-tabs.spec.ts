@@ -173,21 +173,32 @@ const stored = async () =>
 test.setTimeout(180000);
 const tab = (id: string) => page.locator(`.workspace-tab[data-tab-id="${id}"]`);
 async function expectVisualOrder(ids: string[]) {
+  const hiddenIds = await page
+    .locator("[data-tab-id]")
+    .evaluateAll((elements) =>
+      elements
+        .filter((element) => getComputedStyle(element).visibility === "hidden")
+        .map((element) => (element as HTMLElement).dataset.tabId!),
+    );
   await expect
     .poll(async () => {
       const positions = await page
         .locator("[data-tab-id]")
         .evaluateAll((elements) =>
-          elements.map((element) => {
-            const rect = element.getBoundingClientRect();
-            return {
-              id: (element as HTMLElement).dataset.tabId!,
-              x: rect.left,
-              y: rect.top,
-              width: rect.width,
-              height: rect.height,
-            };
-          }),
+          elements
+            .filter(
+              (element) => getComputedStyle(element).visibility !== "hidden",
+            )
+            .map((element) => {
+              const rect = element.getBoundingClientRect();
+              return {
+                id: (element as HTMLElement).dataset.tabId!,
+                x: rect.left,
+                y: rect.top,
+                width: rect.width,
+                height: rect.height,
+              };
+            }),
         );
       for (let i = 0; i < positions.length; i++)
         for (let j = i + 1; j < positions.length; j++) {
@@ -203,7 +214,7 @@ async function expectVisualOrder(ids: string[]) {
         .sort((a, b) => (Math.abs(a.y - b.y) > 1 ? a.y - b.y : a.x - b.x))
         .map((item) => item.id);
     })
-    .toEqual(ids);
+    .toEqual(ids.filter((id) => !hiddenIds.includes(id)));
 }
 async function pinTab(id: string) {
   await tab(id).click({ button: "right" });
@@ -350,14 +361,14 @@ test("tab drags pin in an empty separate row and only before or between pins in 
   await expect(page.getByRole("dialog")).toBeHidden();
   await startDrag(tab("tab-media").getByRole("tab"));
   await moveTo(page.locator('[data-tab-strip="pinned"]'), "end");
-  await expect(page.locator(".workspace-tab-insertion")).toBeVisible();
+  await expect(page.locator("[data-tab-row-preview]")).toBeVisible();
   await page.mouse.up();
   await expect(tab("tab-media")).toHaveAttribute("data-pinned", "true");
   await pinTab("tab-orders");
   await separateRows(false);
   await startDrag(tab("tab-payments").getByRole("tab"));
   await moveTo(tab("tab-orders"), 3);
-  await expect(page.locator(".workspace-tab-insertion")).toBeVisible();
+  await expect(page.locator("[data-tab-row-preview]")).toBeVisible();
   await page.mouse.up();
   await expect(tab("tab-payments")).toHaveAttribute("data-pinned", "true");
   await tab("tab-payments")
@@ -505,16 +516,305 @@ test("left-quarter tab pickup reorders across later tabs in shared and separate 
     await page.mouse.move(last.x + last.width + 25, last.y + last.height / 2, {
       steps: 10,
     });
-    await expect(page.locator(".workspace-tab-insertion")).toHaveAttribute(
-      "data-tab-insertion-before",
-      "__end__",
-    );
+    await expect(
+      page.locator(".workspace-tab.is-dragging[data-tab-id]"),
+    ).toHaveAttribute("data-tab-reorder-before", "__end__");
     await page.mouse.up();
     await expect(page.locator(".workspace-tab").last()).toHaveAttribute(
       "data-tab-id",
       id!,
     );
   }
+});
+
+for (const theme of ["light", "dark"]) {
+  test(`drag motion overlap activates a narrow tab before reorder with cursor outside it in ${theme}`, async () => {
+    const source = tab("tab-orders");
+    const origin = (await source.boundingBox())!;
+    const target = (await tab("tab-payments").boundingBox())!;
+    await startDrag(source.getByRole("tab"));
+    const shift = target.width * 0.3;
+    const point = { x: origin.x + shift + 30, y: origin.y + origin.height / 2 };
+    expect(point.x).toBeLessThan(target.x);
+    await page.mouse.move(point.x, point.y);
+    await expect(tab("tab-payments").getByRole("tab")).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    await expect(tab("tab-media").getByRole("tab")).toHaveAttribute(
+      "aria-selected",
+      "false",
+    );
+    const pane = (await page.locator("[data-pane-drop-target]").boundingBox())!;
+    await page.mouse.move(pane.x + pane.width - 15, pane.y + pane.height / 2, {
+      steps: 5,
+    });
+    await expect(page.locator(".workspace-drag-preview")).toBeVisible();
+    await page.mouse.up();
+    await expect(page.locator(".query-pane")).toHaveCount(2);
+  });
+
+  test(`drag motion overlap activates the shifted tab rather than its old neighbor in ${theme}`, async () => {
+    const source = tab("tab-media");
+    await source.getByRole("tab").click();
+    const origin = (await source.boundingBox())!;
+    const first = (await tab("tab-orders").boundingBox())!;
+    const oldNeighbor = (await tab("tab-payments").boundingBox())!;
+    const grab = 125;
+    await page.mouse.move(origin.x + grab, origin.y + origin.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(origin.x + grab - 12, origin.y + origin.height / 2, {
+      steps: 3,
+    });
+    const point = { x: first.x + 220 + grab, y: first.y + first.height / 2 };
+    expect(point.x).toBeGreaterThan(oldNeighbor.x);
+    expect(point.x).toBeLessThan(oldNeighbor.x + oldNeighbor.width);
+    await page.mouse.move(point.x, point.y);
+    await expect(tab("tab-orders").getByRole("tab")).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    await expect(tab("tab-payments").getByRole("tab")).toHaveAttribute(
+      "aria-selected",
+      "false",
+    );
+    await page.keyboard.press("Escape");
+    await page.mouse.up();
+    await expect(source.getByRole("tab")).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+  });
+}
+
+test("drag motion overlap also activates a wider target under a narrower source", async () => {
+  const source = tab("tab-payments");
+  await source.getByRole("tab").click();
+  const origin = (await source.boundingBox())!;
+  const target = (await tab("tab-media").boundingBox())!;
+  expect(target.width).toBeGreaterThan(origin.width);
+  await startDrag(source.getByRole("tab"));
+  await page.mouse.move(
+    origin.x + 30 + origin.width * 0.3,
+    origin.y + origin.height / 2,
+  );
+  await expect(tab("tab-media").getByRole("tab")).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+  await page.keyboard.press("Escape");
+  await page.mouse.up();
+  await expect(source.getByRole("tab")).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+});
+
+test("drag motion overlap ignores grazing and cancels a dwell when overlap falls below threshold", async () => {
+  const source = tab("tab-orders");
+  const origin = (await source.boundingBox())!;
+  const target = (await tab("tab-payments").boundingBox())!;
+  await startDrag(source.getByRole("tab"));
+  const move = (fraction: number) =>
+    page.mouse.move(
+      origin.x + 30 + target.width * fraction,
+      origin.y + origin.height / 2,
+    );
+  await move(0.1);
+  await page.waitForTimeout(1200);
+  await expect(
+    source.getByRole("tab", { includeHidden: true }),
+  ).toHaveAttribute("aria-selected", "true");
+  await expect(tab("tab-payments").getByRole("tab")).toHaveAttribute(
+    "aria-selected",
+    "false",
+  );
+  // Hidden Chromium can delay a mouse-move acknowledgement by a second,
+  // exceeding the dwell itself. Keep its compositor awake for this short
+  // out-and-back gesture without showing or focusing the verification window.
+  const frames = app.evaluate(async ({ BrowserWindow }) => {
+    const window = BrowserWindow.getAllWindows()[0];
+    window.webContents.setBackgroundThrottling(false);
+    for (let index = 0; index < 30; index++) {
+      await window.webContents.capturePage(undefined, {
+        stayHidden: true,
+        stayAwake: true,
+      });
+      await new Promise((resolve) => setTimeout(resolve, 16));
+    }
+  });
+  await move(0.3);
+  await move(0.1);
+  await frames;
+  await page.waitForTimeout(1200);
+  await expect(
+    source.getByRole("tab", { includeHidden: true }),
+  ).toHaveAttribute("aria-selected", "true");
+  await expect(tab("tab-payments").getByRole("tab")).toHaveAttribute(
+    "aria-selected",
+    "false",
+  );
+  await page.keyboard.press("Escape");
+  await page.mouse.up();
+});
+
+test("drag motion pointer follows horizontally before any neighbor reaches its halfway threshold", async () => {
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  const source = tab("tab-orders");
+  const initial = (await source.boundingBox())!;
+  const neighbor = (await tab("tab-payments").boundingBox())!;
+  await startDrag(source.getByRole("tab"));
+  const preview = page.locator('[data-tab-row-preview="tab-orders"]');
+  await expect(preview).toBeVisible();
+  await page.mouse.move(initial.x + 55, initial.y + initial.height / 2 + 5);
+  expect(
+    Math.abs((await preview.boundingBox())!.x - initial.x - 25),
+  ).toBeLessThan(1);
+  expect(Math.abs((await preview.boundingBox())!.y - initial.y)).toBeLessThan(
+    1,
+  );
+  expect(
+    Math.abs((await tab("tab-payments").boundingBox())!.x - neighbor.x),
+  ).toBeLessThan(1);
+  await expect(page.locator(".workspace-tab-insertion")).toHaveCount(0);
+  await page.keyboard.press("Escape");
+  await page.mouse.up();
+  await expect(preview).toHaveCount(0);
+});
+
+test("drag motion uses exact neighbor halfway crossings without oscillation and clamps both ends", async () => {
+  const source = tab("tab-orders");
+  const initial = (await source.boundingBox())!;
+  const neighbor = (await tab("tab-payments").boundingBox())!;
+  const threshold = neighbor.width / 2;
+  await startDrag(source.getByRole("tab"));
+  const preview = page.locator('[data-tab-row-preview="tab-orders"]');
+  const move = async (shift: number) => {
+    await page.mouse.move(
+      initial.x + 30 + shift,
+      initial.y + initial.height / 2,
+    );
+  };
+  await move(threshold - 1);
+  expect(
+    Math.abs((await tab("tab-payments").boundingBox())!.x - neighbor.x),
+  ).toBeLessThan(1);
+  await move(threshold + 1);
+  await expect
+    .poll(async () =>
+      Math.abs((await tab("tab-payments").boundingBox())!.x - initial.x),
+    )
+    .toBeLessThan(1);
+  // Repeated stationary input and tiny movements on the same side do not reverse the gap.
+  for (const shift of [threshold + 1, threshold + 0.5, threshold + 1]) {
+    await move(shift);
+    await expect(source).toHaveAttribute(
+      "data-tab-reorder-before",
+      "tab-media",
+    );
+  }
+  await move(threshold - 1);
+  await expect
+    .poll(async () =>
+      Math.abs((await tab("tab-payments").boundingBox())!.x - neighbor.x),
+    )
+    .toBeLessThan(1);
+  const strip = (await page.locator("[data-tab-strip]").boundingBox())!;
+  await page.mouse.move(strip.x + 1, initial.y + initial.height / 2);
+  expect(Math.abs((await preview.boundingBox())!.x - initial.x)).toBeLessThan(
+    1,
+  );
+  const end = (await tab("tab-media").boundingBox())!;
+  await page.mouse.move(end.x + end.width + 40, end.y + end.height / 2);
+  expect(
+    Math.abs(
+      (await preview.boundingBox())!.x + initial.width - end.x - end.width,
+    ),
+  ).toBeLessThan(1);
+  await expect(page.locator(".workspace-tab-insertion")).toHaveCount(0);
+  await page.mouse.up();
+  await expect(page.locator(".workspace-tab").last()).toHaveAttribute(
+    "data-tab-id",
+    "tab-orders",
+  );
+});
+
+test("drag motion separate row jumps animate only vertically above every tab", async () => {
+  await app.evaluate(({ BrowserWindow }) =>
+    BrowserWindow.getAllWindows()[0].webContents.setBackgroundThrottling(false),
+  );
+  await tab("tab-media")
+    .getByRole("button", { name: "Unpin Mixed Sources (10)", exact: true })
+    .click();
+  await expect(tab("tab-media")).toHaveAttribute("data-pinned", "false");
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  const source = tab("tab-media");
+  const origin = (await source.boundingBox())!;
+  await startDrag(source.getByRole("tab"));
+  const preview = page.locator('[data-tab-row-preview="tab-media"]');
+  await expect(preview).toHaveCSS("transition-property", "top");
+  const pin = (await page.locator('[data-tab-strip="pinned"]').boundingBox())!;
+  await page.evaluate(() => {
+    (window as any).__tabRowSample = null;
+    const freezeRowTransition = (event: Event) => {
+      const element = event.target as HTMLElement;
+      if (
+        element.dataset.tabRowPreview &&
+        (event as TransitionEvent).propertyName === "top"
+      ) {
+        const animation = element
+          .getAnimations()
+          .find((item) => (item as CSSTransition).transitionProperty === "top");
+        if (!animation) return;
+        animation.pause();
+        animation.currentTime = 80;
+        (window as any).__tabRowAnimation = animation;
+        const rect = element.getBoundingClientRect();
+        (window as any).__tabRowSample = {
+          top: rect.top,
+          left: rect.left,
+          z: Number(getComputedStyle(element).zIndex),
+        };
+        document.removeEventListener("transitionrun", freezeRowTransition);
+      }
+    };
+    document.addEventListener("transitionrun", freezeRowTransition);
+  });
+  await page.mouse.move(pin.x + 130, pin.y + pin.height / 2);
+  await app.evaluate(async ({ BrowserWindow }) => {
+    await BrowserWindow.getAllWindows()[0].webContents.capturePage(undefined, {
+      stayHidden: true,
+      stayAwake: true,
+    });
+  });
+  expect(Math.abs((await preview.boundingBox())!.x - pin.x - 100)).toBeLessThan(
+    1,
+  );
+  await expect
+    .poll(() => page.evaluate(() => (window as any).__tabRowSample))
+    .not.toBeNull();
+  const sample = await page.evaluate(() => (window as any).__tabRowSample);
+  await test.info().attach("row motion sample", {
+    body: JSON.stringify({ origin, pin, sample }),
+    contentType: "application/json",
+  });
+  expect(sample.top).toBeGreaterThan(pin.y + 1);
+  expect(sample.top).toBeLessThan(origin.y - 1);
+  expect(sample.z).toBe(1000);
+  await capture("row-jump-top-layer.png");
+  await page.evaluate(() => (window as any).__tabRowAnimation.finish());
+  await expect
+    .poll(async () => Math.abs((await preview.boundingBox())!.y - pin.y))
+    .toBeLessThan(1);
+  expect(
+    await preview.evaluate(
+      (element) => element.parentElement === document.body,
+    ),
+  ).toBe(true);
+  await page.keyboard.press("Escape");
+  await page.mouse.up();
+  await expect(preview).toHaveCount(0);
+  await expect(source).toHaveCSS("visibility", "visible");
 });
 
 test("inactive tab text remains distinct and hovering changes only its background in both themes", async () => {
@@ -558,18 +858,8 @@ for (const sourceId of ["tab-orders", "tab-payments", "tab-media"])
     );
     await startDrag(tab(sourceId).getByRole("tab"));
     for (const target of [2, 0, 1, 2, 0]) {
-      const rect = slots[target].rect;
       const atEnd = target === 2;
       const before = atEnd ? null : ids[target];
-      await page.mouse.move(
-        atEnd ? rect.x + rect.width - 4 : rect.x + 4,
-        rect.y + rect.height / 2,
-        { steps: 8 },
-      );
-      await expect(page.locator(".workspace-tab-insertion")).toHaveAttribute(
-        "data-tab-insertion-before",
-        before ?? "__end__",
-      );
       const expected = ids.filter((id) => id !== sourceId);
       if (before === sourceId)
         expected.splice(ids.indexOf(sourceId), 0, sourceId);
@@ -579,6 +869,24 @@ for (const sourceId of ["tab-orders", "tab-payments", "tab-media"])
           0,
           sourceId,
         );
+      const sourceIndex = expected.indexOf(sourceId);
+      const gapX =
+        slots[0].rect.x +
+        expected
+          .slice(0, sourceIndex)
+          .reduce(
+            (sum, id) => sum + slots.find((slot) => slot.id === id)!.rect.width,
+            0,
+          );
+      await page.mouse.move(
+        gapX + 30,
+        slots[0].rect.y + slots[0].rect.height / 2,
+        { steps: 8 },
+      );
+      await expect(tab(sourceId)).toHaveAttribute(
+        "data-tab-reorder-before",
+        expected[sourceIndex + 1] ?? "__end__",
+      );
       await expectVisualOrder(expected);
     }
     await capture(`reversed-${sourceId}.png`);
@@ -705,28 +1013,30 @@ for (const theme of ["light", "dark"])
       await capture(
         `drag-painting-${theme}-${layout.replaceAll(" ", "-")}.png`,
       );
-      const painted = await source.evaluate((element) => {
-        const style = getComputedStyle(element),
-          matrix = new DOMMatrixReadOnly(style.transform);
-        const context = document.createElement("canvas").getContext("2d")!;
-        context.fillStyle = style.backgroundColor;
-        context.fillRect(0, 0, 1, 1);
-        return {
-          width: element.getBoundingClientRect().width,
-          height: element.getBoundingClientRect().height,
-          scaleX: matrix.a,
-          scaleY: matrix.d,
-          opacity: Number(style.opacity),
-          alpha: context.getImageData(0, 0, 1, 1).data[3],
-        };
-      });
+      const painted = await page
+        .locator("[data-tab-row-preview]")
+        .evaluate((element) => {
+          const style = getComputedStyle(element),
+            matrix = new DOMMatrixReadOnly(style.transform);
+          const context = document.createElement("canvas").getContext("2d")!;
+          context.fillStyle = style.backgroundColor;
+          context.fillRect(0, 0, 1, 1);
+          return {
+            width: element.getBoundingClientRect().width,
+            height: element.getBoundingClientRect().height,
+            scaleX: matrix.a,
+            scaleY: matrix.d,
+            opacity: Number(style.opacity),
+            alpha: context.getImageData(0, 0, 1, 1).data[3],
+          };
+        });
       expect(painted.scaleX).toBeCloseTo(1, 5);
       expect(painted.scaleY).toBeCloseTo(1, 5);
       expect(painted.width).toBeCloseTo(initial.width, 1);
       expect(painted.height).toBeCloseTo(initial.height, 1);
       expect(painted.opacity).toBe(1);
       expect(painted.alpha).toBe(255);
-      const ordered = ["tab-payments", "tab-media", "tab-orders"];
+      const ordered = ["tab-payments", "tab-media"];
       for (let index = 0; index < ordered.length; index++) {
         const bounds = (await tab(ordered[index]).boundingBox())!;
         const previous = index

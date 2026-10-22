@@ -1,6 +1,22 @@
 # Building and releasing
 
-## Latest local verification build (0.1.29)
+## Latest local verification build (0.1.31)
+
+Delayed activation during regular tab reordering uses at least 20% visible overlap of the smaller tab and the final shifted neighbor rectangles. The 450ms timer revalidates its target before selection, and clears when overlap is lost or dragging ends. Unequal-width tabs can activate before the halfway reorder threshold without requiring the cursor to enter the target. Pane-header and Explorer activation retain their existing mechanisms. See [the investigation](tab-hover-overlap-0.1.31.md).
+
+Both reported failures reproduced on 0.1.30. All 634 unit/integration tests passed. All 38 distinct targeted hidden packaged desktop scenarios passed across the broad run and a focused rerun. The broad run passed 37 and failed an old combined-tab gesture that aimed at an original slot after the neighbor had shifted. Updating that gesture to pause at 30% overlap with its exact pickup offset passed; raw reports are preserved. Native coverage includes both themes, wide/narrow sources, shifted targets, grazing and dwell cancellation, split merging, pins, wrapped rows, animations, panel transfers, Explorer drops and natural close. The hidden compositor is kept awake for the short cancellation gesture because background mouse acknowledgements otherwise exceed the dwell. Typecheck, formatting, whitespace, production build, NSIS packaging and artifact hashes passed. Independent review found no actionable issues. This is targeted verification; keyboard drag animation and all display scaling combinations were not separately exercised.
+
+Artifacts: `release/0.1.31/artifact-manifest.json`; executable: `release/0.1.31/win-unpacked/AWS Log Explorer.exe`. Evidence: `.tmp/final-verification-0.1.31.json`, `.tmp/unit-0.1.31-final.json`, `.tmp/desktop-verification-0.1.31-final.json` and its two raw report paths. The standard-folder handoff is gated by these results and matching artifact hashes, waits for natural app exit, and retains the previous folder. Three hidden exact-standard-path overlap checks run after promotion. State: `.tmp/standard-build-update-0.1.31-final.json`. The earlier strict handoff rejected the original-slot test failure before replacing anything. No normal app was stopped or launched, no installer was installed, and changes remain uncommitted.
+
+## Earlier local verification build (0.1.30)
+
+Dragged tabs follow the horizontal pickup point immediately, clamp at occupied row ends, and animate only vertically when changing rows. A consistently topmost inert presentation prevents clipping and covering. Neighbors move at a strict halfway crossing using stable final-slot geometry, retaining the current gap at exact ties. The gap replaces the blue tab-reorder separator. Pins, keyboard dragging, hover activation, splits, panel transfers and Explorer drops retain their existing mechanisms. See [the implementation notes](tab-pointer-motion-0.1.30.md).
+
+All 628 unit/integration tests and 32 affected hidden packaged desktop tests in five files passed, with no failed, skipped or flaky cases. Native checks cover immediate tracking, threshold stability, clamps, an intermediate actual CSS transition frame, reversal from first/middle/last tabs, wrapping, both themes, pin boundaries, combined tabs, panels, resource insertion and cancellation. Typecheck, formatting, whitespace, production build, NSIS packaging and artifact hashes passed. Independent review found no actionable issues. This is targeted verification; keyboard drag animation and all display scaling combinations were not separately exercised.
+
+Artifacts: `release/0.1.30/artifact-manifest.json`; executable: `release/0.1.30/win-unpacked/AWS Log Explorer.exe`. Evidence: `.tmp/final-verification-0.1.30.json`, `.tmp/unit-0.1.30-final.json` and `.tmp/test-results-0.1.30-final/report.json`. The safe standard-folder handoff waits for natural app exit, retaining the previous folder; three exact-standard-path hidden pointer checks are queued after promotion. State: `.tmp/standard-build-update-0.1.30-release.json`. No normal app was stopped or launched, no installer was installed, and changes remain uncommitted.
+
+## Earlier local verification build (0.1.29)
 
 Live startup is protected against periodic historical refresh while the previous request is being cancelled. Obsolete historical pagination cannot replace pending or active Live sessions. Valid empty-page continuation retains its original query bounds. See [the investigation](live-empty-history-0.1.29.md).
 
