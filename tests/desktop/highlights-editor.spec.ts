@@ -1,3 +1,4 @@
+import { openSettingsWindow } from "./settings-panel";
 import { createWorkspace } from "../../src/renderer/workspace";
 import { desktopExecutablePath } from "./desktop-app";
 import {
@@ -87,6 +88,12 @@ test.beforeEach(async ({}, testInfo) => {
       rules: [],
     },
   ];
+  if (testInfo.title.includes("expanding settings"))
+    state.preferences.highlightProfiles[1].rules =
+      state.preferences.highlightProfiles[0].rules.map((rule) => ({
+        ...rule,
+        id: "other-" + rule.id,
+      }));
   await writeFile(join(directory, "workspace.json"), JSON.stringify(state));
 
   const env: Record<string, string> = {};
@@ -152,9 +159,7 @@ const settingsDialog = () =>
   page.getByRole("dialog", { name: "Workspace settings" });
 const ruleRows = () => settingsDialog().locator("tbody > tr[data-rule-id]");
 async function openHighlights() {
-  await page
-    .getByRole("button", { name: "Workspace settings", exact: true })
-    .click();
+  await openSettingsWindow(page);
   await settingsDialog()
     .getByRole("tab", { name: "Highlights", exact: true })
     .click();
@@ -188,6 +193,51 @@ async function capture(filename: string) {
   await mkdir(test.info().outputDir, { recursive: true });
   await writeFile(test.info().outputPath(filename), Buffer.from(png, "base64"));
 }
+
+test("expanding settings preserves the selected profile, rule and preview drafts", async () => {
+  await page
+    .getByRole("button", { name: "Workspace settings", exact: true })
+    .click();
+  const pane = page.getByRole("region", {
+    name: "Workspace settings",
+    exact: true,
+  });
+  await pane.getByRole("tab", { name: "Highlights", exact: true }).click();
+  await pane
+    .getByRole("combobox", { name: "Highlight profile", exact: true })
+    .click();
+  await page
+    .getByRole("option", { name: "Other (disabled)", exact: true })
+    .click();
+  await pane.locator('[data-rule-id="other-second"]').click();
+  await pane
+    .getByRole("button", { name: "Test and preview", exact: true })
+    .click();
+  await pane
+    .getByLabel("Preview log group", { exact: true })
+    .fill("/custom/preview");
+  await pane
+    .getByLabel("Preview event", { exact: true })
+    .fill("my draft ERROR");
+  await pane
+    .getByRole("button", { name: "Open settings in window", exact: true })
+    .click();
+  await expect(
+    settingsDialog().getByRole("combobox", {
+      name: "Highlight profile",
+      exact: true,
+    }),
+  ).toHaveValue("Other (disabled)");
+  await expect(
+    settingsDialog().locator('[data-rule-id="other-second"]'),
+  ).toHaveAttribute("aria-selected", "true");
+  await expect(
+    settingsDialog().getByLabel("Preview log group", { exact: true }),
+  ).toHaveValue("/custom/preview");
+  await expect(
+    settingsDialog().getByLabel("Preview event", { exact: true }),
+  ).toHaveValue("my draft ERROR");
+});
 
 for (const theme of ["light", "dark"])
   test(`${theme} master-detail edits one rule and drag order changes real profile priority`, async () => {

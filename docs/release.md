@@ -1,6 +1,22 @@
 # Building and releasing
 
-## Latest local verification build (0.1.34)
+## Latest local verification build (0.1.36)
+
+The AWS activity button switches or hides Explorer; Settings opens in the left pane and expands into its existing modal while retaining editor selections and drafts. Redundant header Explorer/split actions and the Explorer settings button are removed. The empty separate pinned row appears only during a top-edge drag, including above-window positions; tab, pane-header and Explorer-resource drops reuse existing pin logic. Tab groups are removed, with legacy metadata stripped while retaining tabs, favorites and split views. See [implementation and evidence](activity-panels-0.1.36.md).
+
+All 828 unit/integration tests and all 72 affected packaged desktop cases passed against the same final artifact, without failures, skipped or flaky cases. Both themes, narrow/wrapped layouts, drag/drop/cancellation, settings expansion continuity, migration, menus, text selection, native chrome, zoom and close-time saving are covered. Independent review approved after correcting nested editor remount state loss. Typecheck, formatting, whitespace, build, NSIS packaging and artifact hashes pass. Native tests stayed hidden and offline; real AWS and installer installation were not exercised.
+
+Artifacts: `release/0.1.36/artifact-manifest.json`; executable: `release/0.1.36/win-unpacked/AWS Log Explorer.exe`. Evidence: `.tmp/unit-0.1.36-final.json` and `.tmp/desktop-verification-0.1.36-final.json`. Standard-folder handoff state: `.tmp/standard-build-update-0.1.36-release.json`. Promotion waits for natural app exit, retaining a backup; three additional exact-standard-path checks run afterward. No normal app is stopped or focused.
+
+## Earlier local verification build (0.1.35)
+
+The window uses compact integrated chrome: application menu and Settings in the activity rail, Explorer at the top, tabs beside panel actions and native Windows caption controls. Commands, the separate application header, AWS access badge and native menu bar are removed. Native controls follow the selected theme, unused header space moves the window, and interactive areas remain excluded from window dragging. Close-time saving, window bounds, wrapped/pinned tabs and split dragging remain supported. See [implementation and evidence](window-chrome-0.1.35.md).
+
+All 817 unit/integration tests passed. The broad packaged suite passed 58 scenarios. After the final one-line Explorer separator no-drag exclusion, all eight focused header cases passed again on the final package, for 66 successful executions with no failures, skips or flaky cases in the accepted reports. Tests and independent review exposed and corrected native bounds drift, zoom-dependent caption overlap, menu-owned shortcut handling and the separator exclusion. Typecheck, formatting, whitespace, build, packaging and artifact hashes passed. Evidence and limitations are documented in the linked checklist.
+
+Artifacts: `release/0.1.35-verified/artifact-manifest.json`; executable: `release/0.1.35-verified/win-unpacked/AWS Log Explorer.exe`. Evidence: `.tmp/unit-0.1.35-verified.json` and `.tmp/desktop-verification-0.1.35-final.json`. Standard-folder handoff state: `.tmp/standard-build-update-0.1.35-release.json`. Promotion waits for natural app exit and retains the previous folder; three hidden checks of the exact standard path run afterward.
+
+## Earlier local verification build (0.1.34)
 
 AWS/local filter marks now belong to the inspector message overview; the main event map retains severity, quick text and profile matches. The inspector map measures rendered fragments and folded indicators, updates with layout/theme changes, and navigates on both axes. Rows remain visible during highlight updates. The message owns inspector scrolling, controls stay fixed, and metadata folding persists per view. Compact spacing and a shrinkable message basis preserve usable content in short split panes. See [behavior and verification](inspector-scroll-0.1.34.md).
 

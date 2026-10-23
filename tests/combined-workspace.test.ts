@@ -159,26 +159,27 @@ describe("combined split workspace entries", () => {
       valid(state);
     },
   );
-  it("does not resurrect member groups when an ungrouped combined entry exits split mode", () => {
-    let state = views(2);
-    state = workspaceReducer(state, {
-      type: "group/add",
-      group: { id: "old", name: "Old group", color: "blue" },
+  it("exits a migrated grouped split with every view visible", () => {
+    let state = combine(views(2));
+    const ids = state.tabs.map((tab) => tab.id);
+    state = restoreWorkspace({
+      ...state,
+      groups: [
+        { id: "old", name: "Old group", color: "blue", collapsed: true },
+      ],
+      tabs: state.tabs.map((tab) => ({ ...tab, groupId: "old" })),
+      splitTabs: state.splitTabs!.map((split) => ({
+        ...split,
+        groupId: "old",
+      })),
     });
     state = workspaceReducer(state, {
-      type: "tab/group",
-      tabIds: state.tabs.map((tab) => tab.id),
-      groupId: "old",
+      type: "split/exit",
+      tabId: state.activeTabId!,
     });
-    state = combine(state);
-    const splitId = state.activeTabId!;
-    state = workspaceReducer(state, { type: "tab/group", tabIds: [splitId] });
-    expect(state.splitTabs![0].groupId).toBeUndefined();
-    state = workspaceReducer(state, { type: "split/exit", tabId: splitId });
-    expect(state.tabs.every((tab) => tab.groupId === undefined)).toBe(true);
-    expect(
-      workspaceEntries(state).every((entry) => entry.groupId === undefined),
-    ).toBe(true);
+    expect(state.splitTabs).toEqual([]);
+    expect(workspaceEntries(state).map((entry) => entry.id)).toEqual(ids);
+    expect(state.tabs.every((tab) => !("groupId" in tab))).toBe(true);
     valid(state);
   });
 
@@ -577,38 +578,20 @@ describe("combined split workspace entries", () => {
     expect(state.activeConnectionId).toBe("offline");
     valid(state);
   });
-  it("reorders and groups a combined entry without changing its member ownership", () => {
+  it("reorders a combined entry without changing its member ownership", () => {
     let state = combine(views(4));
     const split = workspaceEntries(state).find(
-        (entry) => entry.kind === "split",
-      )!,
-      last = workspaceEntries(state).at(-1)!;
+      (entry) => entry.kind === "split",
+    )!;
     state = workspaceReducer(state, {
       type: "tab/reorder",
       tabId: split.id,
       beforeTabId: null,
     });
     expect(workspaceEntries(state).at(-1)?.id).toBe(split.id);
-    state = workspaceReducer(state, {
-      type: "group/add",
-      group: { id: "incident", name: "Incident", color: "red" },
-    });
-    state = workspaceReducer(state, {
-      type: "tab/group",
-      tabIds: [split.id, last.id],
-      groupId: "incident",
-    });
-    expect(
-      workspaceEntries(state).find((entry) => entry.id === split.id)?.groupId,
-    ).toBe("incident");
     expect(state.splitTabs![0].panes.map((pane) => pane.tabId)).toEqual(
       split.tabIds,
     );
-    state = workspaceReducer(state, {
-      type: "group/remove",
-      groupId: "incident",
-    });
-    expect(state.splitTabs![0]).not.toHaveProperty("groupId");
     valid(state);
   });
   it.each([

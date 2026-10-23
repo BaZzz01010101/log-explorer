@@ -109,3 +109,39 @@ it("insertion uses layout slots rather than the dragged tab following the pointe
     beforeTabId: ids[2],
   });
 });
+
+it("targets a hidden empty pin row at and above the window top edge", () => {
+  const state = createWorkspace();
+  state.preferences.pinnedTabsSeparateRow = true;
+  const strip = {
+    dataset: { tabStrip: "regular" },
+    getBoundingClientRect: () => rect(200, 0, 400),
+    querySelectorAll: () => [],
+  };
+  vi.stubGlobal("document", { querySelectorAll: () => [strip] });
+  for (const y of [0, 4, -1, -80]) {
+    expect(tabInsertionAt(state, { x: 300, y })).toMatchObject({
+      pinned: true,
+      beforeTabId: state.tabs[0].id,
+    });
+  }
+  expect(tabInsertionAt(state, { x: 199, y: -80 })).toBeNull();
+  expect(tabInsertionAt(state, { x: 601, y: -80 })).toBeNull();
+  expect(tabInsertionAt(state, { x: 300, y: 20 })).toMatchObject({
+    pinned: false,
+  });
+});
+
+it("keeps shared-row pinning opt-in even at the top edge", () => {
+  const state = createWorkspace();
+  const strip = {
+    dataset: { tabStrip: "shared" },
+    getBoundingClientRect: () => rect(200, 0, 400),
+    querySelectorAll: () => [],
+  };
+  vi.stubGlobal("document", { querySelectorAll: () => [strip] });
+  expect(tabInsertionAt(state, { x: 300, y: 4 })).toMatchObject({
+    pinned: false,
+  });
+  expect(tabInsertionAt(state, { x: 300, y: -80 })).toBeNull();
+});

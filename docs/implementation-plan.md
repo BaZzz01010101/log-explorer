@@ -1,5 +1,20 @@
 # Implementation plan
 
+## Activity panels and contextual pinned row (0.1.36)
+
+Hide the empty separate pinned row until a drag reaches the window top edge.
+Use AWS Explorer and Settings activity buttons to switch the left pane, with
+Settings expandable into its modal. Remove redundant toolbar actions and tab
+groups, preserving legacy tabs and split views. See [the checklist](activity-panels-0.1.36.md).
+
+## Compact window chrome (0.1.35)
+
+Remove Commands and the separate application/native menu headers. Keep the app
+menu and Settings in the activity rail, align Explorer and tabs with the window
+top, and reserve native caption controls beside panel actions. Preserve tab
+dragging, wrapped/pinned rows, close-time saves and window geometry. See
+[the implementation and verification checklist](window-chrome-0.1.35.md).
+
 ## Hybrid details and message previews (0.1.27)
 
 Make Hybrid primary-row double-click toggle inline details, add independent

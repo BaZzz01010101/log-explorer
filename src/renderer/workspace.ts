@@ -10,7 +10,6 @@ import type {
   PaneLayout,
   Preferences,
   SavedQuery,
-  TabGroup,
   ViewConfig,
   VisualizationPreset,
   Workspace,
@@ -82,7 +81,6 @@ export type WorkspaceAction =
   | { type: "tab/close"; tabId: string; allowPinned?: boolean }
   | { type: "tab/reopen" }
   | { type: "tab/reorder"; tabId: string; beforeTabId: string | null }
-  | { type: "tab/group"; tabIds: string[]; groupId?: string }
   | { type: "pane/split"; tabId?: string; paneId?: string; edge?: SplitEdge }
   | {
       type: "pane/drop-tab";
@@ -102,10 +100,6 @@ export type WorkspaceAction =
   | { type: "pane/assign"; paneId: string; tabId: string | null }
   | { type: "pane/reorder"; paneId: string; beforePaneId: string | null }
   | { type: "pane/activate"; paneId: string }
-  | { type: "group/add"; group: TabGroup }
-  | { type: "group/update"; groupId: string; patch: Partial<TabGroup> }
-  | { type: "group/remove"; groupId: string }
-  | { type: "group/reorder"; groupId: string; beforeGroupId: string | null }
   | { type: "connections/set"; connections: Connection[] }
   | { type: "preferences/update"; patch: Partial<Preferences> }
   | { type: "favorites/save"; tabId: string }
@@ -158,18 +152,6 @@ const DEFAULT_PREFERENCES: Preferences = {
     explorerCaseSensitive: "Alt+C",
   },
 };
-const GROUP_COLORS = new Set([
-  "blue",
-  "cyan",
-  "teal",
-  "green",
-  "yellow",
-  "orange",
-  "red",
-  "pink",
-  "grape",
-  "violet",
-]);
 const record = (value: unknown): Record<string, unknown> =>
   value !== null && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -369,11 +351,7 @@ function baseTab(
     view: defaultView(),
   };
 }
-function parseTab(
-  value: unknown,
-  connections: Connection[],
-  groups: TabGroup[],
-): LogTab | null {
+function parseTab(value: unknown, connections: Connection[]): LogTab | null {
   const raw = record(value);
   const id = string(raw.id, "", 160);
   const connectionId = string(raw.connectionId, "", 160);
@@ -385,7 +363,6 @@ function parseTab(
       connections.some((connection) => connection.id === source.connectionId),
   );
   const defaults = baseTab(id, connectionId, sources);
-  const groupId = string(raw.groupId, "", 160);
   return {
     ...defaults,
     ...(typeof raw.preview === "boolean" ? { preview: raw.preview } : {}),
@@ -414,7 +391,6 @@ function parseTab(
     ...(typeof raw.customEnd === "string"
       ? { customEnd: string(raw.customEnd, "", 100) }
       : {}),
-    ...(groups.some((group) => group.id === groupId) ? { groupId } : {}),
     view: parseView(raw.view),
   };
 }
@@ -430,18 +406,6 @@ function parseConnection(value: unknown): Connection | null {
     region: /^[a-z]{2}(?:-[a-z]+)+-\d+$/.test(region) ? region : "eu-west-1",
     mode: raw.mode === "aws" ? "aws" : "offline",
     ...(typeof raw.enabled === "boolean" ? { enabled: raw.enabled } : {}),
-  };
-}
-function parseGroup(value: unknown): TabGroup | null {
-  const raw = record(value);
-  const id = string(raw.id, "", 160);
-  if (!id) return null;
-  const color = string(raw.color, "blue", 40);
-  return {
-    id,
-    name: string(raw.name, "Group", 120),
-    color: GROUP_COLORS.has(color) ? color : "blue",
-    ...(typeof raw.collapsed === "boolean" ? { collapsed: raw.collapsed } : {}),
   };
 }
 function parsePreferences(value: unknown): Preferences {
@@ -622,10 +586,7 @@ function cleanLinks(state: Workspace): Workspace {
         ...(!tab.customTitle ? { title: tabTitle(sources) } : {}),
       };
     }
-    if (!tab.groupId || state.groups.some((group) => group.id === tab.groupId))
-      return tab;
-    const { groupId: _removed, ...rest } = tab;
-    return rest;
+    return tab;
   };
   const tabs = state.tabs.filter(validConnection).map(cleanTab);
   const closedTabs = state.closedTabs.filter(validConnection).map(cleanTab);
@@ -672,7 +633,6 @@ export function createWorkspace(): Workspace {
     activeTabId: tab.id,
     activeConnectionId: "offline",
     closedTabs: [],
-    groups: [],
     panes: [{ id: "pane-1", tabId: tab.id }],
     activePaneId: "pane-1",
     layout: { type: "leaf", paneId: "pane-1" },
@@ -725,7 +685,7 @@ function parseViewFavorite(
   );
   const tabs = unique(
     list(raw.tabs, MAX_SPLIT_PANES + 1)
-      .map((tab) => parseTab(tab, known, []))
+      .map((tab) => parseTab(tab, known))
       .filter((value): value is LogTab => value !== null),
   );
   const id = string(raw.id, "", 160),
@@ -888,7 +848,6 @@ function openViewFavorite(input: Workspace, favorite: ViewFavorite): Workspace {
         })),
       },
       connections,
-      state.groups,
     );
     if (!copy) return input;
     tabs.push(copy);
@@ -898,11 +857,6 @@ function openViewFavorite(input: Workspace, favorite: ViewFavorite): Workspace {
     ? nextId("split", entryIdentities(state, tabs))
     : tabIds.get(favorite.tabs[0].id)!;
   const savedSplit = favorite.split ? { ...favorite.split } : undefined;
-  if (
-    savedSplit?.groupId &&
-    !state.groups.some((group) => group.id === savedSplit.groupId)
-  )
-    delete savedSplit.groupId;
   const split = savedSplit
     ? {
         ...structuredClone(savedSplit),
@@ -973,11 +927,10 @@ export function restoreWorkspace(value: unknown): Workspace {
     list(raw.connections, 50).map(parseConnection).filter(valid),
   );
   if (!connections.length) connections.push({ ...OFFLINE_CONNECTION });
-  const groups = unique(list(raw.groups, 100).map(parseGroup).filter(valid));
   const tabs = Array.isArray(raw.tabs)
     ? unique(
         list(raw.tabs, 100)
-          .map((tab) => parseTab(tab, connections, groups))
+          .map((tab) => parseTab(tab, connections))
           .filter(valid),
       )
     : defaults.tabs.filter((tab) =>
@@ -985,7 +938,7 @@ export function restoreWorkspace(value: unknown): Workspace {
       );
   const closedTabs = unique(
     list(raw.closedTabs, 30)
-      .map((tab) => parseTab(tab, connections, groups))
+      .map((tab) => parseTab(tab, connections))
       .filter(valid),
   )
     .filter((tab) => !tabs.some((open) => open.id === tab.id))
@@ -1022,7 +975,6 @@ export function restoreWorkspace(value: unknown): Workspace {
     connections,
     tabs,
     closedTabs,
-    groups,
     panes,
     activePaneId: panes.some((pane) => pane.id === activePaneId)
       ? activePaneId
@@ -1087,7 +1039,7 @@ function openResource(
 ): Workspace {
   const targetId = paneId ?? state.activePaneId;
   if (!state.panes.some((pane) => pane.id === targetId)) return state;
-  const parsed = parseTab(input, state.connections, state.groups);
+  const parsed = parseTab(input, state.connections);
   if (!parsed) return state;
   const existing = state.tabs.find(
     (tab) => resourceKey(tab) === resourceKey(parsed),
@@ -1198,7 +1150,7 @@ function legacyWorkspaceReducer(
         )
       )
         return state;
-      const parsed = parseTab(action.tab, state.connections, state.groups);
+      const parsed = parseTab(action.tab, state.connections);
       if (!parsed) return state;
       const tab = {
         ...parsed,
@@ -1242,7 +1194,6 @@ function legacyWorkspaceReducer(
                 id: tab.id,
               },
               state.connections,
-              state.groups,
             ) ?? tab;
           const edited =
             parsed.filterPattern !== tab.filterPattern ||
@@ -1297,21 +1248,6 @@ function legacyWorkspaceReducer(
         ...state,
         tabs: reorder(state.tabs, action.tabId, action.beforeTabId),
       };
-    case "tab/group": {
-      if (
-        action.groupId &&
-        !state.groups.some((group) => group.id === action.groupId)
-      )
-        return state;
-      return {
-        ...state,
-        tabs: state.tabs.map((tab) => {
-          if (!action.tabIds.includes(tab.id)) return tab;
-          const { groupId: _previous, ...rest } = tab;
-          return action.groupId ? { ...rest, groupId: action.groupId } : rest;
-        }),
-      };
-    }
     case "pane/split": {
       if (state.panes.length >= MAX_SPLIT_PANES) return state;
       const paneId = nextId("pane", state.panes);
@@ -1470,33 +1406,6 @@ function legacyWorkspaceReducer(
       return state.panes.some((pane) => pane.id === action.paneId)
         ? { ...state, activePaneId: action.paneId }
         : state;
-    case "group/add": {
-      const group = parseGroup(action.group);
-      return group &&
-        !state.groups.some((existing) => existing.id === group.id) &&
-        state.groups.length < 100
-        ? { ...state, groups: [...state.groups, group] }
-        : state;
-    }
-    case "group/update":
-      return {
-        ...state,
-        groups: state.groups.map((group) =>
-          group.id === action.groupId
-            ? (parseGroup({ ...group, ...action.patch, id: group.id }) ?? group)
-            : group,
-        ),
-      };
-    case "group/remove":
-      return cleanLinks({
-        ...state,
-        groups: state.groups.filter((group) => group.id !== action.groupId),
-      });
-    case "group/reorder":
-      return {
-        ...state,
-        groups: reorder(state.groups, action.groupId, action.beforeGroupId),
-      };
     case "connections/set": {
       const connections = unique(
         action.connections
@@ -1693,7 +1602,6 @@ function normalizeWorkspaceEntries(
       continue;
     members.forEach((id) => occupied.add(id));
     splitIds.add(id);
-    const groupId = string(item.groupId, "", 160);
     splits.push({
       id,
       ...(typeof item.pinned === "boolean" ? { pinned: item.pinned } : {}),
@@ -1704,9 +1612,6 @@ function normalizeWorkspaceEntries(
         : ids[0],
       ...(typeof item.title === "string" && item.title.trim()
         ? { title: string(item.title, "", 512) }
-        : {}),
-      ...(state.groups.some((group) => group.id === groupId)
-        ? { groupId }
         : {}),
     });
   }
@@ -1904,7 +1809,7 @@ function addView(
   preview: boolean,
   replacePreview = false,
 ): Workspace {
-  const parsed = parseTab(input, state.connections, state.groups);
+  const parsed = parseTab(input, state.connections);
   if (!parsed) return state;
   const entries = workspaceEntries(state);
   const active = activeEntryId(state);
@@ -1997,7 +1902,6 @@ function combineEntries(state: Workspace, ids: string[]): Workspace {
     panes,
     layout: legacyLayout(panes.map((pane) => pane.id)),
     activePaneId: panes[0].id,
-    ...(entries[0].groupId ? { groupId: entries[0].groupId } : {}),
   };
   const selected = new Set(entries.map((entry) => entry.id));
   const order: string[] = [];
@@ -2203,7 +2107,6 @@ export function projectWorkspaceDrop(
     panes,
     layout,
     activePaneId: inserted[0].id,
-    ...(destination.groupId ? { groupId: destination.groupId } : {}),
   };
   const order = (state.tabOrder ?? []).flatMap((current) =>
     current === source.id ? [] : [current === destination.id ? id : current],
@@ -2268,7 +2171,7 @@ export function projectResourceDrop(
       )
     )
       return null;
-    const tab = parseTab(draft, state.connections, state.groups);
+    const tab = parseTab(draft, state.connections);
     if (!tab) return null;
     tabs.push({ ...resourceTabWithPreset(state, tab), preview: false });
   }
@@ -2509,9 +2412,7 @@ export function workspaceReducer(
           !entries.some((entry) => entry.id === action.beforeTabId))
       )
         return input;
-      const parsed = action.tabs.map((tab) =>
-        parseTab(tab, state.connections, state.groups),
-      );
+      const parsed = action.tabs.map((tab) => parseTab(tab, state.connections));
       if (parsed.some((tab) => !tab)) return input;
       let next = state;
       const added: string[] = [];
@@ -2596,7 +2497,7 @@ export function workspaceReducer(
       )
         return input;
       if (action.type !== "tab/open") {
-        const parsed = parseTab(action.tab, state.connections, state.groups);
+        const parsed = parseTab(action.tab, state.connections);
         if (!parsed) return input;
         const existing = state.tabs.find(
           (tab) => resourceKey(tab) === resourceKey(parsed),
@@ -2737,40 +2638,6 @@ export function workspaceReducer(
         return input;
       return moveStripEntry(state, source.id, action.beforeTabId);
     }
-    case "tab/group": {
-      if (
-        action.groupId &&
-        !state.groups.some((group) => group.id === action.groupId)
-      )
-        return input;
-      const ids = new Set(action.tabIds.map((id) => entryFor(state, id)?.id));
-      const memberIds = new Set(
-        workspaceEntries(state)
-          .filter((entry) => ids.has(entry.id))
-          .flatMap((entry) => entry.tabIds),
-      );
-      const ungroup = <T extends { groupId?: string }>(value: T): T => {
-        const { groupId: _removed, ...rest } = value;
-        return rest as T;
-      };
-      return {
-        ...state,
-        tabs: state.tabs.map((tab) =>
-          memberIds.has(tab.id)
-            ? action.groupId
-              ? { ...tab, groupId: action.groupId, preview: false }
-              : ungroup(tab)
-            : tab,
-        ),
-        splitTabs: state.splitTabs?.map((split) =>
-          ids.has(split.id)
-            ? action.groupId
-              ? { ...split, groupId: action.groupId }
-              : ungroup(split)
-            : split,
-        ),
-      };
-    }
     case "split/exit": {
       const split = state.splitTabs?.find((split) => split.id === action.tabId);
       if (!split) return input;
@@ -2786,7 +2653,6 @@ export function workspaceReducer(
             ? {
                 ...tab,
                 preview: false,
-                ...(split.groupId ? { groupId: split.groupId } : {}),
                 ...(split.pinned !== undefined ? { pinned: split.pinned } : {}),
               }
             : tab,
@@ -2963,17 +2829,6 @@ export function workspaceReducer(
         },
         repaired.activeTabId,
       );
-    }
-    case "group/remove": {
-      const next = legacyWorkspaceReducer(state, action);
-      return {
-        ...next,
-        splitTabs: state.splitTabs?.map((split) => {
-          if (split.groupId !== action.groupId) return split;
-          const { groupId: _removed, ...rest } = split;
-          return rest;
-        }),
-      };
     }
     default:
       return legacyWorkspaceReducer(state, action);

@@ -12,7 +12,6 @@ import { MAX_SPLIT_PANES } from "../src/shared/pane-layout";
 
 function expectValid(state: Workspace) {
   const tabs = new Set(state.tabs.map((tab) => tab.id));
-  const groups = new Set(state.groups.map((group) => group.id));
   const connections = new Set(
     state.connections.map((connection) => connection.id),
   );
@@ -28,7 +27,7 @@ function expectValid(state: Workspace) {
     expect(pane.tabId === null || tabs.has(pane.tabId)).toBe(true);
   for (const tab of [...state.tabs, ...state.closedTabs]) {
     expect(connections.has(tab.connectionId)).toBe(true);
-    expect(!tab.groupId || groups.has(tab.groupId)).toBe(true);
+    expect(tab).not.toHaveProperty("groupId");
   }
 }
 
@@ -119,7 +118,7 @@ describe("workspace state", () => {
     expectValid(state);
   });
 
-  it("reorders tabs and removes group links from closed and open tabs", () => {
+  it("reorders tabs and retains closed view history", () => {
     let state = createWorkspace();
     const first = state.tabs[0];
     const second = createTab("offline", [{ logGroup: "second" }]);
@@ -130,23 +129,9 @@ describe("workspace state", () => {
       beforeTabId: first.id,
     });
     expect(state.tabs.map((tab) => tab.id)).toEqual([second.id, first.id]);
-    state = workspaceReducer(state, {
-      type: "group/add",
-      group: { id: "incident", name: "Incident", color: "red" },
-    });
-    state = workspaceReducer(state, {
-      type: "tab/group",
-      tabIds: [first.id, second.id],
-      groupId: "incident",
-    });
     state = workspaceReducer(state, { type: "tab/close", tabId: first.id });
-    state = workspaceReducer(state, {
-      type: "group/remove",
-      groupId: "incident",
-    });
-    expect(
-      [...state.tabs, ...state.closedTabs].every((tab) => !tab.groupId),
-    ).toBe(true);
+    expect(state.tabs.map((tab) => tab.id)).toEqual([second.id]);
+    expect(state.closedTabs.map((tab) => tab.id)).toEqual([first.id]);
     expectValid(state);
   });
 
@@ -242,19 +227,8 @@ describe("workspace state", () => {
     expectValid(state);
   });
 
-  it("reorders named groups and panes without changing visible view assignments", () => {
+  it("reorders panes without changing visible view assignments", () => {
     let state = createWorkspace();
-    for (const id of ["one", "two"])
-      state = workspaceReducer(state, {
-        type: "group/add",
-        group: { id, name: id, color: "blue" },
-      });
-    state = workspaceReducer(state, {
-      type: "group/reorder",
-      groupId: "two",
-      beforeGroupId: "one",
-    });
-    expect(state.groups.map((group) => group.id)).toEqual(["two", "one"]);
     state = workspaceReducer(state, { type: "pane/split" });
     const viewPane = state.panes[0];
     const emptyPane = state.panes[1];
@@ -407,11 +381,6 @@ describe("workspace state", () => {
     state.tabs[0].view.columns = [
       { path: "/" + "p".repeat(2047), width: 2000 },
     ];
-    state.groups = Array.from({ length: 100 }, (_, index) => ({
-      id: "group-" + index,
-      name: "g".repeat(120),
-      color: "blue",
-    }));
     state.closedTabs = Array.from({ length: 30 }, (_, index) => ({
       ...state.tabs[0],
       id: "closed-" + index,
@@ -444,8 +413,6 @@ describe("workspace state", () => {
     expect(restored.connections[0]).toEqual(state.connections[0]);
     expect(restored.tabs[0].title).toBe(state.tabs[0].title);
     expect(restored.tabs[0].view.columns).toEqual(state.tabs[0].view.columns);
-    expect(restored.groups).toHaveLength(100);
-    expect(restored.groups[99].name).toBe("g".repeat(120));
     expect(restored.closedTabs).toHaveLength(30);
     expect(restored.favorites).toHaveLength(500);
     expect(restored.recents).toHaveLength(100);

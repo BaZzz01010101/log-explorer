@@ -6,27 +6,22 @@ import {
   Badge,
   Button,
   Group,
-  Kbd,
   Loader,
   MantineProvider,
-  Modal,
   Text,
-  TextInput,
   createTheme,
 } from "@mantine/core";
 import { Tooltip } from "./components/AppTooltip";
+import { ApplicationMenu } from "./components/ApplicationMenu";
 import { Notifications, notifications } from "@mantine/notifications";
 import {
   IconAdjustments,
+  IconBrandAws,
   IconChevronRight,
   IconCloud,
-  IconCommand,
   IconLayoutColumns,
   IconLayoutRows,
-  IconLayoutSidebar,
-  IconPlayerPlay,
   IconPlus,
-  IconSearch,
   IconX,
 } from "@tabler/icons-react";
 import type {
@@ -107,8 +102,10 @@ export default function App() {
   const [ready, setReady] = useState(false);
   const [environment, setEnvironment] = useState<EnvironmentInfo | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [commandsOpen, setCommandsOpen] = useState(false);
-  const [commandText, setCommandText] = useState("");
+  const [sidePanel, setSidePanel] = useState<"explorer" | "settings">(
+    "explorer",
+  );
+  const [windowControlsVisible, setWindowControlsVisible] = useState(false);
   const [saveState, setSaveState] = useState("Loading workspace");
   const workspaceRef = useRef(workspace);
   const paneLayout =
@@ -141,6 +138,29 @@ export default function App() {
     workspace.connections[0].id;
   const entries = workspaceEntries(workspace);
   const activeWorkspaceTabId = activeEntryId(workspace);
+  const openSettings = () => {
+    setSettingsOpen(false);
+    setSidePanel("settings");
+    dispatch({ type: "workspace/update", patch: { sidebarVisible: true } });
+  };
+  const toggleExplorer = () => {
+    const visible = workspace.sidebarVisible && sidePanel === "explorer";
+    setSidePanel("explorer");
+    dispatch({ type: "workspace/update", patch: { sidebarVisible: !visible } });
+  };
+
+  useEffect(() => {
+    const overlay = (
+      navigator as Navigator & {
+        windowControlsOverlay?: EventTarget & { visible: boolean };
+      }
+    ).windowControlsOverlay;
+    if (!overlay) return;
+    const update = () => setWindowControlsVisible(overlay.visible);
+    update();
+    overlay.addEventListener("geometrychange", update);
+    return () => overlay.removeEventListener("geometrychange", update);
+  }, []);
 
   useEffect(() => {
     let disposed = false;
@@ -287,16 +307,37 @@ export default function App() {
   };
   useEffect(() => {
     const keydown = (event: KeyboardEvent) => {
+      // Removing the native menu must retain its standard window shortcuts.
+      const nativeAction =
+        event.key === "F11"
+          ? "toggle-fullscreen"
+          : (event.ctrlKey || event.metaKey) && event.key === "0"
+            ? "reset-zoom"
+            : (event.ctrlKey || event.metaKey) && ["+", "="].includes(event.key)
+              ? "zoom-in"
+              : (event.ctrlKey || event.metaKey) && event.key === "-"
+                ? "zoom-out"
+                : null;
+      if (nativeAction) {
+        event.preventDefault();
+        event.stopPropagation();
+        void window.explorer.windowAction(nativeAction);
+      }
+    };
+    window.addEventListener("keydown", keydown, true);
+    return () => window.removeEventListener("keydown", keydown, true);
+  }, []);
+  useEffect(() => {
+    const keydown = (event: KeyboardEvent) => {
       const isInput =
         event.target instanceof HTMLElement &&
         !!event.target.closest('input,textarea,[contenteditable="true"]');
-      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
-        event.preventDefault();
-        setCommandText("");
-        setCommandsOpen(true);
+      if (
+        settingsOpen ||
+        (event.target instanceof HTMLElement &&
+          event.target.closest(".settings-pane"))
+      )
         return;
-      }
-      if (settingsOpen || commandsOpen) return;
       const entry = Object.entries(workspace.preferences.shortcuts).find(
         ([action, shortcut]) =>
           !action.startsWith("explorer") && shortcutMatches(event, shortcut),
@@ -341,44 +382,17 @@ export default function App() {
     };
     window.addEventListener("keydown", keydown);
     return () => window.removeEventListener("keydown", keydown);
-  }, [workspace, activeTab, settingsOpen, commandsOpen]);
+  }, [workspace, activeTab, settingsOpen]);
 
-  const commands = [
-    {
-      name: "Run current query",
-      hint: workspace.preferences.shortcuts.runQuery,
-      action: () => activeTab && execute(activeTab),
-    },
-    {
-      name: "Split workspace pane",
-      hint: workspace.preferences.shortcuts.splitPane,
-      action: () => dispatch({ type: "pane/split" }),
-    },
-    {
-      name: "Toggle resource sidebar",
-      hint: workspace.preferences.shortcuts.toggleSidebar,
-      action: () =>
-        dispatch({
-          type: "workspace/update",
-          patch: { sidebarVisible: !workspace.sidebarVisible },
-        }),
-    },
-    {
-      name: "Reopen closed tab",
-      hint: workspace.preferences.shortcuts.reopenTab,
-      action: () => dispatch({ type: "tab/reopen" }),
-    },
-    {
-      name: "Workspace settings and connections",
-      hint: "",
-      action: () => setSettingsOpen(true),
-    },
-    ...entries.map((tab) => ({
-      name: `Go to ${tab.title}`,
-      hint: "",
-      action: () => dispatch({ type: "tab/select", tabId: tab.id }),
-    })),
-  ].filter((c) => c.name.toLowerCase().includes(commandText.toLowerCase()));
+  useEffect(() => {
+    if (!ready) return;
+    void window.explorer
+      .setWindowTheme(workspace.preferences.theme)
+      .catch((error) => {
+        console.error("Could not update window chrome", error);
+      });
+  }, [workspace.preferences.theme, ready]);
+
   const beginResize = (event: React.PointerEvent<HTMLDivElement>) => {
     event.currentTarget.setPointerCapture(event.pointerId);
     const start = event.clientX;
@@ -408,78 +422,37 @@ export default function App() {
       <Notifications position="top-right" limit={4} />
       <TextTooltips />
       <WorkspaceDragSurface workspace={workspace} dispatch={dispatch}>
-        <div className="desktop-app" data-theme={workspace.preferences.theme}>
-          <header className="app-header">
-            <Group gap={10}>
-              <div className="brand-mark">
-                <IconCloud size={21} />
-              </div>
-              <div>
-                <Text size="sm" fw={650}>
-                  AWS Log Explorer
-                </Text>
-                <Text size="xs" c="dimmed">
-                  {workspace.name}
-                </Text>
-              </div>
-            </Group>
-            <button
-              className="command-trigger"
-              onClick={() => {
-                setCommandText("");
-                setCommandsOpen(true);
-              }}
-            >
-              <IconSearch size={15} />
-              <span>Search commands and tabs</span>
-              <Kbd size="xs">Ctrl K</Kbd>
-            </button>
-            <Group gap={8}>
-              <Badge
-                variant="light"
-                color={environment?.awsEnabled ? "teal" : "yellow"}
-              >
-                {environment?.awsEnabled
-                  ? "AWS access enabled"
-                  : "Offline · no AWS access"}
-              </Badge>
-              <Tooltip label="Workspace settings">
-                <ActionIcon
-                  size="lg"
-                  variant="subtle"
-                  aria-label="Workspace settings"
-                  onClick={() => setSettingsOpen(true)}
-                >
-                  <IconAdjustments size={20} />
-                </ActionIcon>
-              </Tooltip>
-            </Group>
-          </header>
+        <div
+          className="desktop-app"
+          data-theme={workspace.preferences.theme}
+          data-window-controls-overlay={windowControlsVisible}
+        >
           <div className="app-body">
             <nav className="activity-bar" aria-label="Application tools">
-              <Tooltip label="Toggle explorer" position="right">
+              <ApplicationMenu
+                workspace={workspace}
+                dispatch={dispatch}
+                onSettings={openSettings}
+                onExplorer={toggleExplorer}
+                explorerVisible={
+                  workspace.sidebarVisible && sidePanel === "explorer"
+                }
+              />
+              <Tooltip label="AWS logs explorer" position="right">
                 <ActionIcon
-                  variant="subtle"
-                  size="lg"
-                  aria-label="Toggle explorer"
-                  onClick={() =>
-                    dispatch({
-                      type: "workspace/update",
-                      patch: { sidebarVisible: !workspace.sidebarVisible },
-                    })
+                  variant={
+                    workspace.sidebarVisible && sidePanel === "explorer"
+                      ? "light"
+                      : "subtle"
                   }
-                >
-                  <IconLayoutSidebar size={21} />
-                </ActionIcon>
-              </Tooltip>
-              <Tooltip label="Commands" position="right">
-                <ActionIcon
-                  variant="subtle"
                   size="lg"
-                  aria-label="Commands"
-                  onClick={() => setCommandsOpen(true)}
+                  aria-label="AWS logs explorer"
+                  aria-pressed={
+                    workspace.sidebarVisible && sidePanel === "explorer"
+                  }
+                  onClick={toggleExplorer}
                 >
-                  <IconCommand size={21} />
+                  <IconBrandAws size={26} stroke={1.5} />
                 </ActionIcon>
               </Tooltip>
               <div className="activity-spacer" />
@@ -487,18 +460,22 @@ export default function App() {
                 <ActionIcon
                   variant="subtle"
                   size="lg"
-                  aria-label="Settings"
-                  onClick={() => setSettingsOpen(true)}
+                  aria-label="Workspace settings"
+                  aria-pressed={
+                    workspace.sidebarVisible && sidePanel === "settings"
+                  }
+                  onClick={openSettings}
                 >
                   <IconAdjustments size={21} />
                 </ActionIcon>
               </Tooltip>
             </nav>
-            {workspace.sidebarVisible && (
-              <div
-                className="sidebar-shell"
-                style={{ width: workspace.sidebarWidth }}
-              >
+            <div
+              className="sidebar-shell"
+              style={{ width: workspace.sidebarWidth }}
+              hidden={!workspace.sidebarVisible}
+            >
+              <div className="explorer-host" hidden={sidePanel !== "explorer"}>
                 <ResourceSidebar
                   preferences={workspace.preferences}
                   connections={workspace.connections}
@@ -541,37 +518,53 @@ export default function App() {
                   onRemoveFavorite={(favoriteId) =>
                     dispatch({ type: "favorites/remove", favoriteId })
                   }
-                  onManage={() => setSettingsOpen(true)}
-                />
-                <div
-                  className="sidebar-resizer"
-                  role="separator"
-                  aria-label="Resize explorer"
-                  aria-orientation="vertical"
-                  aria-valuenow={workspace.sidebarWidth}
-                  tabIndex={0}
-                  onPointerDown={beginResize}
-                  onKeyDown={(e) => {
-                    if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
-                      e.preventDefault();
-                      dispatch({
-                        type: "workspace/update",
-                        patch: {
-                          sidebarWidth: Math.max(
-                            180,
-                            Math.min(
-                              600,
-                              workspace.sidebarWidth +
-                                (e.key === "ArrowLeft" ? -20 : 20),
-                            ),
-                          ),
-                        },
-                      });
-                    }
-                  }}
+                  onManage={openSettings}
                 />
               </div>
-            )}
+              <Settings
+                opened={
+                  settingsOpen ||
+                  (workspace.sidebarVisible && sidePanel === "settings")
+                }
+                presentation={settingsOpen ? "modal" : "pane"}
+                onOpenModal={() => {
+                  setSidePanel("explorer");
+                  setSettingsOpen(true);
+                }}
+                onClose={() => setSettingsOpen(false)}
+                workspace={workspace}
+                dispatch={dispatch}
+                environment={environment}
+                onEnvironment={setEnvironment}
+              />
+              <div
+                className="sidebar-resizer"
+                role="separator"
+                aria-label="Resize explorer"
+                aria-orientation="vertical"
+                aria-valuenow={workspace.sidebarWidth}
+                tabIndex={0}
+                onPointerDown={beginResize}
+                onKeyDown={(e) => {
+                  if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+                    e.preventDefault();
+                    dispatch({
+                      type: "workspace/update",
+                      patch: {
+                        sidebarWidth: Math.max(
+                          180,
+                          Math.min(
+                            600,
+                            workspace.sidebarWidth +
+                              (e.key === "ArrowLeft" ? -20 : 20),
+                          ),
+                        ),
+                      },
+                    });
+                  }
+                }}
+              />
+            </div>
             <main className="workspace-main">
               <ResourceDropSurface workspace={workspace} dispatch={dispatch} />
               <WorkspaceTabs workspace={workspace} dispatch={dispatch} />
@@ -814,50 +807,6 @@ export default function App() {
           </footer>
         </div>
       </WorkspaceDragSurface>
-      <Settings
-        opened={settingsOpen}
-        onClose={() => setSettingsOpen(false)}
-        workspace={workspace}
-        dispatch={dispatch}
-        environment={environment}
-        onEnvironment={setEnvironment}
-      />
-      <Modal
-        opened={commandsOpen}
-        onClose={() => setCommandsOpen(false)}
-        title="Command palette"
-        size="lg"
-        centered
-      >
-        <TextInput
-          autoFocus
-          aria-label="Search commands"
-          placeholder="Type a command or tab name…"
-          value={commandText}
-          onChange={(e) => setCommandText(e.currentTarget.value)}
-          leftSection={<IconSearch size={17} />}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && commands[0]) {
-              commands[0].action();
-              setCommandsOpen(false);
-            }
-          }}
-        />
-        <div className="command-list">
-          {commands.map((command, index) => (
-            <button
-              key={`${command.name}:${index}`}
-              onClick={() => {
-                command.action();
-                setCommandsOpen(false);
-              }}
-            >
-              <span>{command.name}</span>
-              {command.hint && <Kbd size="xs">{command.hint}</Kbd>}
-            </button>
-          ))}
-        </div>
-      </Modal>
     </MantineProvider>
   );
 }

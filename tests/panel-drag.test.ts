@@ -379,19 +379,10 @@ describe("detaching a split panel to the tab strip", () => {
     },
   );
 
-  it("preserves groups and all view state through repeated detaches until dissolution", () => {
+  it("preserves all view state through repeated detaches until dissolution", () => {
     let state = views(4);
     const viewsBefore = structuredClone(state.tabs);
     const ids = state.tabs.map((tab) => tab.id);
-    state = workspaceReducer(state, {
-      type: "group/add",
-      group: { id: "investigation", name: "Investigation", color: "blue" },
-    });
-    state = workspaceReducer(state, {
-      type: "tab/group",
-      tabIds: ids,
-      groupId: "investigation",
-    });
     state = combine(state);
     for (const id of ids.slice(0, 3)) {
       state = workspaceReducer(state, {
@@ -400,19 +391,17 @@ describe("detaching a split panel to the tab strip", () => {
         beforeTabId: null,
       });
       valid(state);
-      expect(state.tabs.find((tab) => tab.id === id)?.groupId).toBe(
-        "investigation",
-      );
+      expect(state.tabs.some((tab) => tab.id === id)).toBe(true);
     }
     expect(state.splitTabs).toEqual([]);
     expect(state.tabOrder).toEqual([ids[3], ids[0], ids[1], ids[2]]);
     expect(
       state.tabs
-        .map(({ groupId: _group, preview: _preview, ...tab }) => tab)
+        .map(({ preview: _preview, ...tab }) => tab)
         .sort((a, b) => a.id.localeCompare(b.id)),
     ).toEqual(
       viewsBefore
-        .map(({ groupId: _group, preview: _preview, ...tab }) => tab)
+        .map(({ preview: _preview, ...tab }) => tab)
         .sort((a, b) => a.id.localeCompare(b.id)),
     );
     expect(state.closedTabs).toEqual([]);

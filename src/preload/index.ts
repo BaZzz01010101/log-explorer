@@ -2,6 +2,9 @@ import { contextBridge, ipcRenderer } from "electron";
 import type { ExplorerApi, QueryUpdate } from "../shared/contracts";
 
 const api: ExplorerApi = {
+  windowAction: (action) =>
+    ipcRenderer.invoke("explorer:window-action", action),
+  setWindowTheme: (theme) => ipcRenderer.invoke("explorer:window-theme", theme),
   environment: () => ipcRenderer.invoke("explorer:environment"),
   enableAws: (enabled) => ipcRenderer.invoke("explorer:enable-aws", enabled),
   profiles: () => ipcRenderer.invoke("explorer:profiles"),

@@ -5,7 +5,6 @@ import {
   createContext,
   useContext,
   useRef,
-  type CSSProperties,
   type Dispatch,
   type KeyboardEvent,
   type ReactNode,
@@ -40,7 +39,6 @@ import {
   Button,
   Group,
   Modal,
-  Select,
   Stack,
   Text,
   TextInput,
@@ -53,31 +51,18 @@ import {
   IconChevronRight,
   IconCopy,
   IconEdit,
-  IconDots,
-  IconGripVertical,
   IconLayoutColumns,
-  IconLayoutRows,
   IconPlus,
   IconPin,
   IconRestore,
   IconTerminal2,
   IconStack2,
   IconStar,
-  IconTrash,
   IconX,
 } from "@tabler/icons-react";
-import type {
-  LogTab,
-  SplitEdge,
-  TabGroup,
-  Workspace,
-} from "../../shared/contracts";
+import type { LogTab, SplitEdge, Workspace } from "../../shared/contracts";
 import { sourceCount } from "../../shared/source-labels";
-import {
-  legacyLayout,
-  nextSplitAxis,
-  MAX_SPLIT_PANES,
-} from "../../shared/pane-layout";
+import { MAX_SPLIT_PANES } from "../../shared/pane-layout";
 import { paneLayoutRect, type LayoutRect } from "../../shared/layout-geometry";
 import {
   createTab,
@@ -93,7 +78,12 @@ import {
   type WorkspaceEntry,
 } from "../workspace-entries";
 import { selectWorkspaceEntry } from "../tab-selection";
-import { tabInsertionAt } from "../tab-insertion";
+import { atPinnedRowEdge, tabInsertionAt } from "../tab-insertion";
+import {
+  RESOURCE_DRAG_MOVE,
+  RESOURCE_DRAG_END,
+  type ResourceDragMove,
+} from "../resource-drag";
 import { tabOverlapTarget } from "../tab-hover";
 import {
   tabReorderPreview,
@@ -103,21 +93,6 @@ import {
 import "./workspace-tabs.css";
 
 type Props = { workspace: Workspace; dispatch: Dispatch<WorkspaceAction> };
-const COLORS = [
-  "blue",
-  "cyan",
-  "teal",
-  "green",
-  "yellow",
-  "orange",
-  "red",
-  "pink",
-  "grape",
-  "violet",
-];
-const colorStyle = (color = "blue") =>
-  ({ "--group-color": `var(--mantine-color-${color}-5)` }) as CSSProperties;
-
 function saveFavorite(
   workspace: Workspace,
   dispatch: Dispatch<WorkspaceAction>,
@@ -136,7 +111,6 @@ function saveFavorite(
 
 function SortableTab({
   tab,
-  group,
   active,
   selected,
   workspace,
@@ -145,7 +119,6 @@ function SortableTab({
   onKeyDown,
 }: {
   tab: WorkspaceEntry;
-  group?: TabGroup;
   active: boolean;
   selected: boolean;
   workspace: Workspace;
@@ -226,9 +199,8 @@ function SortableTab({
                 ? (insertion.beforeTabId ?? "__end__")
                 : undefined
             }
-            className={`workspace-tab ${active ? "is-active" : ""} ${selected ? "is-selected" : ""} ${group ? "is-grouped" : ""} ${isDragging ? "is-dragging" : ""} ${tab.preview ? "is-preview" : ""}`}
+            className={`workspace-tab ${active ? "is-active" : ""} ${selected ? "is-selected" : ""} ${isDragging ? "is-dragging" : ""} ${tab.preview ? "is-preview" : ""}`}
             style={{
-              ...colorStyle(group?.color),
               visibility:
                 reorderPreview?.crossingSource?.id === tab.id
                   ? "hidden"
@@ -451,31 +423,6 @@ function SortableTab({
             Move right
           </Menu.Item>
           <Menu.Divider />
-          <Menu.Label>Group</Menu.Label>
-          {workspace.groups.map((item) => (
-            <Menu.Item
-              key={item.id}
-              leftSection={
-                <span className="group-dot" style={colorStyle(item.color)} />
-              }
-              onClick={() =>
-                dispatch({
-                  type: "tab/group",
-                  tabIds: chosen,
-                  groupId: item.id,
-                })
-              }
-            >
-              {item.name}
-            </Menu.Item>
-          ))}
-          <Menu.Item
-            disabled={!tab.groupId}
-            onClick={() => dispatch({ type: "tab/group", tabIds: chosen })}
-          >
-            Remove from group
-          </Menu.Item>
-          <Menu.Divider />
           <Menu.Item
             color="red"
             leftSection={<IconX size={14} />}
@@ -519,83 +466,6 @@ function SortableTab({
         </form>
       </Modal>
     </>
-  );
-}
-
-function GroupChip({
-  group,
-  count,
-  dispatch,
-  onEdit,
-}: {
-  group: TabGroup;
-  count: number;
-  dispatch: Dispatch<WorkspaceAction>;
-  onEdit: () => void;
-}) {
-  const { setNodeRef, transform, transition, attributes, listeners, isOver } =
-    useSortable({
-      id: `group:${group.id}`,
-      data: { kind: "group", groupId: group.id },
-    });
-  return (
-    <div
-      ref={setNodeRef}
-      className={`group-chip ${isOver ? "is-over" : ""}`}
-      style={{
-        ...colorStyle(group.color),
-        transform: CSS.Transform.toString(transform),
-        transition,
-      }}
-    >
-      <button
-        className="chip-grip"
-        aria-label={`Reorder ${group.name} group`}
-        {...attributes}
-        {...listeners}
-      >
-        <IconGripVertical size={12} />
-      </button>
-      <button
-        className="group-chip-name"
-        aria-expanded={!group.collapsed}
-        data-tooltip={`Drop tabs here to add to ${group.name}`}
-        onClick={() =>
-          dispatch({
-            type: "group/update",
-            groupId: group.id,
-            patch: { collapsed: !group.collapsed },
-          })
-        }
-      >
-        <span className="group-dot" />
-        <span>{group.name}</span>
-        <span className="group-count">{count}</span>
-        <IconChevronDown
-          size={11}
-          style={{ transform: group.collapsed ? "rotate(-90deg)" : undefined }}
-        />
-      </button>
-      <Menu position="bottom-start" width={180}>
-        <Menu.Target>
-          <button className="chip-menu" aria-label={`Manage ${group.name}`}>
-            <IconDots size={12} />
-          </button>
-        </Menu.Target>
-        <Menu.Dropdown>
-          <Menu.Item onClick={onEdit}>Rename or recolor</Menu.Item>
-          <Menu.Item
-            color="red"
-            leftSection={<IconTrash size={14} />}
-            onClick={() =>
-              dispatch({ type: "group/remove", groupId: group.id })
-            }
-          >
-            Remove group
-          </Menu.Item>
-        </Menu.Dropdown>
-      </Menu>
-    </div>
   );
 }
 
@@ -679,6 +549,7 @@ const WorkspaceDragMode = createContext<
     sourceKind: DragSource["kind"] | null;
     reorderPreview?: TabReorderPreview | null;
     pointerDrag?: boolean;
+    revealEmptyPinnedRow?: boolean;
   }
 >({
   mode: "reorder",
@@ -850,7 +721,7 @@ export function dragDestination(
   return { mode, placement, insertion };
 }
 
-/** A shared drag surface for the tab bar, group chips and actual pane panels. */
+/** A shared drag surface for the tab bar and actual pane panels. */
 export function WorkspaceDragSurface({
   workspace,
   dispatch,
@@ -858,6 +729,10 @@ export function WorkspaceDragSurface({
 }: Props & { children: ReactNode }) {
   const [selected, setSelected] = useState<string[]>([]);
   const [draggedSource, setDraggedSource] = useState<DragSource | null>(null);
+  const [revealEmptyPinnedRow, setRevealEmptyPinnedRow] = useState(false);
+  const pointerCapture = useRef<{ element: HTMLElement; id: number } | null>(
+    null,
+  );
   const [dragMode, setDragMode] = useState<DragDestination>({
     mode: "reorder",
     placement: null,
@@ -988,6 +863,8 @@ export function WorkspaceDragSurface({
     point: { x: number; y: number },
     source: DragSource,
   ) => {
+    if (atPinnedRowEdge(workspaceRef.current, point))
+      setRevealEmptyPinnedRow(true);
     const { destination, preview } = resolveDestination(point, source);
     destinationRef.current = destination;
     setReorderPreview((previous) =>
@@ -1055,16 +932,40 @@ export function WorkspaceDragSurface({
     sourceRef.current = null;
     lastPoint.current = null;
     grabX.current = null;
+    const capture = pointerCapture.current;
+    if (capture?.element.hasPointerCapture(capture.id))
+      capture.element.releasePointerCapture(capture.id);
+    pointerCapture.current = null;
+    setRevealEmptyPinnedRow(false);
     setReorderPreview(null);
     setDraggedSource(null);
     setDragMode({ mode: "reorder", placement: null, insertion: null });
   };
   useEffect(() => () => clearHover(), []);
+  useEffect(() => {
+    if (
+      typeof window === "undefined" ||
+      typeof window.addEventListener !== "function"
+    )
+      return;
+    const move = (event: Event) => {
+      const { point } = (event as CustomEvent<ResourceDragMove>).detail;
+      if (atPinnedRowEdge(workspaceRef.current, point))
+        setRevealEmptyPinnedRow(true);
+    };
+    const end = () => setRevealEmptyPinnedRow(false);
+    window.addEventListener(RESOURCE_DRAG_MOVE, move);
+    window.addEventListener(RESOURCE_DRAG_END, end);
+    return () => {
+      window.removeEventListener(RESOURCE_DRAG_MOVE, move);
+      window.removeEventListener(RESOURCE_DRAG_END, end);
+    };
+  }, []);
   const previewHeights = JSON.stringify(reorderPreview?.heights ?? {});
   useLayoutEffect(() => {
     if (!draggedSource || !lastPoint.current) return;
     updateDestination(lastPoint.current, draggedSource);
-  }, [workspace, draggedSource, previewHeights]);
+  }, [workspace, draggedSource, previewHeights, revealEmptyPinnedRow]);
   const pointerDrag =
     draggedSource?.kind === "tab" && lastPoint.current !== null;
   const sensors = useSensors(
@@ -1121,15 +1022,6 @@ export function WorkspaceDragSurface({
           edge: destination.placement.edge,
         });
         hoverActivated.current = false;
-      } else if (source.kind === "tab" && target?.kind === "group") {
-        dispatch({
-          type: "tab/group",
-          tabIds: selectedIds.includes(source.tabId)
-            ? selectedIds
-            : [source.tabId],
-          groupId: target.groupId,
-        });
-        restoreActivation();
       } else if (source.kind === "tab" && target?.kind === "tab") {
         const oldIndex = entries.findIndex((tab) => tab.id === source.tabId);
         const newIndex = entries.findIndex((tab) => tab.id === target.tabId);
@@ -1144,24 +1036,6 @@ export function WorkspaceDragSurface({
           });
         restoreActivation();
       } else restoreActivation();
-    } else if (
-      active.data.current?.kind === "group" &&
-      target?.kind === "group"
-    ) {
-      const oldIndex = workspace.groups.findIndex(
-        (group) => group.id === active.data.current!.groupId,
-      );
-      const newIndex = workspace.groups.findIndex(
-        (group) => group.id === target.groupId,
-      );
-      dispatch({
-        type: "group/reorder",
-        groupId: active.data.current.groupId,
-        beforeGroupId:
-          oldIndex < newIndex
-            ? (workspace.groups[newIndex + 1]?.id ?? null)
-            : target.groupId,
-      });
     }
   };
   return (
@@ -1171,6 +1045,7 @@ export function WorkspaceDragSurface({
           ...dragMode,
           reorderPreview,
           pointerDrag,
+          revealEmptyPinnedRow,
           panelsDraggable: workspace.panes.length > 1,
           sourceKind: draggedSource?.kind ?? null,
         }}
@@ -1197,9 +1072,7 @@ export function WorkspaceDragSurface({
                   ? ["tab", "tab-strip"].includes(container.data.current?.kind)
                   : container.data.current?.kind === "pane" ||
                     (source.kind === "tab" &&
-                      ["group", "view-favorites"].includes(
-                        container.data.current?.kind,
-                      ))
+                      ["view-favorites"].includes(container.data.current?.kind))
                 : container.data.current?.kind === kind,
             );
             const targetArgs = { ...args, droppableContainers: eligible };
@@ -1222,6 +1095,16 @@ export function WorkspaceDragSurface({
             clearHover();
             hoverActivated.current = false;
             originRef.current = activeEntryId(workspace);
+            setRevealEmptyPinnedRow(false);
+            if (
+              activatorEvent &&
+              "pointerId" in activatorEvent &&
+              typeof document.body.setPointerCapture === "function"
+            ) {
+              const id = (activatorEvent as PointerEvent).pointerId;
+              document.body.setPointerCapture(id);
+              pointerCapture.current = { element: document.body, id };
+            }
             const data = active.data.current;
             let source: DragSource | null = null;
             if (data?.kind === "tab") {
@@ -1372,15 +1255,13 @@ export function PaneDropTarget({
 
 export function WorkspaceTabs({ workspace, dispatch }: Props) {
   const { selected, setSelected } = useContext(WorkspaceSelection);
-  const { sourceKind, reorderPreview } = useContext(WorkspaceDragMode);
+  const { sourceKind, reorderPreview, revealEmptyPinnedRow } =
+    useContext(WorkspaceDragMode);
   const { setNodeRef: setTabStripRef } = useDroppable({
     id: "workspace-tab-strip",
     data: { kind: "tab-strip" },
     disabled: sourceKind === null,
   });
-  const [editing, setEditing] = useState<TabGroup | "new" | null>(null);
-  const [groupName, setGroupName] = useState("");
-  const [groupColor, setGroupColor] = useState("blue");
   const anchorRef = useRef<string | null>(null);
   const entries = workspaceEntries(workspace);
   const activeTabId = activeEntryId(workspace);
@@ -1388,31 +1269,10 @@ export function WorkspaceTabs({ workspace, dispatch }: Props) {
     if (!selected.some((id) => entries.some((entry) => entry.id === id)))
       anchorRef.current = activeTabId;
   }, [activeTabId]);
-  const splitAxis = nextSplitAxis(
-    workspace.layout ?? legacyLayout(workspace.panes.map((pane) => pane.id)),
-    workspace.activePaneId,
-  );
-  const SplitIcon =
-    splitAxis === "horizontal" ? IconLayoutColumns : IconLayoutRows;
   const selectedIds = selected.filter((id) =>
     entries.some((tab) => tab.id === id),
   );
-  const affectedIds = selectedIds.length
-    ? selectedIds
-    : activeTabId
-      ? [activeTabId]
-      : [];
-  const visibleTabs = entries.filter(
-    (tab) =>
-      tab.pinned ||
-      !workspace.groups.find((group) => group.id === tab.groupId)?.collapsed ||
-      tab.id === activeTabId,
-  );
-  const editGroup = (group: TabGroup | "new") => {
-    setEditing(group);
-    setGroupName(group === "new" ? "" : group.name);
-    setGroupColor(group === "new" ? "blue" : group.color);
-  };
+  const visibleTabs = entries;
   const onTabKey = (
     event: KeyboardEvent<HTMLButtonElement>,
     tab: WorkspaceEntry,
@@ -1446,7 +1306,6 @@ export function WorkspaceTabs({ workspace, dispatch }: Props) {
     <SortableTab
       key={tab.id}
       tab={tab}
-      group={workspace.groups.find((group) => group.id === tab.groupId)}
       active={tab.id === activeTabId}
       selected={selectedIds.includes(tab.id)}
       workspace={workspace}
@@ -1474,6 +1333,8 @@ export function WorkspaceTabs({ workspace, dispatch }: Props) {
     />
   );
   const separate = workspace.preferences.pinnedTabsSeparateRow === true;
+  const showPinnedRow =
+    visibleTabs.some((tab) => tab.pinned) || revealEmptyPinnedRow;
 
   return (
     <>
@@ -1490,20 +1351,23 @@ export function WorkspaceTabs({ workspace, dispatch }: Props) {
         >
           {separate ? (
             <div ref={setTabStripRef} className="workspace-tab-strips">
-              <div
-                className={`workspace-tab-list pinned-tab-row ${workspace.preferences.tabBarLayout === "wrap" ? "is-wrapped" : ""}`}
-                data-tab-strip="pinned"
-                style={{ height: reorderPreview?.heights.pinned }}
-                role="tablist"
-                aria-label="Pinned log views"
-              >
-                {visibleTabs.filter((tab) => tab.pinned).map(renderTab)}
-                {!visibleTabs.some((tab) => tab.pinned) && (
-                  <span className="empty-pinned-tabs">
-                    Drag tabs here to pin
-                  </span>
-                )}
-              </div>
+              {showPinnedRow && (
+                <div
+                  className={`workspace-tab-list pinned-tab-row ${workspace.preferences.tabBarLayout === "wrap" ? "is-wrapped" : ""}`}
+                  data-tab-strip="pinned"
+                  style={{ height: reorderPreview?.heights.pinned }}
+                  role="tablist"
+                  aria-label="Pinned log views"
+                >
+                  {visibleTabs.filter((tab) => tab.pinned).map(renderTab)}
+                  {!visibleTabs.some((tab) => tab.pinned) && (
+                    <span className="empty-pinned-tabs">
+                      Drag tabs here to pin
+                    </span>
+                  )}
+                  <div className="tab-strip-drag-space" aria-hidden="true" />
+                </div>
+              )}
               <div
                 className={`workspace-tab-list ${workspace.preferences.tabBarLayout === "wrap" ? "is-wrapped" : ""}`}
                 data-tab-strip="regular"
@@ -1519,6 +1383,7 @@ export function WorkspaceTabs({ workspace, dispatch }: Props) {
                       : "Open a log group to begin"}
                   </span>
                 )}
+                <div className="tab-strip-drag-space" aria-hidden="true" />
               </div>
             </div>
           ) : (
@@ -1534,9 +1399,11 @@ export function WorkspaceTabs({ workspace, dispatch }: Props) {
               {!entries.length && (
                 <span className="empty-tabs">Open a log group to begin</span>
               )}
+              <div className="tab-strip-drag-space" aria-hidden="true" />
             </div>
           )}
         </SortableContext>
+        <div className="window-drag-handle" aria-hidden="true" />
         <div className="workspace-tab-tools">
           <Tooltip label="New view">
             <ActionIcon
@@ -1555,28 +1422,6 @@ export function WorkspaceTabs({ workspace, dispatch }: Props) {
               <IconPlus size={16} />
             </ActionIcon>
           </Tooltip>
-          <Tooltip
-            label={
-              splitAxis === "horizontal"
-                ? "Split side by side"
-                : "Split above and below"
-            }
-          >
-            <ActionIcon
-              variant="subtle"
-              aria-label="Add split pane"
-              aria-description={
-                splitAxis === "horizontal"
-                  ? "Split side by side"
-                  : "Split above and below"
-              }
-              data-split-axis={splitAxis}
-              disabled={workspace.panes.length >= MAX_SPLIT_PANES}
-              onClick={() => dispatch({ type: "pane/split" })}
-            >
-              <SplitIcon size={16} />
-            </ActionIcon>
-          </Tooltip>
           <Menu width={235} position="bottom-end">
             <Menu.Target>
               <ActionIcon variant="subtle" aria-label="Workspace tab menu">
@@ -1591,44 +1436,6 @@ export function WorkspaceTabs({ workspace, dispatch }: Props) {
               >
                 Reopen closed tab
               </Menu.Item>
-              <Menu.Item onClick={() => editGroup("new")}>
-                New named group
-                {affectedIds.length
-                  ? ` from ${affectedIds.length} tab${affectedIds.length === 1 ? "" : "s"}`
-                  : ""}
-              </Menu.Item>
-              {workspace.groups.map((group) => (
-                <Menu.Item
-                  key={group.id}
-                  disabled={!affectedIds.length}
-                  leftSection={
-                    <span
-                      className="group-dot"
-                      style={colorStyle(group.color)}
-                    />
-                  }
-                  onClick={() => {
-                    dispatch({
-                      type: "tab/group",
-                      tabIds: affectedIds,
-                      groupId: group.id,
-                    });
-                    setSelected([]);
-                  }}
-                >
-                  Add to {group.name}
-                </Menu.Item>
-              ))}
-              <Menu.Item
-                disabled={!affectedIds.length}
-                onClick={() => {
-                  dispatch({ type: "tab/group", tabIds: affectedIds });
-                  setSelected([]);
-                }}
-              >
-                Ungroup selected tabs
-              </Menu.Item>
-              <Menu.Divider />
               <Menu.Label>Open views</Menu.Label>
               {entries.map((tab) => (
                 <Menu.Item
@@ -1644,96 +1451,13 @@ export function WorkspaceTabs({ workspace, dispatch }: Props) {
           </Menu>
         </div>
       </div>
-      {(workspace.groups.length > 0 || selectedIds.length > 0) && (
+      {selectedIds.length > 0 && (
         <div className="workspace-arrangement">
-          {workspace.groups.length > 0 && (
-            <SortableContext
-              items={workspace.groups.map((group) => `group:${group.id}`)}
-              strategy={horizontalListSortingStrategy}
-            >
-              <div className="workspace-group-list" aria-label="Tab groups">
-                {workspace.groups.map((group) => (
-                  <GroupChip
-                    key={group.id}
-                    group={group}
-                    count={
-                      entries.filter((tab) => tab.groupId === group.id).length
-                    }
-                    dispatch={dispatch}
-                    onEdit={() => editGroup(group)}
-                  />
-                ))}
-              </div>
-            </SortableContext>
-          )}
-          {selectedIds.length > 0 && (
-            <Text size="xs" c="dimmed" className="selection-caption">
-              {selectedIds.length} selected
-            </Text>
-          )}
+          <Text size="xs" c="dimmed" className="selection-caption">
+            {selectedIds.length} selected
+          </Text>
         </div>
       )}
-      <Modal
-        opened={editing !== null}
-        onClose={() => setEditing(null)}
-        title={editing === "new" ? "Create tab group" : "Edit tab group"}
-        size="sm"
-      >
-        <form
-          onSubmit={(event) => {
-            event.preventDefault();
-            if (!groupName.trim() || !editing) return;
-            if (editing === "new") {
-              const group = {
-                id: `group-${crypto.randomUUID()}`,
-                name: groupName.trim(),
-                color: groupColor,
-              };
-              dispatch({ type: "group/add", group });
-              dispatch({
-                type: "tab/group",
-                tabIds: affectedIds,
-                groupId: group.id,
-              });
-              setSelected([]);
-            } else
-              dispatch({
-                type: "group/update",
-                groupId: editing.id,
-                patch: { name: groupName.trim(), color: groupColor },
-              });
-            setEditing(null);
-          }}
-        >
-          <Stack gap="md">
-            <TextInput
-              label="Group name"
-              data-autofocus
-              maxLength={100}
-              value={groupName}
-              onChange={(event) => setGroupName(event.currentTarget.value)}
-              required
-            />
-            <Select
-              label="Group color"
-              value={groupColor}
-              onChange={(color) => setGroupColor(color ?? "blue")}
-              data={COLORS.map((color) => ({
-                value: color,
-                label: color[0].toUpperCase() + color.slice(1),
-              }))}
-            />
-            <Group justify="flex-end">
-              <Button variant="default" onClick={() => setEditing(null)}>
-                Cancel
-              </Button>
-              <Button type="submit" disabled={!groupName.trim()}>
-                Save group
-              </Button>
-            </Group>
-          </Stack>
-        </form>
-      </Modal>
     </>
   );
 }

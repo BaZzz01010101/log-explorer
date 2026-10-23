@@ -102,6 +102,22 @@ beforeEach(() => {
       original(...args);
   });
 });
+
+it("does not render an empty separate pinned row", async () => {
+  const workspace = createWorkspace();
+  workspace.preferences.pinnedTabsSeparateRow = true;
+  await act(async () => {
+    renderer = create(
+      <WorkspaceTabs workspace={workspace} dispatch={dispatch} />,
+    );
+  });
+  expect(
+    renderer!.root.findAllByProps({ "data-tab-strip": "pinned" }),
+  ).toHaveLength(0);
+  expect(
+    renderer!.root.findAllByProps({ "data-tab-strip": "regular" }),
+  ).toHaveLength(1);
+});
 afterEach(async () => {
   await act(async () => renderer?.unmount());
   renderer = undefined;

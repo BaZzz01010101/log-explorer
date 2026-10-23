@@ -1,3 +1,4 @@
+import { openSettingsWindow } from "./settings-panel";
 import {
   _electron as electron,
   expect,
@@ -309,9 +310,7 @@ for (const mode of ["Table", "Hybrid", "JSON"])
         .fill("manual!");
       // A changed query intentionally re-expands matching paths.
       await expect(matched).toBeVisible();
-      await page
-        .getByRole("button", { name: "Workspace settings", exact: true })
-        .click();
+      await openSettingsWindow(page);
       await page.getByRole("tab", { name: "Preferences", exact: true }).click();
       const auto = page.getByRole("checkbox", {
         name: "Automatically expand inspector paths to highlighted matches",

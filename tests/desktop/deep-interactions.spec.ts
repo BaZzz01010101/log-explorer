@@ -1,3 +1,4 @@
+import { openSettingsWindow } from "./settings-panel";
 import { desktopExecutablePath } from "./desktop-app";
 import {
   _electron as electron,
@@ -485,9 +486,7 @@ test("trusted settings edits and final workspace changes survive a natural resta
   await expect(
     page.getByRole("separator", { name: "Resize panes horizontally" }),
   ).toHaveAttribute("aria-valuenow", "60");
-  await page
-    .getByRole("button", { name: "Workspace settings", exact: true })
-    .click();
+  await openSettingsWindow(page);
   await page
     .getByRole("tab", { name: "Preferences", exact: true })
     .click({ timeout: 10000 });
@@ -546,9 +545,7 @@ test("trusted settings edits and final workspace changes survive a natural resta
     page.getByRole("separator", { name: "Resize panes horizontally" }),
   ).toHaveAttribute("aria-valuenow", "60");
   expect(rendererErrors).toEqual([]);
-  await page
-    .getByRole("button", { name: "Workspace settings", exact: true })
-    .click();
+  await openSettingsWindow(page);
   await page
     .getByRole("tab", { name: "Preferences", exact: true })
     .click({ timeout: 10000 });

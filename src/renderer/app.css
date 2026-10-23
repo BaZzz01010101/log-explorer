@@ -17,6 +17,12 @@ body,
 button {
   font: inherit;
 }
+[role="menu"],
+[role="tooltip"],
+[role="dialog"],
+.mantine-Modal-overlay {
+  -webkit-app-region: no-drag;
+}
 button:focus-visible,
 [tabindex]:focus-visible,
 input:focus-visible {
@@ -46,43 +52,6 @@ input:focus-visible {
   --muted: #65728a;
   color: #243149;
 }
-.app-header {
-  height: 63px;
-  flex: 0 0 63px;
-  padding: 0 18px;
-  border-bottom: 1px solid var(--line);
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 18px;
-  background: var(--surface-alt);
-}
-.brand-mark {
-  width: 35px;
-  height: 35px;
-  border-radius: 9px;
-  display: grid;
-  place-items: center;
-  color: #a9b9ff;
-  background: #556fe52b;
-  border: 1px solid #7890ff40;
-}
-.command-trigger {
-  width: clamp(200px, 30vw, 450px);
-  padding: 7px 10px;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  background: var(--surface);
-  color: var(--muted);
-  display: flex;
-  gap: 9px;
-  align-items: center;
-  text-align: left;
-  cursor: pointer;
-}
-.command-trigger span {
-  flex: 1;
-}
 .app-body {
   display: flex;
   flex: 1;
@@ -92,11 +61,17 @@ input:focus-visible {
   width: 48px;
   flex: 0 0 48px;
   border-right: 1px solid var(--line);
-  padding: 12px 5px;
+  padding: 2px 5px 10px;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 12px;
+}
+.activity-bar {
+  -webkit-app-region: drag;
+}
+.activity-bar button {
+  -webkit-app-region: no-drag;
 }
 .activity-spacer {
   flex: 1;
@@ -107,7 +82,18 @@ input:focus-visible {
   position: relative;
   border-right: 1px solid var(--line);
 }
+.sidebar-shell[hidden],
+.explorer-host[hidden] {
+  display: none;
+}
+.explorer-host {
+  height: 100%;
+}
+.activity-bar [aria-label="AWS logs explorer"] svg {
+  color: #e58a13;
+}
 .sidebar-resizer {
+  -webkit-app-region: no-drag;
   position: absolute;
   z-index: 8;
   width: 5px;
@@ -128,12 +114,16 @@ input:focus-visible {
   min-height: 0;
 }
 .sidebar-heading {
+  -webkit-app-region: drag;
   height: 40px;
   flex-shrink: 0;
   padding: 0 13px;
   display: flex;
   align-items: center;
   justify-content: space-between;
+}
+.sidebar-heading button {
+  -webkit-app-region: no-drag;
 }
 .sidebar-connection {
   padding: 0 12px 13px;
@@ -424,38 +414,7 @@ input:focus-visible {
   padding: 32px;
   text-align: center;
 }
-.command-list {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  margin-top: 12px;
-  max-height: 430px;
-  overflow: auto;
-}
-.command-list button {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  border: 0;
-  background: transparent;
-  color: inherit;
-  padding: 10px;
-  border-radius: 4px;
-  text-align: left;
-  cursor: pointer;
-}
-.command-list button:hover,
-.command-list button:focus {
-  background: #7285aa22;
-}
 @media (max-width: 1150px) {
-  .command-trigger {
-    width: 220px;
-  }
-  .command-trigger span {
-    font-size: 10px;
-  }
   .pane-heading p:last-child {
     display: none;
   }
@@ -467,11 +426,8 @@ input:focus-visible {
   }
 }
 @media (max-width: 950px) {
-  .command-trigger {
-    display: none;
-  }
   .sidebar-shell {
-    max-width: 260px;
+    max-width: min(260px, 32vw);
   }
   .query-toolbar {
     padding: 7px;

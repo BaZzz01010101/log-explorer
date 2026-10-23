@@ -1,3 +1,4 @@
+import { openSettingsWindow } from "./settings-panel";
 import {
   _electron as electron,
   expect,
@@ -385,9 +386,7 @@ test("event viewer centers initial loading, loads continuation at the bottom and
   );
   await expect(summerTime).toHaveText("2026-07-15 10:20:30.123 UTC");
   await expect(winterTime).toHaveText("2026-01-15 10:20:30.123 UTC");
-  await page
-    .getByRole("button", { name: "Workspace settings", exact: true })
-    .click();
+  await openSettingsWindow(page);
   await page.getByRole("tab", { name: "Preferences", exact: true }).click();
   await page
     .getByRole("combobox", { name: "Timestamp display", exact: true })

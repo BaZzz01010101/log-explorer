@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type Dispatch, type SetStateAction } from "react";
 import { ownValue } from "../../shared/records";
 import {
   ActionIcon,
@@ -21,6 +21,16 @@ import {
   setProfileRegion,
 } from "../explorer-configuration";
 
+export interface ProfileConnectionsEditorState {
+  profileToAdd: string | null;
+  regionToAdd: Record<string, string | null>;
+  error: string;
+}
+
+export function createProfileConnectionsEditorState(): ProfileConnectionsEditorState {
+  return { profileToAdd: null, regionToAdd: {}, error: "" };
+}
+
 export function ProfileConnectionsEditor({
   connections,
   preferences,
@@ -28,6 +38,8 @@ export function ProfileConnectionsEditor({
   discoveryEnabled,
   onConnections,
   onVisibility,
+  uiState,
+  onUiStateChange,
 }: {
   connections: Connection[];
   preferences: Preferences;
@@ -35,12 +47,18 @@ export function ProfileConnectionsEditor({
   discoveryEnabled: boolean;
   onConnections(connections: Connection[]): void;
   onVisibility(value: Record<string, boolean>): void;
+  uiState?: ProfileConnectionsEditorState;
+  onUiStateChange?: Dispatch<SetStateAction<ProfileConnectionsEditorState>>;
 }) {
-  const [profileToAdd, setProfileToAdd] = useState<string | null>(null);
-  const [regionToAdd, setRegionToAdd] = useState<Record<string, string | null>>(
-    {},
+  const [localUiState, setLocalUiState] = useState(
+    createProfileConnectionsEditorState,
   );
-  const [error, setError] = useState("");
+  const { profileToAdd, regionToAdd, error } = uiState ?? localUiState;
+  const setUiState = onUiStateChange ?? setLocalUiState;
+  const setProfileToAdd = (profileToAdd: string | null) =>
+    setUiState((previous) => ({ ...previous, profileToAdd }));
+  const setError = (error: string) =>
+    setUiState((previous) => ({ ...previous, error }));
   const visibility = preferences.profileVisibility ?? {};
   const names = knownProfileNames(
     [...knownProfiles, ...Object.keys(visibility)],
@@ -224,9 +242,12 @@ export function ProfileConnectionsEditor({
                       : null
                   }
                   onChange={(region) =>
-                    setRegionToAdd((previous) => ({
+                    setUiState((previous) => ({
                       ...previous,
-                      [profile]: region,
+                      regionToAdd: {
+                        ...previous.regionToAdd,
+                        [profile]: region,
+                      },
                     }))
                   }
                   size="xs"
@@ -240,9 +261,12 @@ export function ProfileConnectionsEditor({
                   disabled={!draft || selected.includes(draft)}
                   onClick={() => {
                     if (draft && changeRegion(profile, draft, true))
-                      setRegionToAdd((previous) => ({
+                      setUiState((previous) => ({
                         ...previous,
-                        [profile]: null,
+                        regionToAdd: {
+                          ...previous.regionToAdd,
+                          [profile]: null,
+                        },
                       }));
                   }}
                 >

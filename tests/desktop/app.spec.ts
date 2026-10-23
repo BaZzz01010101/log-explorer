@@ -1,3 +1,4 @@
+import { openSettingsWindow } from "./settings-panel";
 import { desktopExecutablePath } from "./desktop-app";
 import {
   _electron as electron,
@@ -151,10 +152,10 @@ test.afterEach(async () => {
 
 test("desktop vertical slice stays isolated and supports investigation", async () => {
   await expect(
-    page.getByText("AWS Log Explorer", { exact: true }),
+    page.getByRole("button", { name: "Application menu", exact: true }),
   ).toBeVisible();
   await expect(
-    page.getByText("Offline · no AWS access", { exact: true }),
+    page.getByText("Isolated local development", { exact: true }),
   ).toBeVisible();
   const info = await page.evaluate(() => window.explorer.environment());
   expect(info.awsEnabled).toBe(false);
@@ -167,7 +168,7 @@ test("desktop vertical slice stays isolated and supports investigation", async (
     page.evaluate(() => window.explorer.enableAws(true)),
   ).rejects.toThrow(/development/);
   expect(await page.evaluate(() => window.explorer.profiles())).toEqual([]);
-  await input(page.getByLabel("CloudWatch filter pattern"), '"Payment"');
+  await input(page.getByLabel("CloudWatch filter pattern"), "Payment");
   await expect(
     page.getByText(/Displayed events belong to the previous request/),
   ).toBeVisible();
@@ -229,17 +230,16 @@ test("desktop vertical slice stays isolated and supports investigation", async (
     "data-query-state",
     "cancelled",
   );
-  await click(
-    page.getByRole("button", { name: "Workspace settings", exact: true }),
-  );
+  await openSettingsWindow(page);
   await expect(page.getByLabel("Enable AWS access")).toBeDisabled();
   await click(page.getByRole("tab", { name: "Preferences", exact: true }));
   await expect(page.getByLabel("Maximum events per view")).toBeVisible();
   await key("Escape");
-  await click(page.getByLabel("Commands", { exact: true }));
-  await input(page.getByLabel("Search commands"), "Reopen");
+  await click(
+    page.getByRole("button", { name: "Application menu", exact: true }),
+  );
   await expect(
-    page.getByRole("button", { name: /Reopen closed tab/ }),
+    page.getByRole("menuitem", { name: "Reopen closed tab", exact: true }),
   ).toBeVisible();
   await key("Escape");
   await expect(page.getByText("Saved locally", { exact: true })).toBeVisible();
@@ -247,9 +247,7 @@ test("desktop vertical slice stays isolated and supports investigation", async (
 });
 
 test("saves the final edit before immediate quit and restores it on restart", async () => {
-  await click(
-    page.getByRole("button", { name: "Workspace settings", exact: true }),
-  );
+  await openSettingsWindow(page);
   await click(page.getByRole("tab", { name: "Workspace", exact: true }));
   await input(
     page.getByLabel("Workspace name"),
@@ -264,9 +262,12 @@ test("saves the final edit before immediate quit and restores it on restart", as
   expect(JSON.stringify(saved)).not.toContain("secretAccessKey");
   expect(saved).not.toHaveProperty("events");
   await launch();
-  await expect(
-    page.getByText("Desktop restoration verified", { exact: true }),
-  ).toBeVisible();
+  await openSettingsWindow(page);
+  await click(page.getByRole("tab", { name: "Workspace", exact: true }));
+  await expect(page.getByLabel("Workspace name", { exact: true })).toHaveValue(
+    "Desktop restoration verified",
+  );
+  await key("Escape");
   expect(
     (await page.evaluate(() => window.explorer.environment())).awsEnabled,
   ).toBe(false);
@@ -296,9 +297,7 @@ test("packaged executable loads fixtures with AWS hard-disabled in verification 
 test("native window close exits naturally after saving, including the discard-save-failure path", async () => {
   await close();
   await launch();
-  await click(
-    page.getByRole("button", { name: "Workspace settings", exact: true }),
-  );
+  await openSettingsWindow(page);
   await click(page.getByRole("tab", { name: "Workspace", exact: true }));
   await input(page.getByLabel("Workspace name"), "Native close verified");
   let exited = app.waitForEvent("close", { timeout: 10000 });

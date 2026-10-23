@@ -1,3 +1,4 @@
+import { openSettingsWindow } from "./settings-panel";
 import { desktopExecutablePath } from "./desktop-app";
 import {
   _electron as electron,
@@ -580,9 +581,7 @@ test("quick presets stay outside Custom and immediately refresh without Run", as
 for (const theme of ["dark", "light"] as const) {
   test(`selected relative toolbar glyphs remain visible in ${theme} theme`, async () => {
     test.setTimeout(180000);
-    await page
-      .getByRole("button", { name: "Workspace settings", exact: true })
-      .click();
+    await openSettingsWindow(page);
     await page.getByRole("tab", { name: "Preferences", exact: true }).click();
     await page.getByRole("combobox", { name: "Theme", exact: true }).click();
     await page.getByRole("option", { name: theme, exact: true }).click();
@@ -702,9 +701,7 @@ test("Custom popover fits normal and narrow panes in both themes", async () => {
   };
   await assertTriggerCentered(picker(), "initial");
   const chooseTheme = async (theme: "dark" | "light") => {
-    await page
-      .getByRole("button", { name: "Workspace settings", exact: true })
-      .click();
+    await openSettingsWindow(page);
     await page.getByRole("tab", { name: "Preferences", exact: true }).click();
     await page.getByRole("combobox", { name: "Theme", exact: true }).click();
     await page.getByRole("option", { name: theme, exact: true }).click();

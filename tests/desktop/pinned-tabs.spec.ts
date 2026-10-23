@@ -1,3 +1,4 @@
+import { openSettingsWindow } from "./settings-panel";
 import {
   _electron as electron,
   expect,
@@ -222,9 +223,7 @@ async function pinTab(id: string) {
   await expect(tab(id)).toHaveAttribute("data-pinned", "true");
 }
 async function settings() {
-  await page
-    .getByRole("button", { name: "Workspace settings", exact: true })
-    .click();
+  await openSettingsWindow(page);
   await page.getByRole("tab", { name: "Preferences", exact: true }).click();
 }
 async function separateRows(value = true) {
@@ -360,6 +359,11 @@ test("tab drags pin in an empty separate row and only before or between pins in 
   await page.keyboard.press("Escape");
   await expect(page.getByRole("dialog")).toBeHidden();
   await startDrag(tab("tab-media").getByRole("tab"));
+  const regular = (await page
+    .locator('[data-tab-strip="regular"]')
+    .boundingBox())!;
+  await page.mouse.move(regular.x + 60, 2);
+  await expect(page.locator('[data-tab-strip="pinned"]')).toBeVisible();
   await moveTo(page.locator('[data-tab-strip="pinned"]'), "end");
   await expect(page.locator("[data-tab-row-preview]")).toBeVisible();
   await page.mouse.up();
@@ -420,6 +424,11 @@ test("selected Explorer groups insert separate tabs at a boundary and pinned-row
       exact: true,
     }),
   );
+  const strip = (await page
+    .locator('[data-tab-strip="regular"]')
+    .boundingBox())!;
+  await page.mouse.move(strip.x + 60, 2, { steps: 5 });
+  await expect(page.locator('[data-tab-strip="pinned"]')).toBeVisible();
   await moveTo(page.locator('[data-tab-strip="pinned"]'), "end");
   await expect(page.locator("[data-resource-tab-insertion]")).toHaveAttribute(
     "data-pin-drop",

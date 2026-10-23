@@ -13,6 +13,10 @@ import { randomUUID } from "node:crypto";
 import { writeFile } from "node:fs/promises";
 import { z } from "zod";
 import { COPY_TEXT_LIMIT } from "../shared/event-copy";
+import {
+  WINDOW_CHROME_COLORS,
+  WINDOW_CHROME_HEIGHT,
+} from "../shared/window-chrome";
 import { createLogService } from "./log-service";
 import { connectionSchema, querySchema, workspaceSchema } from "./security";
 import { AwsAccessPreference } from "./aws-access-preference";
@@ -176,6 +180,41 @@ function handle(channel: string, operation: (...args: any[]) => unknown): void {
 const boundedString = z.string().max(512);
 const cursorSchema = z.string().max(100000).optional();
 handle("explorer:environment", environment);
+handle("explorer:window-theme", (theme) => {
+  const mode = z.enum(["light", "dark"]).parse(theme);
+  if (process.platform === "win32" || process.platform === "linux")
+    window?.setTitleBarOverlay({
+      ...WINDOW_CHROME_COLORS[mode],
+      height: WINDOW_CHROME_HEIGHT,
+    });
+});
+handle("explorer:window-action", (input) => {
+  const action = z
+    .enum(["close", "toggle-fullscreen", "zoom-in", "zoom-out", "reset-zoom"])
+    .parse(input);
+  if (!window || window.isDestroyed()) return;
+  switch (action) {
+    case "close":
+      window.close();
+      break;
+    case "toggle-fullscreen":
+      window.setFullScreen(!window.isFullScreen());
+      break;
+    case "reset-zoom":
+      window.webContents.setZoomLevel(0);
+      break;
+    case "zoom-in":
+      window.webContents.setZoomLevel(
+        Math.min(3, window.webContents.getZoomLevel() + 1),
+      );
+      break;
+    case "zoom-out":
+      window.webContents.setZoomLevel(
+        Math.max(-3, window.webContents.getZoomLevel() - 1),
+      );
+      break;
+  }
+});
 handle("explorer:enable-aws", async (enabled) => {
   const requested = z.boolean().parse(enabled);
   await setAwsAccess(gate, requested, () => service.shutdown());
@@ -249,6 +288,15 @@ function createWindow(): void {
     minWidth: 860,
     minHeight: 580,
     title: "AWS Log Explorer",
+    ...(process.platform === "win32" || process.platform === "linux"
+      ? {
+          titleBarStyle: "hidden" as const,
+          titleBarOverlay: {
+            ...WINDOW_CHROME_COLORS.dark,
+            height: WINDOW_CHROME_HEIGHT,
+          },
+        }
+      : {}),
     icon: app.isPackaged
       ? join(process.resourcesPath, "icon.png")
       : join(__dirname, "../../build/icon.png"),
@@ -265,9 +313,28 @@ function createWindow(): void {
         (app.isPackaged || !process.env.EXPLORER_TEST_USER_DATA),
     },
   });
-  // Windows can round constructor dimensions differently from setBounds.
-  // Reapply saved outer bounds to avoid cumulative drift across restarts.
-  if (savedState) window.setBounds(bounds);
+  // Hidden title bars can add a DIP during native/physical-pixel conversion.
+  // Correct the measured error before showing the window so it cannot accrue
+  // across restarts. Bound retries for dimensions the OS cannot represent.
+  if (savedState && "x" in bounds) {
+    let requested = { ...bounds };
+    for (let attempt = 0; attempt < 3; attempt++) {
+      window.setBounds(requested);
+      const actual = window.getBounds();
+      if (
+        (["x", "y", "width", "height"] as const).every(
+          (key) => actual[key] === bounds[key],
+        )
+      )
+        break;
+      requested = {
+        x: requested.x + bounds.x - actual.x,
+        y: requested.y + bounds.y - actual.y,
+        width: Math.max(860, requested.width + bounds.width - actual.width),
+        height: Math.max(580, requested.height + bounds.height - actual.height),
+      };
+    }
+  }
   window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
   window.webContents.on("will-navigate", (event) => event.preventDefault());
   window.webContents.session.setPermissionRequestHandler(
@@ -321,25 +388,7 @@ function createWindow(): void {
 
 void app.whenReady().then(() => {
   if (!primaryInstance) return;
-  Menu.setApplicationMenu(
-    Menu.buildFromTemplate([
-      ...(process.platform === "darwin" ? [{ role: "appMenu" as const }] : []),
-      { label: "File", submenu: [{ role: "close" }] },
-      { role: "editMenu" },
-      {
-        label: "View",
-        submenu: [
-          { role: "resetZoom" },
-          { role: "zoomIn" },
-          { role: "zoomOut" },
-          { type: "separator" },
-          { role: "togglefullscreen" },
-          ...(!app.isPackaged ? [{ role: "toggleDevTools" as const }] : []),
-        ],
-      },
-      { role: "windowMenu" },
-    ]),
-  );
+  Menu.setApplicationMenu(null);
   createWindow();
   app.on("activate", () => {
     if (!window) createWindow();

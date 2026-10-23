@@ -95,7 +95,6 @@ export interface LogTab {
   customTitle?: string;
   connectionId: string;
   sources: LogSource[];
-  groupId?: string;
   kind: "events" | "insights";
   filterPattern: string;
   filterMode?: "plain" | "pattern" | "auto";
@@ -105,12 +104,7 @@ export interface LogTab {
   customEnd?: string;
   view: ViewConfig;
 }
-export interface TabGroup {
-  id: string;
-  name: string;
-  color: string;
-  collapsed?: boolean;
-}
+
 export interface Pane {
   id: string;
   tabId: string | null;
@@ -130,7 +124,6 @@ export interface SplitTab {
   id: string;
   pinned?: boolean;
   title?: string;
-  groupId?: string;
   panes: Pane[];
   layout: PaneLayout;
   activePaneId: string;
@@ -188,7 +181,6 @@ export interface Workspace {
   activeTabId?: string | null;
   activeConnectionId?: string;
   closedTabs: LogTab[];
-  groups: TabGroup[];
   panes: Pane[];
   layout?: PaneLayout;
   activePaneId: string;
@@ -214,6 +206,8 @@ export interface WorkspaceLoad {
   warning?: string;
 }
 export interface ExplorerApi {
+  windowAction(action: import("./window-chrome").WindowAction): Promise<void>;
+  setWindowTheme(theme: "light" | "dark"): Promise<void>;
   environment(): Promise<EnvironmentInfo>;
   enableAws(enabled: boolean): Promise<EnvironmentInfo>;
   profiles(): Promise<string[]>;

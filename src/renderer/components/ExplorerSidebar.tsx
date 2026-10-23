@@ -22,7 +22,6 @@ import {
   IconPlus,
   IconRefresh,
   IconSearch,
-  IconSettings,
   IconX,
 } from "@tabler/icons-react";
 import { defaultRangeExtractor, useVirtualizer } from "@tanstack/react-virtual";
@@ -397,14 +396,6 @@ export function ExplorerSidebar(props: Props) {
               <IconRefresh size={15} />
             </ActionIcon>
           </Tooltip>
-          <ActionIcon
-            size="sm"
-            variant="subtle"
-            aria-label="Manage connections"
-            onClick={props.onManage}
-          >
-            <IconSettings size={15} />
-          </ActionIcon>
         </Group>
       </div>
       <div className="sidebar-connection">

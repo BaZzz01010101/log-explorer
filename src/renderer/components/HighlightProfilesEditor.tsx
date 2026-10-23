@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type Dispatch, type SetStateAction } from "react";
 import {
   ActionIcon,
   Button,
@@ -226,12 +226,18 @@ function Colors({
 function Preview({
   profile,
   preferences,
+  message,
+  group,
+  onMessage,
+  onGroup,
 }: {
   profile: HighlightProfile;
   preferences: Preferences;
+  message: string;
+  group: string;
+  onMessage(value: string): void;
+  onGroup(value: string): void;
 }) {
-  const [message, setMessage] = useState("ERROR payment failed");
-  const [group, setGroup] = useState("/aws/lambda/orders-api");
   const result = useEventHighlights(
     [
       {
@@ -253,14 +259,14 @@ function Preview({
           size="xs"
           label="Preview log group"
           value={group}
-          onChange={(event) => setGroup(event.currentTarget.value)}
+          onChange={(event) => onGroup(event.currentTarget.value)}
         />
         <Textarea
           size="xs"
           label="Preview event"
           value={message}
           maxLength={20000}
-          onChange={(event) => setMessage(event.currentTarget.value)}
+          onChange={(event) => onMessage(event.currentTarget.value)}
         />
       </div>
       <EventHighlightContext.Provider value={match}>
@@ -300,19 +306,44 @@ function Preview({
     </Stack>
   );
 }
+export interface HighlightProfilesEditorState {
+  selected?: string;
+  selectedRules: Record<string, string>;
+  previewOpened: boolean;
+  previewMessage: string;
+  previewGroup: string;
+}
+
+export function createHighlightProfilesEditorState(
+  selected?: string,
+): HighlightProfilesEditorState {
+  return {
+    selected,
+    selectedRules: {},
+    previewOpened: false,
+    previewMessage: "ERROR payment failed",
+    previewGroup: "/aws/lambda/orders-api",
+  };
+}
+
 export function HighlightProfilesEditor({
   preferences,
   onChange,
+  uiState,
+  onUiStateChange,
 }: {
   preferences: Preferences;
   onChange(profiles: HighlightProfile[]): void;
+  uiState?: HighlightProfilesEditorState;
+  onUiStateChange?: Dispatch<SetStateAction<HighlightProfilesEditorState>>;
 }) {
   const profiles = preferences.highlightProfiles ?? [];
-  const [selected, setSelected] = useState(profiles[0]?.id);
-  const [selectedRules, setSelectedRules] = useState<Record<string, string>>(
-    {},
+  const [localUiState, setLocalUiState] = useState(() =>
+    createHighlightProfilesEditorState(profiles[0]?.id),
   );
-  const [previewOpened, setPreviewOpened] = useState(false);
+  const state = uiState ?? localUiState;
+  const setUiState = onUiStateChange ?? setLocalUiState;
+  const { selected, selectedRules, previewOpened } = state;
   const profile = profiles.find((item) => item.id === selected) ?? profiles[0];
   const rule =
     profile?.rules.find((item) => item.id === selectedRules[profile.id]) ??
@@ -326,7 +357,10 @@ export function HighlightProfilesEditor({
   );
   const selectRule = (id: string) =>
     profile &&
-    setSelectedRules((previous) => ({ ...previous, [profile.id]: id }));
+    setUiState((previous) => ({
+      ...previous,
+      selectedRules: { ...previous.selectedRules, [profile.id]: id },
+    }));
   const patch = (change: Partial<HighlightProfile>) =>
     profile &&
     onChange(
@@ -372,7 +406,10 @@ export function HighlightProfilesEditor({
                 (item.name || "Untitled profile") +
                 (item.enabled ? "" : " (disabled)"),
             }))}
-            onChange={(value) => value && setSelected(value)}
+            onChange={(value) =>
+              value &&
+              setUiState((previous) => ({ ...previous, selected: value }))
+            }
           />
           <Button
             size="xs"
@@ -389,7 +426,7 @@ export function HighlightProfilesEditor({
                 rules: [newRule()],
               };
               onChange([...profiles, created]);
-              setSelected(created.id);
+              setUiState((previous) => ({ ...previous, selected: created.id }));
             }}
           >
             Add profile
@@ -768,7 +805,12 @@ export function HighlightProfilesEditor({
             <button
               className="highlight-preview-toggle"
               aria-expanded={previewOpened}
-              onClick={() => setPreviewOpened((value) => !value)}
+              onClick={() =>
+                setUiState((previous) => ({
+                  ...previous,
+                  previewOpened: !previous.previewOpened,
+                }))
+              }
             >
               Test and preview{" "}
               <IconChevronDown
@@ -780,7 +822,18 @@ export function HighlightProfilesEditor({
             </button>
             <Collapse expanded={previewOpened} transitionDuration={0}>
               <div className="highlight-preview-body">
-                <Preview profile={profile} preferences={preferences} />
+                <Preview
+                  profile={profile}
+                  preferences={preferences}
+                  message={state.previewMessage}
+                  group={state.previewGroup}
+                  onMessage={(previewMessage) =>
+                    setUiState((previous) => ({ ...previous, previewMessage }))
+                  }
+                  onGroup={(previewGroup) =>
+                    setUiState((previous) => ({ ...previous, previewGroup }))
+                  }
+                />
               </div>
             </Collapse>
           </section>

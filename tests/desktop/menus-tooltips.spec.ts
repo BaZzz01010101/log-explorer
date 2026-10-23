@@ -1,3 +1,4 @@
+import { openSettingsWindow } from "./settings-panel";
 import {
   _electron as electron,
   expect,
@@ -231,12 +232,10 @@ test("context menus are exclusive across components and outside clicks dismiss t
   await expect(page.getByRole("button", { name: /^Details for/ })).toHaveCount(
     0,
   );
-  await page
-    .getByRole("textbox", { name: "Search log groups", exact: true })
-    .click();
+  await page.locator(".app-footer").click({ position: { x: 200, y: 8 } });
   await expect(page.getByRole("menu")).toHaveCount(0);
   await favorite.click({ button: "right" });
-  await page.locator(".app-header").click({ position: { x: 170, y: 20 } });
+  await page.locator(".app-footer").click({ position: { x: 200, y: 8 } });
   await expect(page.getByRole("menu")).toHaveCount(0);
   await favorite.dispatchEvent("contextmenu", { clientX: 150, clientY: 350 });
   await expect(action("Open saved view")).toBeVisible();
@@ -317,9 +316,7 @@ test("resource copy actions and delegated tooltips retain selectable raw text", 
 });
 
 test("Explorer shortcut edits are saved and only apply inside the group filter", async () => {
-  await page
-    .getByRole("button", { name: "Workspace settings", exact: true })
-    .click();
+  await openSettingsWindow(page);
   await page.getByRole("tab", { name: "Shortcuts", exact: true }).click();
   await page
     .getByRole("textbox", { name: "Explorer regex", exact: true })
@@ -385,9 +382,7 @@ test("Explorer case and regex shortcuts are scoped, configurable and shown in se
   await expect(regex).toHaveAttribute("aria-pressed", "true");
   await expect(row("/aws/lambda/orders-api")).toBeVisible();
   for (const theme of ["light", "dark"] as const) {
-    await page
-      .getByRole("button", { name: "Workspace settings", exact: true })
-      .click();
+    await openSettingsWindow(page);
     await page.getByRole("tab", { name: "Preferences", exact: true }).click();
     await page.getByRole("combobox", { name: "Theme", exact: true }).click();
     await page

@@ -161,34 +161,6 @@ it("restores saved connection identity after the original connection is edited",
   expect(workspaceSchema.safeParse(state).success).toBe(true);
 });
 
-it("reopens a saved split after its original tab group is removed", () => {
-  let state = createWorkspace();
-  state = workspaceReducer(state, { type: "pane/split" });
-  const splitId = state.activeTabId!;
-  state = workspaceReducer(state, {
-    type: "group/add",
-    group: { id: "old-group", name: "Old", color: "blue" },
-  });
-  state = workspaceReducer(state, {
-    type: "tab/group",
-    tabIds: [splitId],
-    groupId: "old-group",
-  });
-  state = workspaceReducer(state, { type: "favorites/save", tabId: splitId });
-  state = workspaceReducer(state, {
-    type: "group/remove",
-    groupId: "old-group",
-  });
-  state = workspaceReducer(state, {
-    type: "favorites/open",
-    favoriteId: state.favorites[0].id,
-  });
-  expect(workspaceSchema.safeParse(state).success).toBe(true);
-  expect(
-    state.splitTabs?.find((split) => split.id === state.activeTabId)?.groupId,
-  ).toBeUndefined();
-});
-
 it("refuses a snapshot that would exceed the workspace file budget without losing saved favorites", () => {
   let state = createWorkspace();
   state.tabs[0].view.columns = Array.from({ length: 100 }, (_, index) => ({

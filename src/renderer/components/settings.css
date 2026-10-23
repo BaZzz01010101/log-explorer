@@ -1,0 +1,114 @@
+.settings-pane {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+.settings-pane[hidden] {
+  display: none;
+}
+.settings-pane-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 42px;
+  padding: 8px 12px;
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--mantine-color-default-border);
+}
+.settings-pane-header h2 {
+  margin: 0;
+}
+.settings-pane-scroll {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  overflow: auto;
+  padding: 12px;
+  scrollbar-gutter: stable;
+}
+.settings-pane .settings-tabs,
+.settings-pane .mantine-Tabs-panel,
+.settings-pane .mantine-InputWrapper-root,
+.settings-pane .mantine-Group-root > * {
+  min-width: 0;
+}
+.settings-pane .mantine-Tabs-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.settings-pane .mantine-Tabs-tab {
+  justify-content: center;
+  padding: 8px 4px;
+  font-size: var(--mantine-font-size-xs);
+}
+.settings-pane .mantine-Tabs-tab:last-child {
+  grid-column: 1 / -1;
+}
+.settings-pane .settings-preference-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+}
+.settings-pane .mantine-Group-root:has(> .mantine-Select-root) {
+  flex-wrap: wrap;
+}
+.settings-pane .mantine-Group-root > .mantine-Select-root {
+  flex-basis: 100%;
+}
+.settings-pane .mantine-Button-root {
+  max-width: 100%;
+  height: auto;
+  min-height: var(--button-height);
+  padding-block: 6px;
+}
+.settings-pane .mantine-Button-label {
+  white-space: normal;
+}
+.settings-pane .settings-highlights {
+  max-width: 100%;
+  overflow-x: auto;
+}
+.settings-pane .highlight-profile-top,
+.settings-pane .highlight-profile-pattern,
+.settings-pane .highlight-detail-columns,
+.settings-pane .highlight-preview-inputs {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
+}
+.settings-pane .highlight-profile-top > .mantine-Switch-root,
+.settings-pane .highlight-profile-actions,
+.settings-pane .highlight-profile-pattern > .mantine-Switch-root {
+  margin-top: 0;
+}
+.settings-pane .highlight-master-detail,
+.settings-pane
+  .highlight-editor[data-preview-open="true"]
+  .highlight-master-detail {
+  grid-template-columns: minmax(0, 1fr);
+  height: auto;
+}
+.settings-pane .highlight-rule-list {
+  height: 300px;
+}
+.settings-pane .highlight-rule-detail {
+  max-height: 560px;
+}
+.settings-pane .highlight-panel-heading {
+  flex-wrap: wrap;
+}
+.settings-pane .highlight-detail-priority {
+  grid-template-columns: minmax(0, 1fr) 72px;
+  gap: 8px;
+}
+.settings-pane .highlight-profile-config,
+.settings-pane .highlight-detail-fields {
+  padding: 8px;
+}
+.settings-pane .highlight-preview-body {
+  min-width: 0;
+  overflow-x: auto;
+}

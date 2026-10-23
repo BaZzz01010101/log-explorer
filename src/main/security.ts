@@ -76,7 +76,6 @@ const tabSchema = z.object({
   customTitle: z.string().max(512).optional(),
   connectionId: id,
   sources: z.array(sourceSchema).max(50),
-  groupId: id.optional(),
   preview: z.boolean().optional(),
   kind: z.enum(["events", "insights"]),
   filterPattern: text,
@@ -109,7 +108,6 @@ const splitSchema = z.object({
   pinned: z.boolean().optional(),
   id,
   title: z.string().max(512).optional(),
-  groupId: id.optional(),
   panes: z
     .array(z.object({ id, tabId: id }))
     .min(2)
@@ -180,7 +178,6 @@ export const workspaceSchema = z
           pinned: z.boolean().optional(),
           id,
           title: z.string().max(512).optional(),
-          groupId: id.optional(),
           panes: z
             .array(z.object({ id, tabId: id }))
             .min(2)
@@ -195,16 +192,6 @@ export const workspaceSchema = z
     activeTabId: id.nullable().optional(),
     activeConnectionId: id.optional(),
     closedTabs: z.array(tabSchema).max(30),
-    groups: z
-      .array(
-        z.object({
-          id,
-          name: z.string().max(120),
-          color: z.string().max(40),
-          collapsed: z.boolean().optional(),
-        }),
-      )
-      .max(100),
     panes: z
       .array(z.object({ id, tabId: id.nullable() }))
       .min(1)
@@ -286,7 +273,6 @@ export const workspaceSchema = z
     const connectionIds = new Set(
       workspace.connections.map((connection) => connection.id),
     );
-    const groupIds = new Set(workspace.groups.map((group) => group.id));
     if (connectionIds.size !== workspace.connections.length)
       issue("connections", "Connection IDs must be unique");
     if (
@@ -296,11 +282,10 @@ export const workspaceSchema = z
           tab.sources.some(
             (source) =>
               source.connectionId && !connectionIds.has(source.connectionId),
-          ) ||
-          (tab.groupId && !groupIds.has(tab.groupId)),
+          ),
       )
     )
-      issue("tabs", "View connections and groups must exist");
+      issue("tabs", "View connections must exist");
     const splits = workspace.splitTabs ?? [];
     const splitIds = new Set(splits.map((split) => split.id));
     const members = new Set<string>();
@@ -326,8 +311,6 @@ export const workspaceSchema = z
           "splitTabs",
           "Each combined layout must reference its unique panes exactly once",
         );
-      if (split.groupId && !groupIds.has(split.groupId))
-        issue("splitTabs", "Combined entry group must exist");
       for (const pane of split.panes) {
         if (!tabIds.has(pane.tabId) || members.has(pane.tabId))
           issue(

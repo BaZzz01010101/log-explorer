@@ -12,7 +12,6 @@ export interface WorkspaceEntry {
   id: string;
   pinned?: boolean;
   title: string;
-  groupId?: string;
   preview?: boolean;
   kind: "single" | "split";
   tabIds: string[];
@@ -31,7 +30,6 @@ export function workspaceEntries(workspace: Workspace): WorkspaceEntry[] {
     .map((tab) => ({
       id: tab.id,
       title: logTabLabel(tab),
-      groupId: tab.groupId,
       preview: tab.preview,
       ...(tab.pinned !== undefined ? { pinned: tab.pinned } : {}),
       kind: "single",
@@ -50,7 +48,6 @@ export function workspaceEntries(workspace: Workspace): WorkspaceEntry[] {
     entries.push({
       id: split.id,
       title: split.title ?? `Mixed Sources (${count})`,
-      groupId: split.groupId,
       ...(split.pinned !== undefined ? { pinned: split.pinned } : {}),
       kind: "split",
       tabIds,

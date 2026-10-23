@@ -1,3 +1,4 @@
+import { openSettingsWindow } from "./settings-panel";
 import {
   _electron as electron,
   expect,
@@ -336,9 +337,7 @@ test("field menus deserialize nested values temporarily, preserve raw records an
     /,""$/,
   );
   for (const theme of ["light", "dark"] as const) {
-    await page
-      .getByRole("button", { name: "Workspace settings", exact: true })
-      .click();
+    await openSettingsWindow(page);
     await page.getByRole("tab", { name: "Preferences", exact: true }).click();
     await page.getByRole("combobox", { name: "Theme", exact: true }).click();
     await page.getByRole("option", { name: theme, exact: true }).click();

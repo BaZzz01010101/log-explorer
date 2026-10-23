@@ -6,23 +6,70 @@ export interface TabInsertion {
   pinned: boolean;
   rect: LayoutRect;
 }
+/** Only a drag near/above the client area's top edge reveals an empty pin row. */
+export function atPinnedRowEdge(
+  workspace: Workspace,
+  point: { x: number; y: number },
+): boolean {
+  if (
+    !workspace.preferences.pinnedTabsSeparateRow ||
+    !Number.isFinite(point.x) ||
+    !Number.isFinite(point.y)
+  )
+    return false;
+  const strip = [
+    ...document.querySelectorAll<HTMLElement>("[data-tab-strip]"),
+  ].find(
+    (element) =>
+      element.dataset.tabStrip === "pinned" ||
+      element.dataset.tabStrip === "regular",
+  );
+  const bounds = strip?.getBoundingClientRect();
+  return (
+    !!bounds &&
+    bounds.width > 0 &&
+    point.x >= bounds.left &&
+    point.x <= bounds.right &&
+    point.y <= bounds.top + 8
+  );
+}
 export function tabInsertionAt(
   workspace: Workspace,
   point: { x: number; y: number },
 ): TabInsertion | null {
   const entries = workspaceEntries(workspace);
+  const atEdge = atPinnedRowEdge(workspace, point);
+  if (atEdge && !entries.some((entry) => entry.pinned)) {
+    const strip = [
+      ...document.querySelectorAll<HTMLElement>("[data-tab-strip]"),
+    ].find(
+      (element) =>
+        element.dataset.tabStrip === "pinned" ||
+        element.dataset.tabStrip === "regular",
+    )!;
+    const bounds = strip.getBoundingClientRect();
+    return {
+      beforeTabId: entries[0]?.id ?? null,
+      pinned: true,
+      rect: { left: bounds.left, top: bounds.top, width: 3, height: 40 },
+    };
+  }
   for (const strip of document.querySelectorAll<HTMLElement>(
     "[data-tab-strip]",
   )) {
     if (!strip.dataset.tabStrip) continue;
     const bounds = strip.getBoundingClientRect();
+    const y =
+      atEdge && strip.dataset.tabStrip === "pinned"
+        ? Math.max(bounds.top, point.y)
+        : point.y;
     if (
       !bounds.width ||
       !bounds.height ||
       point.x < bounds.left ||
       point.x > bounds.right ||
-      point.y < bounds.top ||
-      point.y > bounds.bottom
+      y < bounds.top ||
+      y > bounds.bottom
     )
       continue;
     const tabs = [...strip.querySelectorAll<HTMLElement>("[data-tab-id]")]

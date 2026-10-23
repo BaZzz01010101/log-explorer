@@ -1,3 +1,4 @@
+import { openSettingsWindow } from "./settings-panel";
 import {
   _electron as electron,
   expect,
@@ -235,9 +236,7 @@ test("settings adds and removes profiles and regions without listing every known
     },
   );
   await load(workspace);
-  await page
-    .getByRole("button", { name: "Workspace settings", exact: true })
-    .click();
+  await openSettingsWindow(page);
   const settings = page.getByRole("dialog", { name: "Workspace settings" });
   await expect(settings.locator("[data-profile]")).toHaveCount(2);
   await expect(settings.locator(".profile-region-options")).toHaveCount(0);
@@ -249,9 +248,7 @@ test("settings adds and removes profiles and regions without listing every known
   await expect(
     page.getByRole("combobox", { name: "Explorer profile", exact: true }),
   ).toHaveValue("development");
-  await page
-    .getByRole("button", { name: "Workspace settings", exact: true })
-    .click();
+  await openSettingsWindow(page);
   await settings
     .getByRole("combobox", { name: "Known profile to add", exact: true })
     .click();

@@ -1,3 +1,4 @@
+import { openSettingsWindow } from "./settings-panel";
 import {
   _electron as electron,
   expect,
@@ -160,9 +161,7 @@ async function geometry() {
   );
 }
 async function preferences() {
-  await page
-    .getByRole("button", { name: "Workspace settings", exact: true })
-    .click();
+  await openSettingsWindow(page);
   await page.getByRole("tab", { name: "Preferences", exact: true }).click();
 }
 

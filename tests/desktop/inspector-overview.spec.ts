@@ -1,3 +1,4 @@
+import { openSettingsWindow } from "./settings-panel";
 import {
   _electron as electron,
   expect,
@@ -271,7 +272,7 @@ test("new tabs open the inspector at 30 percent and the toolbar toggle preserves
     await region.evaluate((element) => element.getBoundingClientRect().width),
   ).toBeCloseTo(resized, 0);
   await page
-    .getByRole("button", { name: "Toggle explorer", exact: true })
+    .getByRole("button", { name: "AWS logs explorer", exact: true })
     .click();
   await page
     .getByRole("button", { name: "/aws/lambda/payments-worker", exact: true })
@@ -396,9 +397,7 @@ test("decoded and formatted highlights appear in the full right lane in both the
   }));
   await send(0, { state: "complete", events, replace: true }, true);
   for (const theme of ["light", "dark"]) {
-    await page
-      .getByRole("button", { name: "Workspace settings", exact: true })
-      .click();
+    await openSettingsWindow(page);
     await page.getByRole("tab", { name: "Preferences", exact: true }).click();
     await page.getByRole("combobox", { name: "Theme", exact: true }).click();
     await page.getByRole("option", { name: theme, exact: true }).click();

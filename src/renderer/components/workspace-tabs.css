@@ -1,20 +1,45 @@
 .workspace-tab-bar {
+  --chrome-height: 40px;
   display: flex;
   min-width: 0;
   background: var(--mantine-color-body);
   border-bottom: 1px solid var(--mantine-color-default-border);
+  min-height: var(--chrome-height);
+  flex-shrink: 0;
+}
+.desktop-app[data-window-controls-overlay="true"] .workspace-tab-bar {
+  --chrome-height: max(40px, env(titlebar-area-height, 40px));
+  /* Native caption width changes with DPI/zoom and disappears in full screen. */
+  padding-right: max(
+    0px,
+    calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw))
+  );
+}
+.window-drag-handle {
+  -webkit-app-region: drag;
+  flex: 0 0 24px;
+  height: var(--chrome-height);
+  align-self: flex-start;
+}
+.tab-strip-drag-space {
+  -webkit-app-region: drag;
+  flex: 1 0 0;
+  min-height: 40px;
+  align-self: stretch;
 }
 [data-mantine-color-scheme="light"] .workspace-tab-bar {
   --workspace-tab-background: var(--mantine-color-default-hover);
   --workspace-tab-active-background: var(--mantine-color-body);
 }
 .workspace-tab-list {
+  -webkit-app-region: no-drag;
   position: relative;
   display: flex;
   flex: 1;
   overflow-x: auto;
   scrollbar-width: thin;
   min-width: 0;
+  min-height: 40px;
   align-items: stretch;
 }
 .workspace-tab-strips {
@@ -36,10 +61,6 @@
   color: var(--mantine-color-dimmed);
   pointer-events: none;
 }
-.workspace-tab-bar:has(.workspace-tab-strips) .workspace-tab-tools {
-  align-items: flex-start;
-  padding-top: 6px;
-}
 .workspace-tab-list.is-wrapped {
   flex-wrap: wrap;
   align-content: flex-start;
@@ -51,10 +72,6 @@
   border-bottom: 1px solid var(--mantine-color-default-border);
   min-width: min(130px, 100%);
   max-width: min(310px, 100%);
-}
-.workspace-tab-bar.is-wrapped .workspace-tab-tools {
-  align-items: flex-start;
-  padding-top: 6px;
 }
 .workspace-tab {
   display: flex;
@@ -110,9 +127,6 @@
     var(--mantine-color-body)
   );
 }
-.workspace-tab.is-grouped {
-  border-top: 2px solid var(--group-color);
-}
 .workspace-tab.is-dragging {
   background: color-mix(
     in srgb,
@@ -123,7 +137,6 @@
   z-index: 5;
 }
 .workspace-tab button,
-.group-chip button,
 .pane-chip button {
   font: inherit;
   border: none;
@@ -132,7 +145,6 @@
   cursor: pointer;
 }
 .workspace-tab button:focus-visible,
-.group-chip button:focus-visible,
 .pane-chip button:focus-visible {
   outline: 2px solid var(--mantine-color-blue-5);
   outline-offset: -2px;
@@ -154,7 +166,7 @@
 }
 .tab-source-icon {
   flex-shrink: 0;
-  color: var(--group-color);
+  color: var(--mantine-color-blue-5);
 }
 .tab-grip {
   display: flex;
@@ -226,12 +238,15 @@
   cursor: inherit;
 }
 .workspace-tab-tools {
+  -webkit-app-region: no-drag;
   display: flex;
   padding: 4px 7px;
   align-items: center;
   gap: 3px;
   flex-shrink: 0;
   border-left: 1px solid var(--mantine-color-default-border);
+  height: var(--chrome-height);
+  align-self: flex-start;
 }
 .empty-tabs {
   padding: 12px 16px;
@@ -248,7 +263,6 @@
   min-width: 0;
   background: var(--mantine-color-body);
 }
-.workspace-group-list,
 .workspace-pane-list {
   display: flex;
   align-items: center;
@@ -257,13 +271,9 @@
   overflow-x: auto;
   scrollbar-width: thin;
 }
-.workspace-group-list {
-  flex: 1;
-}
 .workspace-pane-list {
   flex-shrink: 0;
 }
-.group-chip,
 .pane-chip {
   display: flex;
   align-items: center;
@@ -274,10 +284,6 @@
   color: var(--mantine-color-dimmed);
   max-width: 210px;
 }
-.group-chip {
-  border-color: color-mix(in srgb, var(--group-color) 40%, transparent);
-}
-.group-chip-name,
 .pane-chip-label {
   display: flex;
   align-items: center;
@@ -285,36 +291,9 @@
   min-width: 0;
   padding: 3px 2px;
 }
-.group-chip-name > span:nth-of-type(2),
 .pane-chip-label > span:last-of-type {
   overflow: hidden;
   text-overflow: ellipsis;
-}
-.group-chip-name {
-  color: var(--group-color) !important;
-}
-.group-dot {
-  display: inline-block;
-  border-radius: 50%;
-  width: 7px;
-  height: 7px;
-  background: var(--group-color);
-  flex-shrink: 0;
-}
-.group-count {
-  opacity: 0.65;
-  font-variant-numeric: tabular-nums;
-}
-.chip-grip,
-.chip-menu {
-  padding: 3px;
-  display: flex;
-  align-items: center;
-}
-.chip-grip {
-  cursor: grab !important;
-  touch-action: none;
-  opacity: 0.5;
 }
 .pane-number {
   border-radius: 3px;
@@ -328,7 +307,6 @@
   color: var(--mantine-color-text);
   border-color: var(--mantine-color-blue-5);
 }
-.group-chip.is-over,
 .pane-chip.is-over {
   outline: 2px solid var(--mantine-color-blue-5);
   background: color-mix(in srgb, var(--mantine-color-blue-5) 14%, transparent);

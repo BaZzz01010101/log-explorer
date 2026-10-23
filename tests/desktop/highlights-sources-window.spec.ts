@@ -1,3 +1,4 @@
+import { openSettingsWindow } from "./settings-panel";
 import {
   _electron as electron,
   expect,
@@ -113,9 +114,7 @@ test.afterEach(async () => {
   });
 });
 async function settings() {
-  await page
-    .getByRole("button", { name: "Workspace settings", exact: true })
-    .click();
+  await openSettingsWindow(page);
   await page.getByRole("tab", { name: "Highlights", exact: true }).click();
 }
 const dialog = () => page.getByRole("dialog", { name: "Workspace settings" });
@@ -457,32 +456,45 @@ test("maximized state is saved before an immediate minimize without showing veri
     ),
   ).toBe(false);
 });
-test("main window saves normal geometry and restores it on a hidden restart", async () => {
-  const bounds = await app.evaluate(({ BrowserWindow, screen }) => {
-    const window = BrowserWindow.getAllWindows()[0],
-      area = screen.getPrimaryDisplay().workArea;
-    const bounds = { x: area.x + 30, y: area.y + 30, width: 1000, height: 720 };
-    window.setBounds(bounds);
-    return window.getNormalBounds();
+for (const size of ["normal", "minimum"] as const) {
+  test(`main window saves ${size} geometry and restores it on a hidden restart`, async () => {
+    const bounds = await app.evaluate(({ BrowserWindow, screen }, size) => {
+      const window = BrowserWindow.getAllWindows()[0],
+        area = screen.getPrimaryDisplay().workArea;
+      const bounds = {
+        x: area.x + 30,
+        y: area.y + 30,
+        width: size === "minimum" ? 860 : 1000,
+        height: size === "minimum" ? 580 : 720,
+      };
+      window.setBounds(bounds);
+      return window.getNormalBounds();
+    }, size);
+    await close();
+    const saved = JSON.parse(
+      await readFile(join(directory, "window-state.json"), "utf8"),
+    );
+    expect(saved.bounds).toEqual(bounds);
+    expect(saved.maximized).toBe(false);
+    await launch();
+    for (let restart = 0; restart < 3; restart++) {
+      expect(
+        await app.evaluate(({ BrowserWindow }) =>
+          BrowserWindow.getAllWindows()[0].getNormalBounds(),
+        ),
+      ).toEqual(bounds);
+      if (restart < 2) {
+        await close();
+        await launch();
+      }
+    }
+    expect(
+      await app.evaluate(({ BrowserWindow }) =>
+        BrowserWindow.getAllWindows()[0].isVisible(),
+      ),
+    ).toBe(false);
   });
-  await close();
-  const saved = JSON.parse(
-    await readFile(join(directory, "window-state.json"), "utf8"),
-  );
-  expect(saved.bounds).toEqual(bounds);
-  expect(saved.maximized).toBe(false);
-  await launch();
-  expect(
-    await app.evaluate(({ BrowserWindow }) =>
-      BrowserWindow.getAllWindows()[0].getNormalBounds(),
-    ),
-  ).toEqual(bounds);
-  expect(
-    await app.evaluate(({ BrowserWindow }) =>
-      BrowserWindow.getAllWindows()[0].isVisible(),
-    ),
-  ).toBe(false);
-});
+}
 
 test("unused AWS anchor permits the selected fixture source with accurate Live hints", async () => {
   await close();
@@ -1013,9 +1025,7 @@ test("advanced connection settings are removed and remembered AWS access stays h
   expect(
     (await page.evaluate(() => window.explorer.environment())).awsEnabled,
   ).toBe(false);
-  await page
-    .getByRole("button", { name: "Workspace settings", exact: true })
-    .click();
+  await openSettingsWindow(page);
   await expect(
     page.getByText("Advanced connection settings", { exact: true }),
   ).toHaveCount(0);
@@ -1130,9 +1140,7 @@ test("enabling access refreshes failed Explorer data and log views through an is
   const before = await app.evaluate(() => ({
     ...(globalThis as any).__accessRefreshFixture,
   }));
-  await page
-    .getByRole("button", { name: "Workspace settings", exact: true })
-    .click();
+  await openSettingsWindow(page);
   await page.getByLabel("Enable AWS access", { exact: true }).click();
   await expect(
     page.getByLabel("Enable AWS access", { exact: true }),
