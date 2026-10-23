@@ -1,4 +1,13 @@
 import type { ColumnConfig, LogEvent, Preferences } from "../shared/contracts";
+import {
+  evaluateFilterEvidence,
+  type FilterOrigin,
+} from "../shared/filter-evidence";
+import {
+  packFilterEvidence,
+  type MatchOrigin,
+  type PackedFilterEvidence,
+} from "./filter-highlight-spans";
 import type {
   HighlightColors,
   HighlightProfile,
@@ -23,6 +32,9 @@ export interface EventHighlights {
   row: HighlightColors;
   overview?: string[];
   text: Record<string, HighlightSpan[]>;
+  filters?: Partial<Record<FilterOrigin, PackedFilterEvidence>>;
+  paths?: Record<string, MatchOrigin[]>;
+  matchKey?: string;
 }
 export const textHighlightKey = (path: string, text: string) =>
   JSON.stringify([path, text]);
@@ -54,6 +66,8 @@ export function highlightEvent(
   timezone: Preferences["timezone"],
   overviewOnly = false,
   needle = "",
+  filters?: { server: string; local: string },
+  messageComplete = true,
 ): EventHighlights {
   const result: EventHighlights = { row: {}, text: Object.create(null) };
   if (overviewOnly) result.overview = [];
@@ -64,6 +78,30 @@ export function highlightEvent(
     quickNeedle && raw.toLowerCase().includes(quickNeedle),
   );
   const parsed = parseLogMessage(raw);
+  const pathMatches: Record<string, MatchOrigin[]> = Object.create(null);
+  const matchPath = (path: string, origin: MatchOrigin) => {
+    if (path.startsWith("@key")) path = path.slice(4);
+    if (path !== "" && !path.startsWith("/")) return;
+    const origins = (pathMatches[path] ??= []);
+    if (!origins.includes(origin)) origins.push(origin);
+  };
+  if (!overviewOnly && (filters?.server || filters?.local)) {
+    result.filters = {};
+    for (const origin of ["server", "local"] as const) {
+      if (!filters[origin].trim()) continue;
+      // A bounded preview cannot prove a whole-query match (anchors and
+      // negative predicates can change meaning beyond its boundary).
+      const evidence =
+        messageComplete && event.message.length <= 200_000
+          ? evaluateFilterEvidence(event, parsed, filters[origin], origin)
+          : { supported: false, matched: false, matches: [], paths: [] };
+      const packed = packFilterEvidence(evidence);
+      result.filters[origin] = packed;
+      if (evidence.supported && evidence.matched) {
+        if (packed) for (const path of packed.paths) matchPath(path, origin);
+      }
+    }
+  }
   const fields = new Map<string, { path: string; text: string }>();
   let budget = 100_000;
   const add = (path: string, text: string, required = false) => {
@@ -78,6 +116,12 @@ export function highlightEvent(
       for (const [path, value] of Object.entries(
         flattenJson(parsed.value!, { maxFields: 256, maxNodes: 800 }).fields,
       )) {
+        const key = path
+          .split("/")
+          .at(-1)!
+          .replace(/~1/g, "/")
+          .replace(/~0/g, "~");
+        add(`@key${path}`, JSON.stringify(key));
         for (const limit of [500, 4000])
           add(
             path,
@@ -107,6 +151,10 @@ export function highlightEvent(
       }
       add(path, text);
     }
+  }
+  if (quickNeedle) {
+    for (const { path, text } of fields.values())
+      if (text.toLowerCase().includes(quickNeedle)) matchPath(path, "manual");
   }
   if (overviewOnly && quickNeedle && !quickMatch)
     quickMatch = [...fields.values()].some(({ text }) =>
@@ -207,6 +255,7 @@ export function highlightEvent(
           if (spans.some((span) => start < span.end && end > span.start))
             continue;
           spans.push({ start, end, colors });
+          matchPath(field.path, "profile");
           result.text[key] = spans;
           spanCount++;
         }
@@ -222,5 +271,14 @@ export function highlightEvent(
   }
   for (const spans of Object.values(result.text))
     spans.sort((a, b) => a.start - b.start);
+  if (!overviewOnly && Object.keys(pathMatches).length) {
+    result.paths = pathMatches;
+    result.matchKey = JSON.stringify([
+      filters?.server,
+      filters?.local,
+      needle,
+      profiles,
+    ]);
+  }
   return result;
 }

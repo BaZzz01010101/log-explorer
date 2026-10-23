@@ -34,6 +34,13 @@ vi.mock("@mantine/core", async () => {
     ),
     Menu: Object.assign(
       component("Menu"),
+      {
+        Sub: Object.assign(component("MenuSub"), {
+          Target: component("MenuSubTarget"),
+          Item: component("MenuSubItem"),
+          Dropdown: component("MenuSubDropdown"),
+        }),
+      },
       Object.fromEntries(
         ["Target", "Dropdown", "Label", "Item", "Divider"].map((name) => [
           name,

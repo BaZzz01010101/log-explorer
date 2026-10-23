@@ -3,14 +3,31 @@
   color: var(--mantine-color-dimmed);
   font-size: 10px;
 }
-.live-session-controls {
-  display: flex;
-  flex: 0 0 auto;
+.event-live-state {
+  display: inline-flex;
   align-items: center;
-  flex-wrap: wrap;
-  gap: 8px 12px;
-  padding: 7px 12px;
-  border-bottom: 1px solid var(--mantine-color-default-border);
+  gap: 4px;
+  color: var(--mantine-color-teal-light-color);
+}
+.event-follow-live {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  margin-left: auto;
+  border: 0;
+  border-radius: 3px;
+  padding: 2px 6px;
+  font: inherit;
+  color: var(--mantine-color-dimmed);
+  background: transparent;
+  cursor: pointer;
+}
+.event-follow-live:hover {
+  background: var(--mantine-color-default-hover);
+}
+.event-follow-live[aria-pressed="true"] {
+  color: var(--mantine-color-teal-light-color);
   background: var(--mantine-color-teal-light);
 }
 

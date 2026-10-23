@@ -21,6 +21,11 @@ vi.mock("@mantine/core", () => {
     Button: component,
     Group: component,
     Menu: Object.assign(component, {
+      Sub: Object.assign(component, {
+        Target: component,
+        Item: component,
+        Dropdown: component,
+      }),
       Target: component,
       Dropdown: component,
       Label: component,

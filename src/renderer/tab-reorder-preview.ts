@@ -92,16 +92,28 @@ export function pointerTabSlots<T extends TabSize>(
   const wantedX = pointer.point.x - pointer.grabX;
   let selected =
     preferred && sameRow.includes(preferred) ? preferred : sameRow[0];
-  for (const candidate of sameRow) {
-    // Adjacent source slots differ by exactly the neighbour's width. Their
-    // midpoint is therefore the strict 50% crossing threshold in either direction.
-    // Retain the previous slot at an exact tie, avoiding boundary oscillation.
-    if (
-      Math.abs(candidate.slot.x - wantedX) + 0.000001 <
-      Math.abs(selected.slot.x - wantedX)
-    )
-      selected = candidate;
-  }
+  const sorted = [...sameRow].sort((a, b) => a.slot.x - b.slot.x);
+  let index = sorted.indexOf(selected);
+  // Slots differ by the neighbor width. Wait until 80% of the way into the
+  // next slot. Starting from the current gap provides hysteresis on reversal
+  // (20% on the way back), so a stationary pointer cannot flip slots forever.
+  while (
+    index + 1 < sorted.length &&
+    wantedX >
+      sorted[index].slot.x +
+        (sorted[index + 1].slot.x - sorted[index].slot.x) * 0.8 +
+        0.000001
+  )
+    index++;
+  while (
+    index > 0 &&
+    wantedX <
+      sorted[index].slot.x -
+        (sorted[index].slot.x - sorted[index - 1].slot.x) * 0.8 -
+        0.000001
+  )
+    index--;
+  selected = sorted[index];
   return {
     ...selected,
     rect: {

@@ -1,4 +1,5 @@
 import { sourceIdentity } from "../shared/source-identity";
+import { compileServerFilter } from "../shared/server-filter";
 import type {
   LogEvent,
   LogTab,
@@ -140,7 +141,8 @@ export function requestMatchesTab(
     return false;
   if (
     tab.kind === "events"
-      ? request.filterPattern !== tab.filterPattern
+      ? request.filterPattern !==
+        compileServerFilter(tab.filterPattern, tab.filterMode)
       : request.query !== tab.query
   )
     return false;

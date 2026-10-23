@@ -22,13 +22,20 @@ export function useEventHighlights(
   events: LogEvent[],
   preferences: Preferences,
   columns: ColumnConfig[],
-  options?: { overview?: boolean; needle?: string; priority?: string[] },
+  options?: {
+    overview?: boolean;
+    needle?: string;
+    priority?: string[];
+    filters?: { server: string; local: string };
+  },
 ) {
   const overview = options?.overview ?? false;
   const needle = options?.needle ?? "";
+  const filters = options?.filters;
   const profiles = preferences.highlightProfiles ?? [];
   const active =
-    (overview && needle.length > 0 && needle.length <= 200) ||
+    (needle.length > 0 && needle.length <= 200) ||
+    Boolean(filters?.server.trim() || filters?.local.trim()) ||
     profiles.some(
       (profile) =>
         profile.enabled &&
@@ -53,6 +60,8 @@ export function useEventHighlights(
     preferences.theme,
     overview,
     needle,
+    filters?.server ?? "",
+    filters?.local ?? "",
     preferences.timezone,
     columns.map(({ path, format, hidden }) => ({ path, format, hidden })),
   ]);
@@ -148,6 +157,7 @@ export function useEventHighlights(
         events: [...batch.values()].map((event) => ({
           ...event,
           message: event.message.slice(0, 200_000),
+          messageComplete: event.message.length <= 200_000,
         })),
         profiles,
         theme: preferences.theme,
@@ -155,6 +165,7 @@ export function useEventHighlights(
         timezone: preferences.timezone,
         overview,
         needle,
+        filters,
       });
     };
     const update = () => {
@@ -200,6 +211,24 @@ export function useEventHighlights(
         remove(id);
         const cost =
           128 +
+          (result.matchKey?.length ?? 0) * 2 +
+          Object.values(result.filters ?? {}).reduce(
+            (sum, evidence) =>
+              sum +
+              evidence.paths.reduce((n, path) => n + path.length * 2, 0) +
+              evidence.targets.reduce(
+                (n, target) =>
+                  n +
+                  (target.path.length + target.text.length) * 2 +
+                  target.ranges.length * 24,
+                0,
+              ),
+            0,
+          ) +
+          Object.keys(result.paths ?? {}).reduce(
+            (sum, path) => sum + path.length * 2 + 32,
+            0,
+          ) +
           Object.entries(result.text).reduce(
             (sum, [key, spans]) => sum + key.length * 2 + spans.length * 96,
             0,

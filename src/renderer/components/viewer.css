@@ -200,18 +200,6 @@
   font-size: var(--log-font-size, 12px);
   box-sizing: border-box;
 }
-.virtual-event[data-highlight-pending="true"] > * {
-  visibility: hidden;
-}
-.virtual-event[data-highlight-pending="true"]::after {
-  content: "Preparing highlights…";
-  position: absolute;
-  top: 8px;
-  left: 14px;
-  color: var(--mantine-color-dimmed);
-  font-family: var(--mantine-font-family);
-  font-size: 11px;
-}
 .log-table-header {
   display: flex;
   position: sticky;
@@ -486,6 +474,9 @@ body.resizing-columns * {
   color: var(--mantine-color-cyan-5);
 }
 .json-tree {
+  --filter-match-server: light-dark(#b7d9ff, #24588b);
+  --filter-match-local: light-dark(#b9edca, #24613e);
+  --filter-match-manual: light-dark(#ffe69a, #806019);
   font-family: var(--mantine-font-family-monospace);
   line-height: 1.7;
   overflow: auto;
@@ -520,6 +511,35 @@ body.resizing-columns * {
 }
 .json-key {
   color: light-dark(#37577f, #93afd8);
+}
+.log-viewer {
+  --filter-match-server: light-dark(#b7d9ff, #24588b);
+  --filter-match-local: light-dark(#b9edca, #24613e);
+  --filter-match-manual: light-dark(#ffe69a, #806019);
+}
+.json-match-indicator {
+  display: inline-flex;
+  align-self: center;
+  align-items: center;
+  gap: 2px;
+  margin-left: 5px;
+  margin-right: 2px;
+}
+.json-match-indicator i {
+  display: inline-block;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--mantine-color-grape-5);
+}
+.json-match-indicator [data-match-origin="server"] {
+  background: var(--mantine-color-blue-5);
+}
+.json-match-indicator [data-match-origin="local"] {
+  background: var(--mantine-color-green-5);
+}
+.json-match-indicator [data-match-origin="manual"] {
+  background: var(--mantine-color-yellow-5);
 }
 .json-punctuation {
   color: var(--mantine-color-dimmed);
@@ -714,15 +734,6 @@ body.resizing-columns * {
 .inspector-source code {
   font-size: 11px;
   overflow-wrap: anywhere;
-}
-.inspector-content {
-  max-height: 58vh;
-  min-height: 120px;
-  overflow: auto;
-  padding: 12px;
-  border: 1px solid var(--mantine-color-default-border);
-  border-radius: 5px;
-  font-family: var(--mantine-font-family-monospace);
 }
 @media (max-width: 800px) {
   .viewer-toolbar {

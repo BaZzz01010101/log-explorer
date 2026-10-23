@@ -1,0 +1,62 @@
+.inspector-message {
+  display: flex;
+  align-items: stretch;
+  flex: 1 1 64px;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+.inspector-message > .inspector-content {
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 0;
+  max-height: none;
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 0;
+  border: 1px solid var(--mantine-color-default-border);
+  border-radius: 5px;
+  font-family: var(--mantine-font-family-monospace);
+}
+.inspector-message-body {
+  display: flow-root;
+  min-width: 0;
+  padding: 12px;
+}
+.inspector-message-body > .json-tree,
+.inspector-message-body > .raw-content,
+.inspector-message-body > .raw-content pre {
+  overflow: visible;
+  max-height: none;
+}
+.inspector-message-overview {
+  display: flex;
+  flex: 0 0 13px;
+  width: 13px;
+  min-height: 0;
+  margin-top: 1px;
+  padding-left: 1px;
+  overflow: hidden;
+  background: var(--mantine-color-body);
+}
+.inspector-message-lane {
+  position: relative;
+  flex: 1 1 0;
+  min-width: 0;
+  cursor: pointer;
+}
+.inspector-message-lane + .inspector-message-lane {
+  border-left: 1px solid var(--mantine-color-default-border);
+}
+.inspector-message-mark {
+  position: absolute;
+  left: 0;
+  right: 0;
+  width: 100%;
+  min-height: 1px;
+  padding: 0;
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  cursor: pointer;
+}

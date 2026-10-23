@@ -9,6 +9,7 @@ import type {
   Workspace,
 } from "../shared/contracts";
 import { sourceIdentity } from "../shared/source-identity";
+import { compileServerFilter } from "../shared/server-filter";
 import {
   mergeEvents,
   requestMatchesTab,
@@ -419,7 +420,10 @@ export function useLogJobs(
                 tab.customEnd,
               ),
               kind: tab.kind,
-              filterPattern: tab.kind === "events" ? tab.filterPattern : "",
+              filterPattern:
+                tab.kind === "events"
+                  ? compileServerFilter(tab.filterPattern, tab.filterMode)
+                  : "",
               query: tab.kind === "insights" ? tab.query : "",
               limit: Math.min(
                 10000,

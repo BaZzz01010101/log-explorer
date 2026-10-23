@@ -229,6 +229,18 @@ export function Settings({
                 })
               }
             />
+            <Checkbox
+              label="Automatically expand inspector paths to highlighted matches"
+              checked={preferences.autoExpandFilterMatches !== false}
+              onChange={(event) =>
+                dispatch({
+                  type: "preferences/update",
+                  patch: {
+                    autoExpandFilterMatches: event.currentTarget.checked,
+                  },
+                })
+              }
+            />
             <Group grow>
               <NumericPreference
                 label="Log font size"

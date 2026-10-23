@@ -1,4 +1,9 @@
-import { memo, useContext, useMemo, useState } from "react";
+import { memo, useContext, useEffect, useMemo, useState } from "react";
+import {
+  filterHighlightSpans,
+  matchColors,
+  type MatchOrigin,
+} from "../filter-highlight-spans";
 import { EventHighlightContext } from "../useEventHighlights";
 import { textHighlightKey } from "../highlight-engine";
 import {
@@ -38,43 +43,66 @@ export const HighlightText = memo(function HighlightText({
   path?: string;
 }) {
   const profile = useContext(EventHighlightContext);
-  const spans = profile?.text[textHighlightKey(path, text)];
-  if (spans?.length) {
-    const parts: React.ReactNode[] = [];
+  const spans = profile?.text[textHighlightKey(path, text)] ?? [];
+  const filters = filterHighlightSpans(profile?.filters, path, text);
+  const manual: { start: number; end: number }[] = [];
+  if (needle && needle.length <= 200) {
+    const lower = text.toLowerCase(),
+      query = needle.toLowerCase();
     let cursor = 0;
-    for (const span of spans) {
-      parts.push(
-        text.slice(cursor, span.start),
-        <mark
-          className="profile-highlight-text"
-          key={span.start}
-          style={{
-            color: span.colors.foreground ?? "inherit",
-            backgroundColor: span.colors.background ?? "transparent",
-          }}
-        >
-          {text.slice(span.start, span.end)}
-        </mark>,
-      );
-      cursor = span.end;
+    for (let count = 0; count < 30; count++) {
+      const start = lower.indexOf(query, cursor);
+      if (start < 0) break;
+      manual.push({ start, end: start + needle.length });
+      cursor = start + needle.length;
     }
-    parts.push(text.slice(cursor));
-    return <>{parts}</>;
   }
-  if (!needle || needle.length > 200) return <>{text}</>;
+  if (!spans.length && !filters.length && !manual.length) return <>{text}</>;
+  const edges = [
+    ...new Set([
+      0,
+      text.length,
+      ...[...spans, ...filters, ...manual].flatMap(({ start, end }) => [
+        Math.max(0, start),
+        Math.min(text.length, end),
+      ]),
+    ]),
+  ].sort((a, b) => a - b);
   const parts: React.ReactNode[] = [];
-  const lower = text.toLowerCase();
-  let cursor = 0;
-  for (let count = 0; count < 30; count++) {
-    const index = lower.indexOf(needle.toLowerCase(), cursor);
-    if (index === -1) break;
-    parts.push(
-      text.slice(cursor, index),
-      <mark key={index}>{text.slice(index, index + needle.length)}</mark>,
+  for (let index = 0; index + 1 < edges.length; index++) {
+    const start = edges[index],
+      end = edges[index + 1];
+    if (end <= start) continue;
+    const covering = (span: { start: number; end: number }) =>
+      span.start <= start && span.end >= end;
+    const colors = spans.find(covering)?.colors;
+    const origins = (["server", "local", "manual"] as const).filter((origin) =>
+      origin === "manual"
+        ? manual.some(covering)
+        : filters.some((span) => span.origin === origin && covering(span)),
     );
-    cursor = index + needle.length;
+    if (!colors && !origins.length) {
+      parts.push(text.slice(start, end));
+      continue;
+    }
+    const gradient = origins.length
+      ? `linear-gradient(to bottom, ${origins.flatMap((origin, index) => [`${matchColors[origin]} ${(index * 100) / origins.length}%`, `${matchColors[origin]} ${((index + 1) * 100) / origins.length}%`]).join(", ")})`
+      : undefined;
+    parts.push(
+      <mark
+        key={start}
+        className={colors ? "profile-highlight-text" : "filter-highlight-text"}
+        data-highlight-origins={origins.length ? origins.join(" ") : undefined}
+        style={{
+          color: colors?.foreground ?? "inherit",
+          backgroundColor: colors?.background ?? "transparent",
+          backgroundImage: gradient,
+        }}
+      >
+        {text.slice(start, end)}
+      </mark>,
+    );
   }
-  parts.push(text.slice(cursor));
   return <>{parts}</>;
 });
 
@@ -211,6 +239,7 @@ export function JsonTree({
   onDeserialize,
   deserializedPaths,
   decodedLabels,
+  autoExpandMatches = false,
 }: {
   value: JsonValue;
   highlight: string;
@@ -222,8 +251,33 @@ export function JsonTree({
   onDeserialize?: (path: string, encoding?: FieldDecoding) => void;
   deserializedPaths?: ReadonlySet<string>;
   decodedLabels?: ReadonlyMap<string, string>;
+  autoExpandMatches?: boolean;
 }) {
+  const match = useContext(EventHighlightContext);
+  const matchPaths = match?.paths ?? {};
+  const pathKey = JSON.stringify(matchPaths);
   const [expanded, setExpanded] = useState(() => new Set([""]));
+  useEffect(() => {
+    if (!autoExpandMatches) return;
+    const ancestors = new Set<string>();
+    for (const path of Object.keys(matchPaths)) {
+      if (!path.startsWith("/")) continue;
+      ancestors.add("");
+      for (
+        let slash = path.indexOf("/", 1);
+        slash >= 0 && ancestors.size < 800;
+        slash = path.indexOf("/", slash + 1)
+      )
+        ancestors.add(path.slice(0, slash));
+      if (ancestors.size >= 800) break;
+    }
+    if (!ancestors.size) return;
+    setExpanded((previous) =>
+      [...ancestors].every((path) => previous.has(path))
+        ? previous
+        : new Set([...previous, ...ancestors]),
+    );
+  }, [autoExpandMatches, pathKey, match?.matchKey]);
   const model = useMemo(
     () => inspectionRows(value, expanded, { maxNodes: compact ? 120 : 800 }),
     [value, expanded, compact],
@@ -270,6 +324,21 @@ export function JsonTree({
         const container = row.value !== null && typeof row.value === "object";
         const array = Array.isArray(row.value);
         const type = row.value === null ? "null" : typeof row.value;
+        const hiddenMatches =
+          container && !row.expanded
+            ? ([
+                ...new Set(
+                  Object.entries(matchPaths)
+                    .filter(
+                      ([path]) =>
+                        row.path === "" ||
+                        path === row.path ||
+                        path.startsWith(row.path + "/"),
+                    )
+                    .flatMap(([, origins]) => origins),
+                ),
+              ] as MatchOrigin[])
+            : [];
         const valueText = container
           ? `${array ? "[" : "{"}${row.childCount} ${array ? "items" : "keys"}${array ? "]" : "}"}`
           : typeof row.value === "string"
@@ -327,8 +396,21 @@ export function JsonTree({
               <HighlightText
                 text={row.label === "$" ? "$" : JSON.stringify(row.label)}
                 needle={highlight}
+                path={`@key${row.path}`}
               />
             </span>
+            {hiddenMatches.length > 0 && (
+              <span
+                className="json-match-indicator"
+                role="img"
+                aria-label={`Contains ${hiddenMatches.join(" and ")} match`}
+                data-tooltip={`Highlighted match in folded content: ${hiddenMatches.join(", ")}`}
+              >
+                {hiddenMatches.map((origin) => (
+                  <i key={origin} data-match-origin={origin} />
+                ))}
+              </span>
+            )}
             {deserializedPaths?.has(row.path) && (
               <span
                 className="json-deserialized-label"
@@ -375,6 +457,7 @@ export function MessageContent({
   onDeserialize,
   deserializedPaths,
   decodedLabels,
+  autoExpandMatches = false,
 }: {
   row: EventRow;
   highlight: string;
@@ -386,6 +469,7 @@ export function MessageContent({
   onDeserialize?: (path: string, encoding?: FieldDecoding) => void;
   deserializedPaths?: ReadonlySet<string>;
   decodedLabels?: ReadonlyMap<string, string>;
+  autoExpandMatches?: boolean;
 }) {
   if (row.parsed.kind === "json")
     return (
@@ -400,6 +484,7 @@ export function MessageContent({
         onDeserialize={onDeserialize}
         deserializedPaths={deserializedPaths}
         decodedLabels={decodedLabels}
+        autoExpandMatches={autoExpandMatches}
       />
     );
   const displayLimit = compact ? 6000 : 200_000;

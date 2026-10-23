@@ -152,8 +152,8 @@ async function runQuery() {
   ).toBeAttached();
 }
 
-test("server and local filtering export real selected data and inspector opens source context", async () => {
-  await page.getByLabel("CloudWatch filter pattern").fill('"Payment"');
+test("server and local filtering export real selected data and row menu opens source context", async () => {
+  await page.getByLabel("CloudWatch filter pattern").fill("Payment");
   await runQuery();
   const serverResults = JSON.parse(
     await exportLoaded("json", "server"),
@@ -209,9 +209,14 @@ test("server and local filtering export real selected data and inspector opens s
     exact: true,
   });
   await expect(inspector).toContainText(selected[0].logStream);
-  await inspector
-    .getByRole("button", { name: "Surrounding context", exact: true })
-    .click();
+  await page.locator(".virtual-event").first().click({ button: "right" });
+  await page
+    .getByRole("menuitem", { name: "Surrounding context", exact: true })
+    .hover();
+  await page
+    .getByRole("menuitem", { name: "Before and after", exact: true })
+    .hover();
+  await page.getByRole("menuitem", { name: "5 minutes", exact: true }).click();
   // Context is a new tab, so its inspector follows the default-open behavior.
   await expect(inspector).toBeVisible();
   await expect(page.getByRole("tab", { name: /^Context ·/ })).toHaveAttribute(

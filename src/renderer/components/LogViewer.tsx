@@ -102,9 +102,12 @@ import { useScrollPagination } from "../useScrollPagination";
 import { useMessageExpansion } from "../useMessageExpansion";
 import { HighlightText, MessageContent } from "./EventMessage";
 import { EventInspector } from "./EventInspector";
+import { InspectorMessage } from "./InspectorMessage";
 import { ExpandedEventDetails } from "./ExpandedEventDetails";
 import { EventOverview } from "./EventOverview";
 import { EventLoadingIndicator } from "./EventLoadingIndicator";
+import { SurroundingContextMenu } from "./SurroundingContextMenu";
+import type { ContextRange } from "../../shared/context-range";
 import { LevelFilter } from "./LevelFilter";
 import { formatTimestamp } from "../timestamp-format";
 import { useEventSelection } from "../useEventSelection";
@@ -121,6 +124,7 @@ interface EventRow {
 }
 export interface LogViewerProps {
   events: LogEvent[];
+  serverFilter?: string;
   sourceContext?: {
     sources: LogSource[];
     connections: Connection[];
@@ -129,12 +133,13 @@ export interface LogViewerProps {
   view: ViewConfig;
   onViewChange: (view: ViewConfig) => void;
   preferences: Preferences;
-  onContext?: (event: LogEvent) => void;
+  onContext?: (event: LogEvent, range: ContextRange) => void;
   pagination?: { scope: string; pageKey?: string; onLoad(): void };
   loading?: boolean;
   liveState?: LiveState;
   followLive?: boolean;
   onPauseLiveFollow?(): void;
+  onResumeLiveFollow?(): void;
   renderStatus?: (eventsShown: number) => React.ReactNode;
 }
 const levelColor: Record<LogLevel, string> = {
@@ -215,6 +220,7 @@ interface ColumnResizeSession {
 
 export function LogViewer({
   events,
+  serverFilter = "",
   sourceContext,
   view,
   onViewChange,
@@ -225,9 +231,11 @@ export function LogViewer({
   liveState,
   followLive = false,
   onPauseLiveFollow,
+  onResumeLiveFollow,
   renderStatus,
 }: LogViewerProps) {
   const highlightText = view.highlightText ?? preferences.highlightText;
+  const [contextEventId, setContextEventId] = useState<string | undefined>();
   const scrollRef = useRef<HTMLDivElement>(null);
   useScrollPagination(scrollRef, {
     scope: pagination?.scope ?? "no-query",
@@ -588,6 +596,8 @@ export function LogViewer({
     [allRows],
   );
   const highlighting = useEventHighlights(overviewEvents, preferences, config, {
+    needle: highlightText,
+    filters: { server: serverFilter, local: localSearch },
     priority: [
       ...visibleItems.map((item) => rows[item.index]!.original.event.id),
       ...(selection.opened && inspected ? [inspected.event.id] : []),
@@ -711,7 +721,9 @@ export function LogViewer({
           aria-label="Local filter loaded events"
           placeholder="Search loaded events…"
           size="xs"
-          leftSection={<IconSearch size={14} />}
+          leftSection={
+            <IconSearch size={14} color="var(--mantine-color-green-6)" />
+          }
           value={view.localSearch}
           onChange={(event) =>
             onViewChange({ ...view, localSearch: event.currentTarget.value })
@@ -734,7 +746,9 @@ export function LogViewer({
           aria-label="Highlight text in loaded events"
           placeholder="Highlight text…"
           size="xs"
-          leftSection={<IconHighlight size={14} />}
+          leftSection={
+            <IconHighlight size={14} color="var(--mantine-color-yellow-6)" />
+          }
           value={highlightText}
           maxLength={200}
           onChange={(event) =>
@@ -765,7 +779,7 @@ export function LogViewer({
           }
         />
         <Tooltip
-          label="Local filter only. Use @/request/id=42 for a property, @/request/id for existence, and quotes for spaces. JSON Pointer preserves dotted keys and arrays."
+          label="Local matches are green; server matches are blue; manual highlights are yellow. Use @/request/id=42 for a property, @/request/id for existence, and quotes for spaces. JSON Pointer preserves dotted keys and arrays."
           multiline
           w={320}
         >
@@ -998,7 +1012,33 @@ export function LogViewer({
             }
             tabIndex={0}
             onWheel={(event) => {
-              if (event.deltaY) onPauseLiveFollow?.();
+              if (event.deltaY < 0) onPauseLiveFollow?.();
+              else if (event.deltaY > 0) {
+                const scroll = event.currentTarget;
+                let nested = event.target as HTMLElement | null;
+                let consumesScroll = false;
+                while (nested && nested !== scroll) {
+                  if (
+                    nested.scrollHeight -
+                      nested.scrollTop -
+                      nested.clientHeight >
+                      2 &&
+                    /^(auto|scroll)$/.test(getComputedStyle(nested).overflowY)
+                  ) {
+                    consumesScroll = true;
+                    break;
+                  }
+                  nested = nested.parentElement;
+                }
+                if (
+                  !consumesScroll &&
+                  scroll.scrollHeight -
+                    scroll.scrollTop -
+                    scroll.clientHeight <=
+                    2
+                )
+                  onResumeLiveFollow?.();
+              }
             }}
             onTouchMove={() => onPauseLiveFollow?.()}
             onPointerDown={(event) => {
@@ -1021,6 +1061,7 @@ export function LogViewer({
               if (!id) return;
               event.preventDefault();
               if (id && !selectedEventIds.has(id)) selection.select(id);
+              setContextEventId(id);
               setColumnMenu(null);
               setContextPosition({ x: event.clientX, y: event.clientY });
             }}
@@ -1642,15 +1683,6 @@ export function LogViewer({
                                       >
                                         Copy raw
                                       </Button>
-                                      {onContext && (
-                                        <Button
-                                          size="compact-xs"
-                                          variant="subtle"
-                                          onClick={() => onContext(row.event)}
-                                        >
-                                          Surrounding context
-                                        </Button>
-                                      )}
                                     </Group>
                                   }
                                 >
@@ -1726,6 +1758,19 @@ export function LogViewer({
               >
                 Copy selected records
               </Menu.Item>
+              {onContext &&
+                (() => {
+                  const event = allRows.find(
+                    (row) => row.event.id === contextEventId,
+                  )?.event;
+                  return event ? (
+                    <SurroundingContextMenu
+                      event={event}
+                      onContext={onContext}
+                      onSelect={() => setContextPosition(null)}
+                    />
+                  ) : null;
+                })()}
             </Menu.Dropdown>
           </Menu>
           <ColumnHeaderMenu
@@ -1765,72 +1810,116 @@ export function LogViewer({
           >
             {inspected && (
               <>
-                <Group justify="space-between" mb="sm">
-                  <Group gap="xs">
-                    <Badge color={levelColor[inspected.level]} variant="light">
-                      {inspected.level}
-                    </Badge>
-                    <Text size="xs" ff="monospace">
-                      {timeLabel(
-                        inspected.event.timestamp,
-                        preferences.timezone,
-                      )}
-                    </Text>
-                  </Group>
-                  <Group gap={4}>
-                    <ActionIcon
-                      aria-label="Previous event"
-                      variant="default"
-                      disabled={inspectedIndex <= 0}
-                      onClick={() => navigateTo(inspectedIndex - 1)}
-                    >
-                      <IconArrowLeft size={15} />
-                    </ActionIcon>
-                    <Text size="xs" c="dimmed">
-                      {inspectedIndex >= 0
-                        ? `${inspectedIndex + 1} of ${rows.length}`
-                        : "Outside local filter"}
-                    </Text>
-                    <ActionIcon
-                      aria-label="Next event"
-                      variant="default"
-                      disabled={
-                        inspectedIndex < 0 || inspectedIndex >= rows.length - 1
+                <section className="inspector-information">
+                  <div className="inspector-information-toolbar">
+                    <button
+                      type="button"
+                      className="inspector-information-toggle"
+                      aria-label={
+                        view.inspectorInfoCollapsed
+                          ? "Expand event information"
+                          : "Collapse event information"
                       }
-                      onClick={() => navigateTo(inspectedIndex + 1)}
+                      aria-expanded={!view.inspectorInfoCollapsed}
+                      aria-controls={`${viewerId}-event-information`}
+                      onClick={() =>
+                        onViewChange({
+                          ...view,
+                          inspectorInfoCollapsed: !view.inspectorInfoCollapsed,
+                        })
+                      }
                     >
-                      <IconArrowRight size={15} />
-                    </ActionIcon>
-                  </Group>
-                </Group>
-                <div className="inspector-source">
-                  <div>
-                    <span>GROUP</span>
-                    <code>{inspected.event.logGroup}</code>
+                      {view.inspectorInfoCollapsed ? (
+                        <IconChevronRight size={13} />
+                      ) : (
+                        <IconChevronDown size={13} />
+                      )}
+                      Event information
+                    </button>
+                    <Group gap={4}>
+                      <ActionIcon
+                        aria-label="Previous event"
+                        variant="default"
+                        disabled={inspectedIndex <= 0}
+                        onClick={() => navigateTo(inspectedIndex - 1)}
+                      >
+                        <IconArrowLeft size={15} />
+                      </ActionIcon>
+                      <Text size="xs" c="dimmed">
+                        {inspectedIndex >= 0
+                          ? `${inspectedIndex + 1} of ${rows.length}`
+                          : "Outside local filter"}
+                      </Text>
+                      <ActionIcon
+                        aria-label="Next event"
+                        variant="default"
+                        disabled={
+                          inspectedIndex < 0 ||
+                          inspectedIndex >= rows.length - 1
+                        }
+                        onClick={() => navigateTo(inspectedIndex + 1)}
+                      >
+                        <IconArrowRight size={15} />
+                      </ActionIcon>
+                    </Group>
                   </div>
-                  <div>
-                    <span>STREAM</span>
-                    <code>
-                      {inspected.event.logStream || "Insights result"}
-                    </code>
-                  </div>
-                  <div>
-                    <span>EVENT</span>
-                    <code>{inspected.event.id}</code>
-                  </div>
-                  {inspected.event.ingestionTime !== undefined && (
-                    <div>
-                      <span>INGESTED</span>
-                      <code>
+                  <div
+                    className="inspector-information-details"
+                    id={`${viewerId}-event-information`}
+                    hidden={view.inspectorInfoCollapsed === true}
+                  >
+                    <Group gap="xs">
+                      <Badge
+                        color={levelColor[inspected.level]}
+                        variant="light"
+                      >
+                        {inspected.level}
+                      </Badge>
+                      <Text size="xs" ff="monospace">
                         {timeLabel(
-                          inspected.event.ingestionTime,
+                          inspected.event.timestamp,
                           preferences.timezone,
                         )}
-                      </code>
+                      </Text>
+                    </Group>
+                    <div className="inspector-source">
+                      <div>
+                        <span>GROUP</span>
+                        <code data-tooltip={inspected.event.logGroup}>
+                          {inspected.event.logGroup}
+                        </code>
+                      </div>
+                      <div>
+                        <span>STREAM</span>
+                        <code
+                          data-tooltip={
+                            inspected.event.logStream || "Insights result"
+                          }
+                        >
+                          {inspected.event.logStream || "Insights result"}
+                        </code>
+                      </div>
+                      <div>
+                        <span>EVENT</span>
+                        <code data-tooltip={inspected.event.id}>
+                          {inspected.event.id}
+                        </code>
+                      </div>
+                      {inspected.event.ingestionTime !== undefined && (
+                        <div>
+                          <span>INGESTED</span>
+                          <code>
+                            {timeLabel(
+                              inspected.event.ingestionTime,
+                              preferences.timezone,
+                            )}
+                          </code>
+                        </div>
+                      )}
                     </div>
-                  )}
-                </div>
-                <Group justify="space-between" my="sm">
+                  </div>
+                </section>
+                <Group className="inspector-tools" justify="space-between">
                   <SegmentedControl
                     size="xs"
                     value={inspectorMode}
@@ -1841,18 +1930,6 @@ export function LogViewer({
                     ]}
                   />
                   <Group gap="xs">
-                    {onContext && (
-                      <Button
-                        size="xs"
-                        variant="default"
-                        onClick={() => {
-                          selection.close();
-                          onContext(inspected.event);
-                        }}
-                      >
-                        Surrounding context
-                      </Button>
-                    )}
                     <Menu withinPortal>
                       <Menu.Target>
                         <Button
@@ -1896,8 +1973,9 @@ export function LogViewer({
                     </Menu>
                   </Group>
                 </Group>
-                <div
-                  className={`inspector-content ${view.wrap ? "inspector-wrap" : ""}`}
+                <InspectorMessage
+                  eventId={inspected.event.id}
+                  className={view.wrap ? "inspector-wrap" : undefined}
                   style={{ fontSize: preferences.fontSize }}
                 >
                   {inspectorMode === "structured" ? (
@@ -1917,6 +1995,9 @@ export function LogViewer({
                       deserializedPaths={deserialized.pathsFor(inspected.event)}
                       onAddFilter={addFilter}
                       controls
+                      autoExpandMatches={
+                        preferences.autoExpandFilterMatches !== false
+                      }
                       key={inspected.event.id}
                     />
                   ) : (
@@ -1925,7 +2006,7 @@ export function LogViewer({
                       highlight={highlightText}
                     />
                   )}
-                </div>
+                </InspectorMessage>
                 {notice && (
                   <Text size="xs" c="cyan" mt="xs" role="status">
                     {notice}

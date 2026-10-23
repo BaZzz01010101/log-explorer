@@ -310,7 +310,7 @@ describe("workspace state", () => {
     expect(tooFrequent.preferences.refreshSeconds).toBe(5);
   });
 
-  it("shows event time and nested request details in a new view", () => {
+  it("shows universal event columns in a new view", () => {
     const event = {
       id: "test",
       timestamp: 1700000000000,
@@ -327,7 +327,7 @@ describe("workspace state", () => {
     const columns = createWorkspace().tabs[0].view.columns;
     expect(
       columns.map((column) => eventColumnValue(event, parsed, column.path)),
-    ).toEqual([1700000000000, "error", "orders-api", event.message, "req-42"]);
+    ).toEqual([1700000000000, "error", event.message]);
     expect(columns[0].pinned).toBe(true);
   });
 

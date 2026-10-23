@@ -10,6 +10,11 @@ vi.mock("@mantine/core", async () => {
     createElement("button", { ...props, role: "menuitem" }, children);
   return {
     Menu: Object.assign(component, {
+      Sub: Object.assign(component, {
+        Target: component,
+        Item: item,
+        Dropdown: component,
+      }),
       Target: component,
       ContextMenu: component,
       Dropdown: component,

@@ -69,6 +69,11 @@ import "./components/workspace-tabs.css";
 import "./app.css";
 import { TextTooltips } from "./components/AppTooltip";
 import { shortcutMatches } from "./shortcuts";
+import {
+  contextRangeLabel,
+  contextTimeRange,
+  type ContextRange,
+} from "../shared/context-range";
 
 const theme = createTheme({
   primaryColor: "indigo",
@@ -91,13 +96,6 @@ const theme = createTheme({
   },
   components: { Button: Button.extend({ defaultProps: { fw: 500 } }) },
 });
-
-function localDate(time: number): string {
-  const date = new Date(time);
-  return new Date(time - date.getTimezoneOffset() * 60000)
-    .toISOString()
-    .slice(0, 16);
-}
 
 export default function App() {
   useKeyboardModality();
@@ -247,12 +245,13 @@ export default function App() {
             name: text.slice(0, 60),
             kind: tab.kind,
             text,
+            filterMode: tab.filterMode,
           },
         });
     }
     void run(tab, live, more);
   };
-  const context = (tab: LogTab, event: LogEvent) => {
+  const context = (tab: LogTab, event: LogEvent, range: ContextRange) => {
     if (!event.logGroup || !event.logStream) {
       notifications.show({
         color: "yellow",
@@ -261,16 +260,28 @@ export default function App() {
       });
       return;
     }
+    let bounds: ReturnType<typeof contextTimeRange>;
+    try {
+      bounds = contextTimeRange(event.timestamp, range);
+    } catch (error) {
+      notifications.show({ color: "yellow", message: String(error) });
+      return;
+    }
+    const connectionId = event.connectionId ?? tab.connectionId;
     dispatch({
       type: "tab/open",
       tab: {
-        ...createTab(event.connectionId ?? tab.connectionId, [
-          { logGroup: event.logGroup, logStreams: [event.logStream] },
+        ...createTab(connectionId, [
+          {
+            connectionId,
+            logGroup: event.logGroup,
+            logStreams: [event.logStream],
+          },
         ]),
-        title: `Context · ${event.logStream.split("/").at(-1)}`,
+        title: `Context · ${contextRangeLabel(range)} · ${event.logStream.split("/").at(-1)}`,
         timePreset: "custom",
-        customStart: localDate(Math.max(0, event.timestamp - 120000)),
-        customEnd: localDate(event.timestamp + 120000),
+        customStart: new Date(bounds.startTime).toISOString(),
+        customEnd: new Date(bounds.endTime).toISOString(),
       },
     });
   };
@@ -739,7 +750,9 @@ export default function App() {
                                   },
                                 })
                               }
-                              onContext={(event) => context(tab, event)}
+                              onContext={(event, range) =>
+                                context(tab, event, range)
+                              }
                             />
                           ) : (
                             <div className="empty-pane">

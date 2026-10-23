@@ -2,7 +2,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActionIcon,
   Alert,
-  Badge,
   Button,
   Group,
   Modal,
@@ -15,7 +14,6 @@ import { Tooltip } from "./AppTooltip";
 import { Menu } from "./AppMenu";
 import {
   IconBookmark,
-  IconArrowDown,
   IconPlayerPlay,
   IconPlayerStop,
   IconRadio,
@@ -28,12 +26,14 @@ import type {
   Workspace,
 } from "../../shared/contracts";
 import type { TabRuntime } from "../useLogJobs";
+import type { ContextRange } from "../../shared/context-range";
 import { LogViewer } from "./LogViewer";
 import { requestMatchesTab } from "../query-state";
 import { TimeRangePicker } from "./TimeRangePicker";
 import { EventStatus } from "./EventStatus";
 import { logTabLabel } from "../workspace-entries";
 import { SourceBadges } from "./SourceBadges";
+import { ServerFilterInput } from "./ServerFilterInput";
 import "./sources.css";
 
 interface Props {
@@ -46,7 +46,7 @@ interface Props {
   onCancel(): void;
   onSaveQuery(query: SavedQuery): void;
   onSavePreset(name: string): void;
-  onContext(event: LogEvent): void;
+  onContext(event: LogEvent, range: ContextRange): void;
 }
 
 export function QueryPane({
@@ -74,7 +74,7 @@ export function QueryPane({
     sourceConnections.every((connection) => connection.mode === "offline");
   const [saveKind, setSaveKind] = useState<"query" | "preset" | null>(null);
   const [saveName, setSaveName] = useState("");
-  const [followLive, setFollowLive] = useState(true);
+  const [followLive, setFollowLive] = useState(false);
   const sourceContext = useMemo(
     () => ({
       sources: runtime?.request?.sources ?? tab.sources,
@@ -86,8 +86,8 @@ export function QueryPane({
     [runtime?.request, tab.sources, tab.connectionId, workspace.connections],
   );
   useEffect(() => {
-    if (runtime?.live) setFollowLive(true);
-  }, [runtime?.live, runtime?.request?.requestId]);
+    if (!runtime?.live) setFollowLive(false);
+  }, [runtime?.live]);
   const liveUnavailable =
     tab.kind === "insights"
       ? "Live Tail is available for Events, not Insights queries."
@@ -178,7 +178,10 @@ export function QueryPane({
                       onPatch({
                         kind: query.kind,
                         ...(query.kind === "events"
-                          ? { filterPattern: query.text }
+                          ? {
+                              filterPattern: query.text,
+                              filterMode: query.filterMode ?? "pattern",
+                            }
                           : { query: query.text }),
                       })
                     }
@@ -225,7 +228,10 @@ export function QueryPane({
                           onPatch({
                             kind: query.kind,
                             ...(query.kind === "events"
-                              ? { filterPattern: query.text }
+                              ? {
+                                  filterPattern: query.text,
+                                  filterMode: query.filterMode ?? "pattern",
+                                }
                               : { query: query.text }),
                           })
                         }
@@ -244,21 +250,12 @@ export function QueryPane({
         >
           <div className="query-input">
             {tab.kind === "events" ? (
-              <TextInput
-                aria-label="CloudWatch filter pattern"
-                classNames={{ input: "code-input" }}
+              <ServerFilterInput
                 value={tab.filterPattern}
-                onChange={(e) =>
-                  onPatch({ filterPattern: e.currentTarget.value })
-                }
-                placeholder='{ $.level = "error" } or "request failed"'
-                size="xs"
-                leftSection={
-                  <Badge size="xs" variant="light" color="blue">
-                    SERVER
-                  </Badge>
-                }
-                leftSectionWidth={61}
+                mode={tab.filterMode}
+                onChange={(filterPattern) => onPatch({ filterPattern })}
+                onModeChange={(filterMode) => onPatch({ filterMode })}
+                onRun={() => onRun()}
               />
             ) : (
               <Textarea
@@ -320,53 +317,7 @@ export function QueryPane({
             )}
           </Group>
         </div>
-        <Group justify="space-between" gap="xs" mt={7}>
-          <Text size="xs" c="dimmed">
-            {tab.kind === "insights"
-              ? "Logs Insights • server-side analysis • AWS scan charges apply"
-              : "CloudWatch pattern • server-side selection"}
-            {offlineSources ? " • limited fixture interpreter" : ""}
-          </Text>
-          <Text size="xs" c="dimmed">
-            {workspace.preferences.shortcuts.runQuery ?? "Control+Enter"}
-          </Text>
-        </Group>
       </div>
-      {runtime?.live && (
-        <div
-          className="live-session-controls"
-          role="region"
-          aria-label="Live Tail controls"
-        >
-          <IconRadio size={15} />
-          <Text size="xs">
-            {runtime.liveState === "streaming"
-              ? offlineSources
-                ? "Simulated Live · new events arrive automatically."
-                : "Live Tail · new events arrive automatically."
-              : "Connecting to Live Tail…"}
-          </Text>
-          <Text size="xs" c="dimmed">
-            <span>Time range buttons stop Live and load history.</span>{" "}
-            <span data-tooltip="Live pauses while this tab is inactive. Returning reconnects for new events and keeps the loaded history. Visible split panes stay live.">
-              Inactive tabs pause Live.
-            </span>
-          </Text>
-          <Tooltip label="Follow the newest event. Scrolling or selecting an event pauses following; the stream keeps receiving events.">
-            <Button
-              size="compact-xs"
-              variant={followLive ? "light" : "default"}
-              color="teal"
-              aria-label="Follow Live"
-              aria-pressed={followLive}
-              leftSection={<IconArrowDown size={13} />}
-              onClick={() => setFollowLive((value) => !value)}
-            >
-              {followLive ? "Following Live" : "Follow Live"}
-            </Button>
-          </Tooltip>
-        </div>
-      )}
       {stale && (
         <Alert color="yellow" p="xs" mx="xs">
           Query settings changed. Displayed events belong to the previous
@@ -415,6 +366,11 @@ export function QueryPane({
       <div className="viewer-container">
         <LogViewer
           events={runtime?.events ?? []}
+          serverFilter={
+            runtime?.request?.kind === "events"
+              ? runtime.request.filterPattern
+              : ""
+          }
           sourceContext={sourceContext}
           view={tab.view}
           onViewChange={patchView}
@@ -426,11 +382,16 @@ export function QueryPane({
           liveState={runtime?.liveState}
           followLive={Boolean(runtime?.live && followLive)}
           onPauseLiveFollow={() => setFollowLive(false)}
+          onResumeLiveFollow={() => {
+            if (runtime?.live) setFollowLive(true);
+          }}
           renderStatus={(eventsShown) => (
             <EventStatus
               runtime={runtime}
               eventsShown={eventsShown}
               eventsLoaded={runtime?.events.length ?? 0}
+              followLive={followLive}
+              onToggleFollow={() => setFollowLive((value) => !value)}
             />
           )}
           pagination={{
@@ -467,6 +428,7 @@ export function QueryPane({
                 name: saveName.trim(),
                 kind: tab.kind,
                 text: currentText,
+                filterMode: tab.filterMode,
               });
             else onSavePreset(saveName.trim());
             setSaveKind(null);

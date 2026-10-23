@@ -264,7 +264,7 @@ for (const panels of [3, 4]) {
 
 test("panels detach at the selected tab position and the remaining single pane dissolves", async () => {
   const state = await launch(2, 2);
-  const filter = paneFor("orders-api").getByRole("textbox", {
+  const filter = paneFor("orders-api").getByRole("combobox", {
     name: "CloudWatch filter pattern",
     exact: true,
   });
@@ -295,7 +295,7 @@ test("panels detach at the selected tab position and the remaining single pane d
   await expect(page.locator(".workspace-pane")).toHaveCount(1);
   await expect(page.locator(".pane-title")).toHaveText("orders-api");
   await expect(
-    page.getByRole("textbox", {
+    page.getByRole("combobox", {
       name: "CloudWatch filter pattern",
       exact: true,
     }),
@@ -322,7 +322,7 @@ test("panels detach at the selected tab position and the remaining single pane d
   await expect(page.locator(".pane-layout-divider")).toHaveCount(0);
   await page.getByRole("tab", { name: "orders-api", exact: true }).click();
   await expect(
-    page.getByRole("textbox", {
+    page.getByRole("combobox", {
       name: "CloudWatch filter pattern",
       exact: true,
     }),

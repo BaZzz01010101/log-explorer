@@ -37,6 +37,14 @@ test.beforeEach(async () => {
   directory = await mkdtemp(join(tmpdir(), "aws-log-explorer-column-order-"));
   errors = [];
   const state = createWorkspace();
+  // Explicit user-defined schema; new views intentionally have universal columns only.
+  state.tabs[0].view.columns = [
+    { path: "@timestamp", width: 194, pinned: true },
+    { path: "@level", width: 84 },
+    { path: "/service/name", width: 151 },
+    { path: "@message", width: 420 },
+    { path: "/request/id", width: 220 },
+  ];
   state.tabs[0].view.columns.splice(2, 0, {
     path: "@logGroup",
     width: 240,

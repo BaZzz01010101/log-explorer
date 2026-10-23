@@ -145,6 +145,7 @@ const DEFAULT_PREFERENCES: Preferences = {
   refreshSeconds: 0,
   timezone: "local",
   highlightText: "",
+  autoExpandFilterMatches: true,
   shortcuts: {
     closeTab: "Control+W",
     reopenTab: "Control+Shift+T",
@@ -215,12 +216,11 @@ function defaultView(): ViewConfig {
     columns: [
       { path: "@timestamp", width: 194, pinned: true },
       { path: "@level", width: 84 },
-      { path: "/service/name", width: 150 },
-      { path: "@message", width: 420 },
-      { path: "/request/id", width: 220 },
+      { path: "@message", width: 560 },
     ],
     localSearch: "",
     highlightText: "",
+    inspectorInfoCollapsed: false,
     level: "",
     levels: [...LOG_LEVELS],
     wrap: false,
@@ -255,13 +255,37 @@ function parseView(value: unknown): ViewConfig {
         .filter((column) => column.path)
     : defaults.columns;
   const sort = record(raw.sort);
+  const stock = [
+    ["@timestamp", 194],
+    ["@level", 84],
+    ["/service/name", 150],
+    ["@message", 420],
+    ["/request/id", 220],
+  ];
+  const legacyStock =
+    columns.length === stock.length &&
+    columns.every(
+      (column, index) =>
+        column.path === stock[index][0] &&
+        column.width === stock[index][1] &&
+        !column.hidden &&
+        (!column.format || column.format === "auto") &&
+        Boolean(column.pinned) === (index === 0),
+    );
   return {
     mode: raw.mode === "table" || raw.mode === "json" ? raw.mode : "hybrid",
-    columns: columns.filter(
-      (column, index) =>
-        columns.findIndex((other) => other.path === column.path) === index,
+    columns: (legacyStock
+      ? columns.filter(
+          (column) =>
+            column.path !== "/service/name" && column.path !== "/request/id",
+        )
+      : columns
+    ).filter(
+      (column, index, current) =>
+        current.findIndex((other) => other.path === column.path) === index,
     ),
     localSearch: string(raw.localSearch),
+    inspectorInfoCollapsed: raw.inspectorInfoCollapsed === true,
     ...(typeof raw.highlightText === "string"
       ? { highlightText: string(raw.highlightText, "", 200) }
       : {}),
@@ -338,6 +362,7 @@ function baseTab(
     title: tabTitle(sources),
     kind: "events",
     filterPattern: "",
+    filterMode: "auto",
     query:
       "fields @timestamp, @message, @logStream\n| sort @timestamp desc\n| limit 1000",
     timePreset: "clear",
@@ -373,6 +398,10 @@ function parseTab(
       : {}),
     kind: raw.kind === "insights" ? "insights" : "events",
     filterPattern: string(raw.filterPattern),
+    filterMode:
+      raw.filterMode === "plain" || raw.filterMode === "auto"
+        ? raw.filterMode
+        : "pattern",
     query: string(raw.query, defaults.query, 10000),
     timePreset:
       ["clear", "custom"].includes(String(raw.timePreset)) ||
@@ -443,6 +472,7 @@ function parsePreferences(value: unknown): Preferences {
         : Math.round(number(raw.refreshSeconds, 30, 5, 3600)),
     timezone: raw.timezone === "utc" ? "utc" : "local",
     highlightText: string(raw.highlightText, "", 1000),
+    autoExpandFilterMatches: raw.autoExpandFilterMatches !== false,
     highlightProfiles: parseHighlightProfiles(raw.highlightProfiles),
     profileVisibility: Object.fromEntries(
       Object.entries(record(raw.profileVisibility))
@@ -491,6 +521,11 @@ function parseQuery(value: unknown): SavedQuery | null {
     name: string(raw.name, "Saved query", 256),
     kind: raw.kind === "insights" ? "insights" : "events",
     text: string(raw.text, "", 10000),
+    ...(raw.filterMode === "plain" ||
+    raw.filterMode === "auto" ||
+    raw.filterMode === "pattern"
+      ? { filterMode: raw.filterMode }
+      : {}),
   };
 }
 function parsePreset(value: unknown): VisualizationPreset | null {
@@ -1211,6 +1246,7 @@ function legacyWorkspaceReducer(
             ) ?? tab;
           const edited =
             parsed.filterPattern !== tab.filterPattern ||
+            parsed.filterMode !== tab.filterMode ||
             parsed.query !== tab.query ||
             parsed.kind !== tab.kind ||
             parsed.connectionId !== tab.connectionId ||
@@ -1526,7 +1562,9 @@ function legacyWorkspaceReducer(
               ...state.history.filter(
                 (item) =>
                   item.id !== query.id &&
-                  (item.kind !== query.kind || item.text !== query.text),
+                  (item.kind !== query.kind ||
+                    item.text !== query.text ||
+                    item.filterMode !== query.filterMode),
               ),
             ].slice(0, 100),
           }

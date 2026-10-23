@@ -1,0 +1,114 @@
+.server-filter-control {
+  position: relative;
+  min-width: 0;
+}
+.server-filter-text {
+  position: relative;
+}
+.server-filter-mode {
+  width: 104px;
+  border: 0;
+  padding: 2px 5px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+  color: var(--mantine-color-blue-light-color);
+  background: var(--mantine-color-blue-light);
+}
+.server-filter-mode:hover {
+  background: var(--mantine-color-blue-light-hover);
+}
+.server-filter-paint {
+  position: absolute;
+  z-index: 1;
+  top: 1px;
+  bottom: 1px;
+  left: 112px;
+  right: 10px;
+  margin: 0;
+  display: block;
+  overflow: hidden;
+  pointer-events: none;
+  white-space: pre;
+  font:
+    11px/26px Cascadia Code,
+    Consolas,
+    monospace;
+  color: var(--mantine-color-text);
+}
+.server-filter-pattern input {
+  color: transparent;
+  caret-color: var(--mantine-color-text);
+}
+.server-filter-pattern input::placeholder {
+  color: var(--mantine-color-placeholder);
+}
+.server-filter-pattern input::selection {
+  background: var(--mantine-primary-color-light);
+}
+.aws-token-property {
+  color: var(--mantine-color-blue-7);
+}
+.aws-token-string {
+  color: var(--mantine-color-teal-7);
+}
+.aws-token-regex {
+  color: var(--mantine-color-grape-7);
+}
+.aws-token-keyword,
+.aws-token-operator {
+  color: var(--mantine-color-orange-8);
+}
+[data-mantine-color-scheme="dark"] .aws-token-property {
+  color: var(--mantine-color-blue-4);
+}
+[data-mantine-color-scheme="dark"] .aws-token-string {
+  color: var(--mantine-color-teal-3);
+}
+[data-mantine-color-scheme="dark"] .aws-token-regex {
+  color: var(--mantine-color-grape-3);
+}
+[data-mantine-color-scheme="dark"] .aws-token-keyword,
+[data-mantine-color-scheme="dark"] .aws-token-operator {
+  color: var(--mantine-color-orange-4);
+}
+.server-filter-suggestions {
+  position: absolute;
+  z-index: 250;
+  top: calc(100% + 3px);
+  left: 112px;
+  min-width: 280px;
+  max-width: calc(100% - 112px);
+  border: 1px solid var(--mantine-color-default-border);
+  border-radius: 4px;
+  background: var(--mantine-color-body);
+  box-shadow: var(--mantine-shadow-sm);
+  padding: 3px;
+}
+.server-filter-suggestions button {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  gap: 12px;
+  border: 0;
+  border-radius: 3px;
+  padding: 5px 7px;
+  text-align: left;
+  color: var(--mantine-color-text);
+  background: transparent;
+  cursor: pointer;
+  font-size: 11px;
+}
+.server-filter-suggestions button[aria-selected="true"],
+.server-filter-suggestions button:hover {
+  background: var(--mantine-primary-color-light);
+}
+.server-filter-suggestions span {
+  flex: 1;
+  color: var(--mantine-color-dimmed);
+}
+.server-filter-suggestions small {
+  color: var(--mantine-color-dimmed);
+}

@@ -682,11 +682,11 @@ test("drag motion pointer follows horizontally before any neighbor reaches its h
   await expect(preview).toHaveCount(0);
 });
 
-test("drag motion uses exact neighbor halfway crossings without oscillation and clamps both ends", async () => {
+test("drag motion uses 80 percent neighbor crossings without oscillation and clamps both ends", async () => {
   const source = tab("tab-orders");
   const initial = (await source.boundingBox())!;
   const neighbor = (await tab("tab-payments").boundingBox())!;
-  const threshold = neighbor.width / 2;
+  const threshold = neighbor.width * 0.8;
   await startDrag(source.getByRole("tab"));
   const preview = page.locator('[data-tab-row-preview="tab-orders"]');
   const move = async (shift: number) => {
@@ -713,7 +713,7 @@ test("drag motion uses exact neighbor halfway crossings without oscillation and 
       "tab-media",
     );
   }
-  await move(threshold - 1);
+  await move(neighbor.width * 0.2 - 1);
   await expect
     .poll(async () =>
       Math.abs((await tab("tab-payments").boundingBox())!.x - neighbor.x),

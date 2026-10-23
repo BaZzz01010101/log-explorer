@@ -82,7 +82,7 @@ it("distinguishes Live connection, an active stream and a stopped session", () =
         12,
       ),
     ),
-  ).toBe("Live stream · connected12 loaded2 new in this session");
+  ).toBe("Live stream · connected12 loaded2 new in this sessionFollow Live");
   expect(
     text(
       status({

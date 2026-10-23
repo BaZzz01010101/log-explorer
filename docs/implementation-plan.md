@@ -194,3 +194,19 @@ Apply [the pointer-motion changes](tab-pointer-motion-0.1.30.md): immediate hori
 ## Overlap-based drag activation (0.1.31)
 
 Fix [delayed activation during tab dragging](tab-hover-overlap-0.1.31.md) using a 20% overlap threshold relative to the smaller tab and the shifted reorder rectangles. Revalidate at activation time and preserve dwell cancellation, original-view restoration, split drops and pane/resource behavior. Reproduce both reported cases against 0.1.30 and verify the integrated package in hidden offline windows.
+
+## Compact Live controls and AWS filters (0.1.32)
+
+Implement [the current checklist](filter-follow-0.1.32.md): 80% tab movement, compact Live/Follow footer, directional wheel following disabled by default, removal of query help noise, Enter submission, persistent Plain Text/AWS Patterns/Auto modes, fixed mode badge and themed syntax/keyword completion. Preserve existing Live, tab, split and query state mechanisms and verify hidden/offline before packaging.
+
+## Deterministic filter highlights and context ranges (0.1.33)
+
+Implement [the behavior and verification checklist](filter-highlights-0.1.33.md): distinct AWS/local/manual match colors; expression-aware, field-specific evidence; folded-branch dots and default-on automatic path expansion; nested row context ranges preserving source identity; universal default columns and conservative legacy migration. Reuse worker deadlines, highlight layers, workspace persistence and application menus. Verify hidden/offline, package and hash-check before the normal-folder handoff.
+
+## Inspector message map and scrolling (0.1.34)
+
+- [x] Remove AWS/local filter evidence from the main list overview while retaining quick-text/profile and severity lanes. Keep worker-based matching in event text and the inspector.
+- [x] Remove row-hiding preparation placeholders; loaded event text remains available while highlights update.
+- [x] Add a compact, clickable inspector message map based on rendered match positions, including folded markers and quick highlights; recalculate after folding, wrapping, decoding, resizing and theme changes.
+- [x] Make message content the only vertical scroll owner in the inspector. Keep navigation and controls fixed, with a collapsible metadata section whose state is validated and persisted per view.
+- [x] Reproduce on the prior build, run focused and full unit checks, validate hidden/offline native regressions, inspect captures, and package a hash-checked update without disturbing the normal app.

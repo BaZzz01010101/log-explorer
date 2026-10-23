@@ -1,4 +1,6 @@
 .event-inspector {
+  container-name: event-inspector;
+  container-type: size;
   position: relative;
   display: flex;
   flex: 0 0 auto;
@@ -38,11 +40,80 @@
 }
 
 .event-inspector-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
   flex: 1 1 0;
   min-height: 0;
   min-width: 0;
-  overflow: auto;
-  padding: 12px;
+  overflow: hidden;
+  padding: 8px;
+}
+
+.inspector-information {
+  display: flex;
+  flex-direction: column;
+  flex: 0 1 auto;
+  min-height: 28px;
+  overflow: hidden;
+}
+.inspector-information-toolbar {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+}
+.inspector-information-toggle {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  min-height: 28px;
+  padding: 3px 4px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--mantine-color-dimmed);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+.inspector-information-toggle:hover {
+  background: var(--mantine-color-default-hover);
+  color: var(--mantine-color-text);
+}
+.inspector-information-details {
+  min-height: 0;
+  overflow: hidden;
+}
+.inspector-information-details > .inspector-source {
+  margin-top: 6px;
+}
+.inspector-information-details .inspector-source code {
+  display: -webkit-box;
+  min-width: 0;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+.inspector-tools {
+  flex: 0 0 auto;
+  gap: 6px;
+}
+
+@container event-inspector (max-height: 220px) {
+  .event-inspector-header {
+    min-height: 32px;
+    padding: 4px 8px;
+  }
+  .event-inspector-body {
+    gap: 3px;
+    padding: 3px;
+  }
+  .inspector-message-body {
+    padding: 0 8px;
+  }
 }
 
 .event-inspector-resizer {

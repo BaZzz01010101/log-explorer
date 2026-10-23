@@ -364,6 +364,47 @@ export function propertyFilterTerm(path: string, value: JsonValue): string {
   return `@${JSON.stringify(path)}=${JSON.stringify(value)}`;
 }
 
+export type LocalFilterTerm =
+  | { kind: "literal"; text: string }
+  | { kind: "property"; path: string; expected?: string };
+
+/** The local filter grammar is shared by filtering and match evidence. */
+export function parseLocalFilter(query: string): LocalFilterTerm[] | undefined {
+  const tokens = localFilterTokens(query);
+  if (!tokens) return undefined;
+  const terms: LocalFilterTerm[] = [];
+  for (const token of tokens) {
+    let path: string | undefined;
+    let expected: string | undefined;
+    if (token.startsWith('@"')) {
+      const quoted = quotedFilterText(token, 1);
+      if (!quoted || (quoted.value !== "" && !quoted.value.startsWith("/")))
+        return undefined;
+      path = quoted.value;
+      if (quoted.end < token.length) {
+        if (token[quoted.end] !== "=") return undefined;
+        expected = token.slice(quoted.end + 1);
+      }
+    } else if (token.startsWith("@/")) {
+      const equals = token.indexOf("=");
+      path = token.slice(1, equals < 0 ? undefined : equals);
+      if (equals !== -1) expected = token.slice(equals + 1);
+    }
+    if (path !== undefined) {
+      if (expected?.startsWith('"')) {
+        const quoted = quotedFilterText(expected, 0);
+        if (!quoted || quoted.end !== expected.length) return undefined;
+        expected = quoted.value;
+      }
+      terms.push({ kind: "property", path, expected });
+    } else {
+      // Preserve the legacy literal behavior, including its quote handling.
+      terms.push({ kind: "literal", text: token.replace(/^"|"$/g, "") });
+    }
+  }
+  return terms;
+}
+
 /** @/json/pointer=value and @"/quoted pointer"="value" match properties; other terms search message and source. */
 export function matchesLocalFilter(
   event: LogEvent,
@@ -377,45 +418,22 @@ export function matchesLocalFilter(
       : level && level !== "all" && inferLevel(parsed, event.message) !== level
   )
     return false;
-  const tokens = localFilterTokens(query);
-  if (!tokens) return false;
+  const terms = parseLocalFilter(query);
+  if (!terms) return false;
   const searchable =
     `${event.message}\n${event.logGroup}\n${event.logStream}`.toLowerCase();
-  for (const token of tokens) {
-    let path: string | undefined;
-    let expected: string | undefined;
-    if (token.startsWith('@"')) {
-      const quoted = quotedFilterText(token, 1);
-      if (!quoted || (quoted.value !== "" && !quoted.value.startsWith("/")))
-        return false;
-      path = quoted.value;
-      if (quoted.end < token.length) {
-        if (token[quoted.end] !== "=") return false;
-        expected = token.slice(quoted.end + 1);
-      }
-    } else if (token.startsWith("@/")) {
-      const equals = token.indexOf("=");
-      path = token.slice(1, equals < 0 ? undefined : equals);
-      if (equals !== -1) expected = token.slice(equals + 1);
-    }
-    if (path !== undefined) {
+  for (const term of terms) {
+    if (term.kind === "property") {
       if (parsed.kind !== "json") return false;
-      const value = getPointer(parsed.value, path);
+      const value = getPointer(parsed.value, term.path);
       if (value === undefined) return false;
-      if (expected !== undefined) {
-        if (expected.startsWith('"')) {
-          const quoted = quotedFilterText(expected, 0);
-          if (!quoted || quoted.end !== expected.length) return false;
-          expected = quoted.value;
-        }
-        if (
-          summarizeValue(value, MESSAGE_LIMIT).toLowerCase() !==
-          expected.toLowerCase()
-        )
-          return false;
-      }
-    } else if (!searchable.includes(token.replace(/^"|"$/g, "").toLowerCase()))
-      return false;
+      if (
+        term.expected !== undefined &&
+        summarizeValue(value, MESSAGE_LIMIT).toLowerCase() !==
+          term.expected.toLowerCase()
+      )
+        return false;
+    } else if (!searchable.includes(term.text.toLowerCase())) return false;
   }
   return true;
 }

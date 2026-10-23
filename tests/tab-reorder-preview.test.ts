@@ -207,9 +207,9 @@ it("follows the pickup point horizontally without snapping to the proposed slot"
   expect(result.translations[ids[2]].x).toBe(0);
 });
 
-it("moves the neighbor only after its midpoint and remains stable at the boundary", () => {
+it("moves the neighbor only after 80 percent and remains stable at the boundary", () => {
   const { workspace, ids } = measuredWorkspace();
-  for (const shift of [104.99, 105, 105.01, 150, 105.01, 105, 104.99]) {
+  for (const shift of [104.99, 105, 150, 167.99, 168, 168.01, 180]) {
     const result = tabReorderPreview(
       workspace,
       ids[1],
@@ -219,12 +219,12 @@ it("moves the neighbor only after its midpoint and remains stable at the boundar
         grabX: 30,
       },
     )!;
-    expect(result.translations[ids[2]].x).toBe(shift > 105 ? -130 : 0);
+    expect(result.translations[ids[2]].x).toBe(shift > 168 ? -130 : 0);
     expect(result.crossingSource!.rect.left).toBeCloseTo(310 + shift);
   }
 });
 
-it("keeps the existing gap at exactly 50 percent in either direction", () => {
+it("keeps the existing gap within the 20 to 80 percent hysteresis band", () => {
   for (const preferred of ["b", "c"]) {
     const result = pointerTabSlots(
       items,
@@ -250,7 +250,7 @@ it("handles narrow and wide dragged tabs with fractional boundaries and no stati
       { id: "b", width: 310.5, height: 40 },
     ];
     let preferred: string | null = "b";
-    for (const left of [155.24, 155.25, 155.26, 200, 155.26, 155.25, 155.24]) {
+    for (const left of [248.39, 248.4, 248.41, 290, 155, 62.1, 62.09]) {
       const point = { x: left + 17.5, y: 20 };
       const result: NonNullable<ReturnType<typeof pointerTabSlots>> =
         pointerTabSlots(
@@ -263,7 +263,7 @@ it("handles narrow and wide dragged tabs with fractional boundaries and no stati
           preferred,
         )!;
       expect(result.beforeTabId).toBe(
-        left < 155.25 ? "b" : left > 155.25 ? null : preferred,
+        left > 248.4 ? null : left < 62.1 ? "b" : preferred,
       );
       preferred = result.beforeTabId;
       for (let tick = 0; tick < 10; tick++)

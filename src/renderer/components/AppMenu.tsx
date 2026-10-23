@@ -119,10 +119,28 @@ function Dropdown(props: ComponentProps<typeof MantineMenu.Dropdown>) {
   const id = useContext(MenuId);
   return <MantineMenu.Dropdown {...props} data-app-menu-id={id} />;
 }
+function SubDropdown(props: ComponentProps<typeof MantineMenu.Sub.Dropdown>) {
+  const id = useContext(MenuId);
+  return <MantineMenu.Sub.Dropdown {...props} data-app-menu-id={id} />;
+}
+
+// Mantine submenus stay inside the parent dropdown. Share its ownership marker
+// so global outside-click dismissal treats the entire tree as one menu.
+const Sub = Object.assign(
+  (props: ComponentProps<typeof MantineMenu.Sub>) => (
+    <MantineMenu.Sub {...props} />
+  ),
+  {
+    Target: MantineMenu.Sub.Target,
+    Item: MantineMenu.Sub.Item,
+    Dropdown: SubDropdown,
+  },
+);
 export const Menu = Object.assign(AppMenu, {
   Target,
   ContextMenu,
   Dropdown,
+  Sub,
   Item: MantineMenu.Item,
   Label: MantineMenu.Label,
   Divider: MantineMenu.Divider,

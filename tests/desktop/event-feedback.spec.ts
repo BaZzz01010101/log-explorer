@@ -26,12 +26,13 @@ type MainProbe = typeof globalThis & {
   feedbackPending: Map<string, () => void>;
 };
 
-test.beforeEach(async () => {
+test.beforeEach(async ({}, info) => {
   await mkdir(temporaryRoot, { recursive: true });
   directory = await mkdtemp(join(temporaryRoot, "case-"));
   errors = [];
   app = undefined;
   const workspace = createWorkspace();
+  workspace.preferences.theme = info.title.includes("dark") ? "dark" : "light";
   workspace.sidebarVisible = false;
   workspace.preferences.timezone = "utc";
   workspace.tabs[0].timePreset = "clear";
@@ -218,6 +219,75 @@ async function assertBottomStatus() {
   );
   expect(positions.statusBottom).toBeLessThanOrEqual(positions.panelBottom + 1);
 }
+
+for (const theme of ["light", "dark"])
+  test(`${theme} AWS filter modes compile Enter queries, complete keywords and keep a stable badge`, async () => {
+    const input = page.getByRole("combobox", {
+      name: "CloudWatch filter pattern",
+      exact: true,
+    });
+    const mode = page.getByRole("button", { name: /^AWS filter mode:/ });
+    const initialWidth = (await mode.boundingBox())!.width;
+    const selectMode = async (name: string) => {
+      await mode.click();
+      await page.getByRole("menuitem", { name, exact: true }).click();
+    };
+    await selectMode("Plain Text");
+    await input.fill('"mediaId"');
+    await input.press("Enter");
+    await expect.poll(async () => (await requests()).length).toBe(1);
+    expect((await requests())[0].filterPattern).toBe(
+      JSON.stringify('"mediaId"'),
+    );
+    await expect(input).toHaveValue('"mediaId"');
+    await send(0, { state: "complete", events: [] }, true);
+    await selectMode("AWS Patterns");
+    await input.fill("{ $.missing N");
+    await expect(
+      page.getByRole("listbox", { name: "AWS pattern suggestions" }),
+    ).toBeVisible();
+    await input.press("Tab");
+    await expect(input).toHaveValue("{ $.missing NOT EXISTS ");
+    await input.press("End");
+    await page.keyboard.insertText("}");
+    await expect(page.locator(".aws-token-keyword")).toHaveText("NOT EXISTS");
+    await input.press("Enter");
+    await expect.poll(async () => (await requests()).length).toBe(2);
+    expect((await requests())[1].filterPattern).toBe(
+      "{ $.missing NOT EXISTS }",
+    );
+    await send(1, { state: "complete", events: [] }, true);
+    await selectMode("Auto");
+    await input.fill("ordinary text");
+    await expect(mode).toContainText("A:TXT");
+    await input.fill("{ $.message = %error|failed% && $.nil IS NULL }");
+    await expect(mode).toContainText("A:PAT");
+    expect((await mode.boundingBox())!.width).toBe(initialWidth);
+    await expect(page.locator(".server-filter-paint")).toHaveText(
+      await input.inputValue(),
+    );
+    const paint = await page
+      .locator(".server-filter-control")
+      .evaluate((element) => ({
+        input: getComputedStyle(element.querySelector("input")!).color,
+        colors: [...element.querySelectorAll(".server-filter-paint span")].map(
+          (token) => getComputedStyle(token).color,
+        ),
+      }));
+    await test.info().attach("filter-colors", {
+      body: JSON.stringify(paint),
+      contentType: "application/json",
+    });
+    expect(new Set(paint.colors).size).toBeGreaterThan(2);
+    expect(paint.input).toBe("rgba(0, 0, 0, 0)");
+    await capture(`aws-filter-${theme}.png`);
+    await input.fill("%error|failed%");
+    await input.press("Enter");
+    await expect.poll(async () => (await requests()).length).toBe(3);
+    expect((await requests())[2].filterPattern).toBe("%error|failed%");
+    await send(2, { state: "complete", events: [] }, true);
+    await assertBottomStatus();
+  });
 
 test("event viewer centers initial loading, loads continuation at the bottom and reports one count with accurate numeric timestamps", async () => {
   await page.getByTestId("run-query").click();

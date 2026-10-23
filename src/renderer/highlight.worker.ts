@@ -4,13 +4,14 @@ import type { ColumnConfig, LogEvent, Preferences } from "../shared/contracts";
 
 self.onmessage = (
   event: MessageEvent<{
-    events: LogEvent[];
+    events: (LogEvent & { messageComplete?: boolean })[];
     profiles: HighlightProfile[];
     theme: Preferences["theme"];
     columns: ColumnConfig[];
     timezone: Preferences["timezone"];
     overview?: boolean;
     needle?: string;
+    filters?: { server: string; local: string };
   }>,
 ) => {
   const {
@@ -21,6 +22,7 @@ self.onmessage = (
     timezone,
     overview,
     needle = "",
+    filters,
   } = event.data;
   self.postMessage({ ready: true });
   let batch: { id: string; result: EventHighlights }[] = [];
@@ -34,6 +36,8 @@ self.onmessage = (
       timezone,
       overview,
       needle,
+      filters,
+      item.messageComplete,
     );
     if (overview) {
       if (result.overview!.length) batch.push({ id: item.id, result });

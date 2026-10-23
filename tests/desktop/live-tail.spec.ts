@@ -159,6 +159,32 @@ for (const mode of ["Table", "Hybrid", "JSON"])
     await expect(status()).toHaveAttribute("data-live-state", "streaming");
     await expect.poll(received).toBeGreaterThan(0);
     await expect.poll(() => rows().count()).toBeGreaterThan(0);
+    // Keep one matching event while reception continues. Hidden mouse input
+    // acknowledgements can take a second, during which JSON cards would grow
+    // from an underfilled list into an overflowing list before the wheel fires.
+    const firstId = (await rows().first().getAttribute("data-event-id"))!;
+    const fixtureIndex = Number(firstId.split(":").at(-1));
+    await page
+      .getByRole("textbox", { name: "Local filter loaded events", exact: true })
+      .fill(new Date(fixtureIndex * 1000).toISOString());
+    await expect(rows()).toHaveCount(1);
+    const follow = status().getByRole("button", {
+      name: "Follow Live",
+      exact: true,
+    });
+    await expect(follow).toHaveAttribute("aria-pressed", "false");
+    const scroll = page.locator(".viewer-scroll"),
+      box = (await scroll.boundingBox())!;
+    expect(
+      await scroll.evaluate(
+        (element) => element.scrollHeight <= element.clientHeight + 1,
+      ),
+    ).toBe(true);
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.wheel(0, 100);
+    await expect(follow).toHaveAttribute("aria-pressed", "true");
+    await page.mouse.wheel(0, -100);
+    await expect(follow).toHaveAttribute("aria-pressed", "false");
     const requests = await app!.evaluate(
       () => (globalThis as any).__emptyHistoryRequests,
     );
@@ -210,10 +236,9 @@ test("light quiet connected Live waits without an endless loading spinner and ti
     page.getByRole("button", { name: "Stop Live", exact: true }),
   ).toBeVisible();
   await expect(
-    page.getByText("Time range buttons stop Live and load history.", {
-      exact: true,
-    }),
-  ).toBeVisible();
+    status().getByRole("button", { name: "Follow Live", exact: true }),
+  ).toHaveAttribute("aria-pressed", "false");
+  await expect(page.locator(".live-session-controls")).toHaveCount(0);
   await capture("live-waiting-light.png");
   await page
     .getByRole("button", { name: "Set last 5 minutes", exact: true })
@@ -244,6 +269,7 @@ test("Live preserves matching history, appends events automatically, and Stop re
     .toBeGreaterThanOrEqual(before);
   await expect(status()).toHaveAttribute("data-live-state", "streaming");
   await expect.poll(received).toBeGreaterThanOrEqual(2);
+  await page.getByRole("button", { name: "Follow Live", exact: true }).click();
   await expect(
     page.locator('.virtual-event[data-event-id^="fixture:live:"]').last(),
   ).toBeVisible();
@@ -344,10 +370,44 @@ test("inactive Live tabs cancel reception, resume history on activation and stay
   ).toHaveCount(0);
 });
 
+test("compact Live footer defaults to paused and wheel direction toggles Follow even without overflow", async () => {
+  await page
+    .getByRole("combobox", { name: "CloudWatch filter pattern", exact: true })
+    .fill("no-such-live-message");
+  await page.getByTestId("run-query").click();
+  await expect(status()).toHaveAttribute("data-query-state", "complete");
+  await page.getByRole("button", { name: "Live", exact: true }).click();
+  await expect(status()).toHaveAttribute("data-live-state", "streaming");
+  const follow = status().getByRole("button", {
+    name: "Follow Live",
+    exact: true,
+  });
+  await expect(follow).toHaveAttribute("aria-pressed", "false");
+  await expect(page.locator(".live-session-controls")).toHaveCount(0);
+  await expect(
+    page.getByText(/CloudWatch pattern.*server-side selection/),
+  ).toHaveCount(0);
+  const viewer = page.locator(".viewer-scroll"),
+    box = (await viewer.boundingBox())!;
+  expect(
+    await viewer.evaluate(
+      (element) => element.scrollHeight <= element.clientHeight + 1,
+    ),
+  ).toBe(true);
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.wheel(0, 100);
+  await expect(follow).toHaveAttribute("aria-pressed", "true");
+  await capture("compact-live-footer.png");
+  await page.mouse.wheel(0, -100);
+  await expect(follow).toHaveAttribute("aria-pressed", "false");
+});
+
 test("reading older rows pauses following while events continue and Follow Live returns to the newest event", async () => {
   await page.getByRole("button", { name: "Live", exact: true }).click();
   await expect.poll(received).toBeGreaterThanOrEqual(1);
   const follow = page.getByRole("button", { name: "Follow Live", exact: true });
+  await expect(follow).toHaveAttribute("aria-pressed", "false");
+  await follow.click();
   await expect(follow).toHaveAttribute("aria-pressed", "true");
   const viewer = page.locator(".viewer-scroll"),
     box = (await viewer.boundingBox())!;

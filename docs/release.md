@@ -1,6 +1,32 @@
 # Building and releasing
 
-## Latest local verification build (0.1.31)
+## Latest local verification build (0.1.34)
+
+AWS/local filter marks now belong to the inspector message overview; the main event map retains severity, quick text and profile matches. The inspector map measures rendered fragments and folded indicators, updates with layout/theme changes, and navigates on both axes. Rows remain visible during highlight updates. The message owns inspector scrolling, controls stay fixed, and metadata folding persists per view. Compact spacing and a shrinkable message basis preserve usable content in short split panes. See [behavior and verification](inspector-scroll-0.1.34.md).
+
+All 817 unit/integration tests and all 33 targeted hidden packaged desktop cases passed against the same final artifact, without failures, skips or flaky cases. Eight intended failures reproduced on 0.1.33. Checks cover both themes, map source separation, proportional wrapped/raw positions, folded paths, both-axis navigation, resize and short-pane geometry, per-tab save/reload, delayed worker presentation, existing inspector/overview behavior, fast scrolling, and Live text selection. Independent review findings and native sizing issues were corrected. Typecheck, formatting, whitespace, build, packaging and artifact hashes passed. Real AWS interoperability and installer installation were not exercised.
+
+Artifacts: `release/0.1.34/artifact-manifest.json`; executable: `release/0.1.34/win-unpacked/AWS Log Explorer.exe`. Evidence: `.tmp/final-verification-0.1.34.json`, `.tmp/unit-0.1.34-final-verified.json` and `.tmp/desktop-verification-0.1.34-final.json`. The standard-folder handoff is gated on these checks and hashes, waits for natural app exit and retains a backup. Three hidden exact-standard-path checks follow promotion. State: `.tmp/standard-build-update-0.1.34-release.json`. No normal app was stopped or launched, no installer was installed, and changes remain uncommitted.
+
+The standard-folder update completed after natural app exit. Three additional checks passed against `release/win-unpacked/AWS Log Explorer.exe`; executable, ASAR and installer hashes match the versioned build. Report: `.tmp/test-results-standard-0.1.34/report.json`.
+
+## Earlier local verification build (0.1.33)
+
+AWS/local/manual matches use distinct colors with expression-aware, field-specific evidence. Folded inspector branches show match dots, and automatic path expansion defaults on in Preferences. Event context ranges now live in a nested row menu with previous/next/both directions and six durations. New tables omit the two fixture-specific JSON columns; conservative migration preserves custom column layouts. See [behavior and limits](filter-highlights-0.1.33.md).
+
+All 801 unit/integration tests passed. All 47 distinct targeted packaged desktop scenarios passed: 39 broad and five context scenarios on the corrected candidate, followed by all 17 affected highlight/cache/Live/source scenarios on the final cache-accounting build. The aggregate retains both manifests and each raw report. Native coverage includes both themes, all event layouts, scoped complex matches, folded markers, auto-expansion, executed versus draft queries, unsupported syntax, all 18 context windows with exact source identity, nested menu dismissal, custom columns, scrolling/overview, profile persistence and Live text selection. Independent review findings and a native tooltip obstruction were corrected. Typecheck, formatting, whitespace, build, packaging and artifact hashes passed. Tests remained hidden and offline; real AWS interoperability and installer installation were not exercised.
+
+Final artifacts: `release/0.1.33-final2/artifact-manifest.json`; executable: `release/0.1.33-final2/win-unpacked/AWS Log Explorer.exe`. Evidence: `.tmp/final-verification-0.1.33.json`, `.tmp/unit-0.1.33-final3.json` and `.tmp/desktop-verification-0.1.33-final.json`. The hash-checked standard-folder handoff waits for natural app exit and keeps a backup; three hidden exact-standard-path checks follow promotion. State: `.tmp/standard-build-update-0.1.33-release2.json`. The earlier candidate handoff was retired before promotion. No normal app was stopped or launched, no installer was installed, and changes remain uncommitted.
+
+## Earlier local verification build (0.1.32)
+
+Neighbors now shift at 80% with a stable reversal band, retaining 20% overlap-based delayed activation. Live state and Follow share the event footer; the banner and query hint line are removed. Follow starts disabled, enables on downward wheel gestures at the bottom even for empty or short lists, and pauses on upward gestures. Nested scrollable content consumes its own wheel motion. Events filters run with Enter and provide persistent Plain Text, AWS Patterns and Auto modes. The fixed AWS badge shows the effective mode; AWS syntax has themed colors and accessible keyboard/mouse keyword completion. See [the implementation and evidence](filter-follow-0.1.32.md).
+
+All 653 unit/integration tests passed. All 52 distinct targeted hidden native scenarios passed across two builds: 35 unchanged tab/pane/split scenarios in the broad run, plus all 17 Live/filter scenarios rerun against the corrected package after fixing JSON nested-scroll handling and updating one history test for Follow's new default. Raw candidate failures and both artifact manifests are preserved in the explicit aggregate. Checks cover both themes, request compilation, completion, pagination, all event modes, empty/short/overflowing Follow, inactive Live, text selection during arrivals, Stop, pins, animation, wrapping, splits and natural close. Typecheck, formatting, whitespace, production build, NSIS packaging and hashes passed. Independent review findings were corrected. This is targeted desktop coverage; real AWS interoperability, keyboard tab-drag animation and all display scaling combinations were not separately exercised.
+
+Corrected artifacts: `release/0.1.32-final/artifact-manifest.json`; executable: `release/0.1.32-final/win-unpacked/AWS Log Explorer.exe`. Evidence: `.tmp/final-verification-0.1.32.json`, `.tmp/unit-0.1.32-final2.json`, `.tmp/desktop-verification-0.1.32-final.json` and its two raw reports. The hash-checked standard-folder handoff waits for natural app exit and keeps the previous folder. Three hidden exact-standard-path checks run after promotion. State: `.tmp/standard-build-update-0.1.32-release.json`. No normal app was stopped or launched, no installer was installed, and changes remain uncommitted.
+
+## Earlier local verification build (0.1.31)
 
 Delayed activation during regular tab reordering uses at least 20% visible overlap of the smaller tab and the final shifted neighbor rectangles. The 450ms timer revalidates its target before selection, and clears when overlap is lost or dragging ends. Unequal-width tabs can activate before the halfway reorder threshold without requiring the cursor to enter the target. Pane-header and Explorer activation retain their existing mechanisms. See [the investigation](tab-hover-overlap-0.1.31.md).
 
@@ -236,6 +262,6 @@ For packaged verification, launch `AWS Log Explorer.exe --offline-verification`.
 
 Workspace configuration lives in Electron's per-user application-data directory as `workspace.json`, with a previous-file backup. Log payloads are kept in memory and exported only through an explicit local save dialog. Back up configuration before distributing an incompatible workspace migration. Preserve the original file and surface recovery warnings when loading fails.
 
-The current implementation is version `0.1.22`. The release configuration and offline tests provide a starting point for distribution; they do not establish a signed, security-audited or commercially validated production release.
+The current implementation is version `0.1.34`. The release configuration and offline tests provide a starting point for distribution; they do not establish a signed, security-audited or commercially validated production release.
 
 The standard launch folder was updated to 0.1.11 after natural app exit, with a retained backup and matching executable/ASAR/installer hashes. Two additional hidden checks passed against the exact standard path: `.tmp/test-results-standard-0.1.11/report.json`.

@@ -93,6 +93,33 @@ async function mount() {
     renderer = create(<Harness value={workspace} />);
   });
 }
+
+it("compiles plain text quotes and backslashes for history and Live without changing the draft", async () => {
+  const tab = workspace.tabs[0]!;
+  Object.assign(tab, {
+    filterMode: "plain",
+    filterPattern: '"mediaId" \\ path',
+  });
+  await mount();
+  expect(requests.at(-1)?.filterPattern).toBe(
+    JSON.stringify(tab.filterPattern),
+  );
+  await act(async () => jobs.run(tab, true));
+  expect(liveRequests.at(-1)?.filterPattern).toBe(
+    JSON.stringify(tab.filterPattern),
+  );
+  expect(tab.filterPattern).toBe('"mediaId" \\ path');
+});
+
+it("keeps AWS patterns raw and auto-detects ordinary text versus JSON filters", async () => {
+  const tab = workspace.tabs[0]!;
+  Object.assign(tab, { filterMode: "auto", filterPattern: "request failed" });
+  await mount();
+  expect(requests.at(-1)?.filterPattern).toBe('"request failed"');
+  Object.assign(tab, { filterPattern: '{ $.level = "ERROR" }' });
+  await act(async () => jobs.run(tab));
+  expect(requests.at(-1)?.filterPattern).toBe(tab.filterPattern);
+});
 async function replaceWorkspace(value: Workspace) {
   workspace = value;
   await act(async () => {
@@ -1185,7 +1212,7 @@ describe("automatic query mode updates", () => {
     expect(requests).toHaveLength(4);
     expect(requests[3]).toMatchObject({
       kind: "events",
-      filterPattern: "events-only",
+      filterPattern: '"events-only"',
       query: "",
     });
     await replaceWorkspace({ ...workspace, tabs: [...workspace.tabs] });
@@ -1252,7 +1279,7 @@ describe("automatic query mode updates", () => {
     expect(requests).toHaveLength(3);
     expect(requests[2]).toMatchObject({
       kind: "events",
-      filterPattern: "latest",
+      filterPattern: '"latest"',
     });
     expect(cancellations).toContain(live.requestId);
     expect(jobs.runtimes[workspace.tabs[0]!.id]!.live).toBe(false);

@@ -78,6 +78,7 @@ export interface ColumnConfig {
 }
 export interface ViewConfig {
   highlightText?: string;
+  inspectorInfoCollapsed?: boolean;
   mode: ViewMode;
   columns: ColumnConfig[];
   localSearch: string;
@@ -97,6 +98,7 @@ export interface LogTab {
   groupId?: string;
   kind: "events" | "insights";
   filterPattern: string;
+  filterMode?: "plain" | "pattern" | "auto";
   query: string;
   timePreset: string;
   customStart?: string;
@@ -138,6 +140,7 @@ export interface SavedQuery {
   name: string;
   kind: "events" | "insights";
   text: string;
+  filterMode?: "plain" | "pattern" | "auto";
 }
 export interface Favorite {
   connectionId: string;
@@ -172,6 +175,7 @@ export interface Preferences {
   refreshSeconds: number;
   timezone: "local" | "utc";
   highlightText: string;
+  autoExpandFilterMatches?: boolean;
   shortcuts: Record<string, string>;
 }
 export interface Workspace {

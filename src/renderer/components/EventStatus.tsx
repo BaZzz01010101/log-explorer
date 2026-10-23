@@ -1,13 +1,22 @@
 import type { TabRuntime } from "../useLogJobs";
+import { IconArrowDown, IconRadio } from "@tabler/icons-react";
 import "./event-feedback.css";
 
 interface Props {
   runtime?: TabRuntime;
   eventsShown: number;
   eventsLoaded: number;
+  followLive?: boolean;
+  onToggleFollow?(): void;
 }
 
-export function EventStatus({ runtime, eventsShown, eventsLoaded }: Props) {
+export function EventStatus({
+  runtime,
+  eventsShown,
+  eventsLoaded,
+  followLive,
+  onToggleFollow,
+}: Props) {
   const state = runtime?.state ?? "idle";
   const label =
     state === "error"
@@ -41,7 +50,19 @@ export function EventStatus({ runtime, eventsShown, eventsLoaded }: Props) {
       aria-live="polite"
     >
       <div className="event-status-items">
-        {label && <span>{label}</span>}
+        {label && (
+          <span
+            className={runtime?.live ? "event-live-state" : undefined}
+            data-tooltip={
+              runtime?.live
+                ? "Live receives new events automatically. Inactive tabs pause Live; time range changes load history."
+                : undefined
+            }
+          >
+            {runtime?.live && <IconRadio size={12} />}
+            {label}
+          </span>
+        )}
         <span>
           {eventsShown !== eventsLoaded &&
             `${eventsShown.toLocaleString()} shown / `}
@@ -64,6 +85,19 @@ export function EventStatus({ runtime, eventsShown, eventsLoaded }: Props) {
           <span>{(runtime.stats.elapsedMs / 1000).toFixed(1)}s</span>
         )}
       </div>
+      {runtime?.live && (
+        <button
+          type="button"
+          className="event-follow-live"
+          aria-label="Follow Live"
+          aria-pressed={Boolean(followLive)}
+          onClick={onToggleFollow}
+          data-tooltip="Scroll down while at the bottom to follow new events. Scroll up or select text to pause following. Reception continues."
+        >
+          <IconArrowDown size={12} />
+          {followLive ? "Following Live" : "Follow Live"}
+        </button>
+      )}
     </div>
   );
 }

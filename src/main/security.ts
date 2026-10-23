@@ -43,6 +43,7 @@ export const querySchema = z
   .refine((v) => v.endTime > v.startTime, "End time must be after start time");
 const viewSchema = z.object({
   highlightText: z.string().max(200).optional(),
+  inspectorInfoCollapsed: z.boolean().optional(),
   mode: z.enum(["hybrid", "table", "json"]),
   columns: z
     .array(
@@ -79,6 +80,7 @@ const tabSchema = z.object({
   preview: z.boolean().optional(),
   kind: z.enum(["events", "insights"]),
   filterPattern: text,
+  filterMode: z.enum(["plain", "pattern", "auto"]).optional(),
   query: text,
   timePreset: z.string().max(40),
   customStart: z.string().max(100).optional(),
@@ -95,6 +97,7 @@ const savedQuery = z.object({
   name: z.string().max(256),
   kind: z.enum(["events", "insights"]),
   text,
+  filterMode: z.enum(["plain", "pattern", "auto"]).optional(),
 });
 // Validate a finite node budget before recursively sanitizing the layout.
 function boundedPaneLayoutSchema(): z.ZodType<PaneLayout> {
@@ -247,6 +250,7 @@ export const workspaceSchema = z
       tabBarLayout: z.enum(["scroll", "wrap"]).optional(),
       pinnedTabsSeparateRow: z.boolean().optional(),
       highlightText: z.string().max(1000),
+      autoExpandFilterMatches: z.boolean().optional(),
       highlightProfiles: highlightProfilesSchema.optional(),
       shortcuts: z.record(z.string().max(60), z.string().max(80)),
     }),

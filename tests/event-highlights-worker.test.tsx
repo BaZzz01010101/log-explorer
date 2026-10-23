@@ -54,6 +54,8 @@ function Probe({
   priority,
   message = event.message,
   theme = "dark",
+  filters,
+  needle,
 }: {
   enabled?: boolean;
   overview?: boolean;
@@ -62,6 +64,8 @@ function Probe({
   priority?: string[];
   message?: string;
   theme?: "light" | "dark";
+  filters?: { server: string; local: string };
+  needle?: string;
 }) {
   result = useEventHighlights(
     Array.from({ length: count }, (_, index) => ({
@@ -75,11 +79,7 @@ function Probe({
       theme,
     },
     [],
-    overview
-      ? { overview: true, needle: "aaa" }
-      : priority
-        ? { priority }
-        : undefined,
+    { overview, needle: needle ?? (overview ? "aaa" : ""), priority, filters },
   );
   return null;
 }
@@ -96,6 +96,39 @@ beforeEach(() => {
 });
 
 const emptyResult = () => ({ row: {}, text: {} });
+it("runs filter-only sessions, sends executed queries and rejects stale configuration results", async () => {
+  const filters = { server: '"aaa"', local: "aa" };
+  await act(async () => {
+    renderer = create(<Probe enabled={false} filters={filters} />);
+  });
+  expect(result.active).toBe(true);
+  const old = workers[0];
+  expect(old.postMessage.mock.calls[0][0].filters).toEqual(filters);
+  await act(async () =>
+    renderer.update(
+      <Probe enabled={false} filters={{ ...filters, local: "other" }} />,
+    ),
+  );
+  expect(old.terminate).toHaveBeenCalledOnce();
+  await finishBatch(old, 0);
+  expect(result.results.size).toBe(0);
+  await finishBatch(workers[1], 0);
+  expect(result.results.has("one")).toBe(true);
+});
+it("preserves source completeness when bounding worker messages", async () => {
+  await act(async () => {
+    renderer = create(
+      <Probe
+        enabled={false}
+        filters={{ server: "%foo$%", local: "" }}
+        message={"x".repeat(200001)}
+      />,
+    );
+  });
+  const input = workers[0].postMessage.mock.calls[0][0].events[0];
+  expect(input.message.length).toBe(200000);
+  expect(input.messageComplete).toBe(false);
+});
 async function finishBatch(
   worker: FakeWorker,
   index: number,
@@ -156,6 +189,20 @@ it("stops large text-result prefetch before its cache grows with the full event 
   await finishBatch(worker, completed, largeResult);
   expect(result.results.has("999")).toBe(true);
   expect(workers).toHaveLength(1);
+});
+
+it("includes match revision metadata in the result cache memory bound", async () => {
+  await act(async () => {
+    renderer = create(<Probe count={1000} priority={["one"]} />);
+  });
+  const worker = workers[0];
+  const largeResult = { row: {}, text: {}, matchKey: "x".repeat(30000) };
+  let completed = 0;
+  while (completed < worker.postMessage.mock.calls.length && completed < 10) {
+    await finishBatch(worker, completed++, largeResult);
+  }
+  expect(completed).toBeLessThan(10);
+  expect(result.results.size).toBeLessThan(1000);
 });
 
 it("invalidates changed content immediately and ignores the previous in-flight result", async () => {

@@ -411,9 +411,14 @@ test("source-strip drops cancel with Escape and query another region", async () 
   await expect(page.locator(".source-badge")).toHaveCount(1);
   await expect(page.locator(".query-status")).toContainText("540 loaded");
   await expect(page.locator(".pane-heading")).toContainText("us-east-1");
+  await page.locator(".virtual-event").first().click({ button: "right" });
   await page
-    .getByRole("button", { name: "Surrounding context", exact: true })
-    .click();
+    .getByRole("menuitem", { name: "Surrounding context", exact: true })
+    .hover();
+  await page
+    .getByRole("menuitem", { name: "Before and after", exact: true })
+    .hover();
+  await page.getByRole("menuitem", { name: "1 minute", exact: true }).click();
   await expect(page.getByRole("tab", { name: /^Context ·/ })).toBeVisible();
   await expect(page.locator(".pane-heading")).toContainText("us-east-1");
   await expect(
