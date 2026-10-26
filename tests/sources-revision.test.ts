@@ -44,7 +44,7 @@ it("refreshes automatic titles for multiple streams while preserving a manual na
     tabId,
     patch: { sources },
   });
-  expect(workspace.tabs[0].title).toBe("Mixed Sources (2)");
+  expect(workspace.tabs[0].title).toBe("Mixed Sources");
   expect(restoreWorkspace(workspace).tabs[0].sources).toEqual(sources);
   workspace = workspaceReducer(workspace, {
     type: "tab/rename",

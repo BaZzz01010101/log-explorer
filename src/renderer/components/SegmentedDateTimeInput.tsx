@@ -1,5 +1,6 @@
 import { TextInput } from "@mantine/core";
 import { useEffect, useLayoutEffect, useRef } from "react";
+import { IconChevronDown, IconChevronUp } from "@tabler/icons-react";
 import { stepDateTimeSegment } from "../time-range";
 
 interface Props {
@@ -71,6 +72,34 @@ export function SegmentedDateTimeInput({
       value={value}
       error={error}
       inputMode="numeric"
+      rightSectionWidth={kind === "duration" ? 24 : undefined}
+      rightSectionPointerEvents={kind === "duration" ? "auto" : undefined}
+      rightSection={
+        kind === "duration" ? (
+          <div className="duration-step-controls">
+            {([1, -1] as const).map((delta) => (
+              <button
+                key={delta}
+                type="button"
+                aria-label={`${delta > 0 ? "Increase" : "Decrease"} ${label.toLowerCase()}`}
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => {
+                  const element = input.current;
+                  if (!element) return;
+                  element.focus();
+                  step(element, delta);
+                }}
+              >
+                {delta > 0 ? (
+                  <IconChevronUp size={12} />
+                ) : (
+                  <IconChevronDown size={12} />
+                )}
+              </button>
+            ))}
+          </div>
+        ) : undefined
+      }
       maxLength={kind === "date" ? 10 : kind === "time" ? 8 : 4}
       placeholder={
         kind === "date"

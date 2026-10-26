@@ -203,8 +203,8 @@ test("single click selects a row while double click docks an inspector that foll
   await expect(secondRow).toHaveAttribute("data-selected", "true");
   await page.keyboard.press("Enter");
   await expect(inspector()).toHaveAttribute("data-event-id", secondId);
-  await inspector()
-    .getByRole("button", { name: "Hide inspector", exact: true })
+  await page
+    .getByRole("button", { name: "Hide event inspector", exact: true })
     .click();
   await expect(inspector()).toHaveCount(0);
   await expect(viewer()).toBeFocused();
@@ -248,8 +248,8 @@ test("single click selects a row while double click docks an inspector that foll
   await expect(inspector()).toHaveCount(0);
   await viewer().press("Enter");
   await expect(inspector()).toHaveAttribute("data-event-id", homeId);
-  await inspector()
-    .getByRole("button", { name: "Hide inspector", exact: true })
+  await page
+    .getByRole("button", { name: "Hide event inspector", exact: true })
     .click();
   await expect(inspector()).toHaveCount(0);
   await expect(viewer()).toBeFocused();
@@ -265,6 +265,35 @@ test("structured inspector folds nested objects and adds columns and local filte
     window.explorer.onUpdate((update) => probe.inspectorUpdates.push(update));
   });
   await openInspector();
+  await expect(
+    inspector().locator(".event-inspector-header button"),
+  ).toHaveCount(0);
+  const actions = inspector().locator(".inspector-tools");
+  const wrap = actions.getByRole("button", {
+    name: "Toggle inspector line wrap",
+    exact: true,
+  });
+  const copy = actions.getByRole("button", { name: "Copy", exact: true });
+  await expect(wrap).toBeVisible();
+  await expect(copy).toHaveText("");
+  await expect(copy).toHaveAttribute(
+    "data-tooltip",
+    "Copy event message or metadata",
+  );
+  await copy.press("Enter");
+  await expect(
+    page.getByRole("menuitem", { name: "Raw message", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("menuitem", { name: "Formatted JSON message", exact: true }),
+  ).toBeEnabled();
+  await expect(
+    page.getByRole("menuitem", { name: "Event with metadata", exact: true }),
+  ).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(
+    inspector().locator(".inspector-content .structured-actions"),
+  ).toHaveCount(0);
   const expandRequest = inspector().getByRole("button", {
     name: "Expand /request",
     exact: true,
@@ -281,9 +310,22 @@ test("structured inspector folds nested objects and adds columns and local filte
   await expect(requestId).toHaveCount(0);
   await expandRequest.click();
   await expect(requestId).toBeVisible();
-  await inspector()
-    .getByRole("button", { name: "Fold structured object", exact: true })
-    .click();
+  const unfoldAll = inspector().getByRole("button", {
+    name: "Unfold structured object",
+    exact: true,
+  });
+  if (await unfoldAll.count()) await unfoldAll.press("Enter");
+  const fold = actions.getByRole("button", {
+    name: "Fold structured object",
+    exact: true,
+  });
+  await expect(fold).toBeVisible();
+  const copyBox = (await copy.boundingBox())!;
+  const wrapBox = (await wrap.boundingBox())!;
+  const foldBox = (await fold.boundingBox())!;
+  expect(Math.abs(copyBox.y - wrapBox.y)).toBeLessThanOrEqual(1);
+  expect(Math.abs(copyBox.y - foldBox.y)).toBeLessThanOrEqual(1);
+  await fold.press("Space");
   await expect(
     inspector().getByRole("button", { name: "Expand root", exact: true }),
   ).toBeVisible();
@@ -391,8 +433,8 @@ test("docked inspector supports pointer and keyboard resizing without covering t
   expect(viewerBox.x + viewerBox.width).toBeLessThanOrEqual(panelBox.x + 1);
   await expect(inspector()).toBeInViewport();
   await captureInspectorEvidence("inspector-resized.png");
-  await inspector()
-    .getByRole("button", { name: "Hide inspector", exact: true })
+  await page
+    .getByRole("button", { name: "Hide event inspector", exact: true })
     .click();
   await expect(divider).toHaveCount(0);
   await expect(viewer()).toBeFocused();

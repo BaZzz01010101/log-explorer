@@ -118,6 +118,154 @@ it("does not render an empty separate pinned row", async () => {
     renderer!.root.findAllByProps({ "data-tab-strip": "regular" }),
   ).toHaveLength(1);
 });
+
+it("lists only closed views newest first and restores the selected history entry", async () => {
+  const workspace = createWorkspace();
+  const older = createTab("offline", [{ logGroup: "closed-older" }]);
+  const newer = createTab("offline", [{ logGroup: "closed-newer" }]);
+  workspace.closedTabs = [newer, older];
+  await act(async () => {
+    renderer = create(
+      <WorkspaceTabs workspace={workspace} dispatch={dispatch} />,
+    );
+  });
+  const history = renderer!.root.findAll(
+    (node) =>
+      typeof node.type === "string" &&
+      node.props["data-closed-tab-id"] !== undefined,
+  );
+  expect(history.map((node) => node.props["data-closed-tab-id"])).toEqual([
+    newer.id,
+    older.id,
+  ]);
+  const dropdown = renderer!.root
+    .findAllByProps({ className: "closed-tab-history" })
+    .find((node) => typeof node.type === "string")!;
+  expect(
+    dropdown.findAll((node) => node.children.includes(workspace.tabs[0].title)),
+  ).toHaveLength(0);
+  await act(async () => history[1].props.onClick());
+  expect(dispatch).toHaveBeenCalledWith({
+    type: "tab/reopen",
+    tabId: older.id,
+  });
+});
+
+it("keeps mixed source counts separate from renamed tab labels", async () => {
+  const workspace = createWorkspace();
+  workspace.tabs[0].sources = [{ logGroup: "one" }, { logGroup: "two" }];
+  workspace.tabs[0].customTitle = "My investigation";
+  await act(async () => {
+    renderer = create(
+      <WorkspaceTabs workspace={workspace} dispatch={dispatch} />,
+    );
+  });
+  const label = renderer!.root.findByProps({ role: "tab" });
+  expect(label.findByProps({ className: "tab-source-count" }).children).toEqual(
+    ["2"],
+  );
+  expect(label.findAllByType("span")[0].children).toEqual(["My investigation"]);
+});
+
+it("shows query and Live activity in each tab's reserved status slot", async () => {
+  const workspace = createWorkspace();
+  const tabId = workspace.tabs[0].id;
+  await act(async () => {
+    renderer = create(
+      <WorkspaceTabs
+        workspace={workspace}
+        dispatch={dispatch}
+        runtimes={{ [tabId]: { state: "running", live: false } }}
+      />,
+    );
+  });
+  expect(
+    renderer!.root.findByProps({ "data-tab-activity": "query" }).props[
+      "aria-label"
+    ],
+  ).toBe("Query running");
+  await act(async () => {
+    renderer!.update(
+      <WorkspaceTabs
+        workspace={workspace}
+        dispatch={dispatch}
+        runtimes={{ [tabId]: { state: "running", live: true } }}
+      />,
+    );
+  });
+  expect(
+    renderer!.root.findByProps({ "data-tab-activity": "live" }).props[
+      "aria-label"
+    ],
+  ).toBe("Live active");
+  await act(async () => {
+    renderer!.update(
+      <WorkspaceTabs
+        workspace={workspace}
+        dispatch={dispatch}
+        runtimes={{ [tabId]: { state: "complete", live: false } }}
+      />,
+    );
+  });
+  expect(
+    renderer!.root.findByProps({ className: "tab-activity-slot" }).children,
+  ).toHaveLength(0);
+});
+
+it("aggregates split member activity and retains its Live marker while paused", async () => {
+  let workspace = createWorkspace();
+  const first = workspace.tabs[0];
+  const second = createTab("offline", [{ logGroup: "another" }]);
+  workspace = workspaceReducer(workspace, { type: "tab/open", tab: second });
+  workspace = workspaceReducer(workspace, {
+    type: "pane/show-tabs",
+    tabIds: [first.id, second.id],
+  });
+  await act(async () => {
+    renderer = create(
+      <WorkspaceTabs
+        workspace={workspace}
+        dispatch={dispatch}
+        runtimes={{ [second.id]: { state: "running", live: true } }}
+      />,
+    );
+  });
+  expect(renderer!.root.findAllByProps({ role: "tab" })).toHaveLength(1);
+  expect(
+    renderer!.root.findByProps({ "data-tab-activity": "live" }).props[
+      "aria-label"
+    ],
+  ).toBe("Live active");
+  await act(async () => {
+    renderer!.update(
+      <WorkspaceTabs
+        workspace={workspace}
+        dispatch={dispatch}
+        runtimes={{
+          [second.id]: { state: "idle", live: true, livePaused: true },
+        }}
+      />,
+    );
+  });
+  expect(
+    renderer!.root.findByProps({ "data-tab-activity": "live" }).props[
+      "aria-label"
+    ],
+  ).toBe("Live paused");
+});
+
+it("does not add a SQL label to Insights tabs", async () => {
+  const workspace = createWorkspace();
+  workspace.tabs[0].kind = "insights";
+  await act(async () => {
+    renderer = create(
+      <WorkspaceTabs workspace={workspace} dispatch={dispatch} />,
+    );
+  });
+  expect(renderer!.root.findAllByProps({ className: "tab-kind" })).toHaveLength(
+    0,
+  );
+});
 afterEach(async () => {
   await act(async () => renderer?.unmount());
   renderer = undefined;

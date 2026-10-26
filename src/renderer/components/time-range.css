@@ -49,7 +49,26 @@
   padding: 14px 16px 0;
 }
 .time-range-mode-list {
-  width: fit-content;
+  align-items: center;
+}
+.time-range-settings {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  margin-left: auto;
+  color: var(--mantine-color-dimmed);
+  background: transparent;
+  border: 0;
+  border-radius: var(--mantine-radius-default);
+  cursor: pointer;
+}
+.time-range-settings:hover {
+  background: var(--mantine-color-default-hover);
+}
+.time-range-settings:focus-visible {
+  outline: 2px solid var(--mantine-primary-color-filled);
+  outline-offset: 2px;
 }
 .calendar-month-navigation {
   display: flex;
@@ -82,7 +101,7 @@
 .calendar-months {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 24px;
+  gap: 16px;
 }
 .calendar-month h3 {
   margin: 0 0 10px;
@@ -138,7 +157,7 @@
 .absolute-range-fields {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 12px;
+  gap: 8px;
   margin-top: 14px;
 }
 .absolute-range-fields input {
@@ -146,19 +165,52 @@
 }
 .relative-range-presets {
   display: grid;
-  gap: 16px;
-  padding: 10px 0 20px;
+  gap: 8px;
+  padding: 6px 0 14px;
 }
 .relative-range-row {
   display: grid;
-  grid-template-columns: 72px repeat(6, minmax(0, 1fr));
-  gap: 12px;
+  grid-template-columns: 70px repeat(6, minmax(0, 1fr));
   align-items: center;
+  gap: 7px;
+}
+.relative-range-presets button {
+  min-width: 0;
+  padding-inline: 6px;
+  height: 30px;
 }
 .relative-duration-fields {
   display: grid;
   grid-template-columns: 1fr 2fr;
   gap: 18px;
+}
+.duration-step-controls {
+  display: flex;
+  flex-direction: column;
+  align-self: stretch;
+  width: 24px;
+  padding-block: 1px;
+}
+.duration-step-controls button {
+  display: grid;
+  place-items: center;
+  flex: 1;
+  padding: 0;
+  color: var(--mantine-color-text);
+  background: transparent;
+  border: 0;
+  border-left: 1px solid var(--mantine-color-default-border);
+  cursor: pointer;
+}
+.duration-step-controls button + button {
+  border-top: 1px solid var(--mantine-color-default-border);
+}
+.duration-step-controls button:hover {
+  background: var(--mantine-color-default-hover);
+}
+.duration-step-controls button:focus-visible {
+  outline: 2px solid var(--mantine-primary-color-filled);
+  outline-offset: -2px;
 }
 .time-range-footer {
   position: sticky;
@@ -175,13 +227,6 @@
   }
   .absolute-range-fields {
     grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-  .relative-range-row {
-    gap: 5px;
-    grid-template-columns: 55px repeat(6, minmax(0, 1fr));
-  }
-  .relative-range-row button {
-    padding-inline: 3px;
   }
   .calendar-day {
     height: 28px;

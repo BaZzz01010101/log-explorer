@@ -7,7 +7,13 @@ vi.mock("@mantine/core", async () => {
   const { createElement, forwardRef } = await import("react");
   return {
     TextInput: forwardRef<HTMLInputElement, Record<string, unknown>>(
-      (props, ref) => createElement("input", { ...props, ref }),
+      (props, ref) =>
+        createElement(
+          "div",
+          {},
+          createElement("input", { ...props, ref }),
+          props.rightSection as import("react").ReactNode,
+        ),
     ),
   };
 });
@@ -27,6 +33,9 @@ const node = {
   setSelectionRange: vi.fn((start: number, end: number) => {
     node.selectionStart = start;
     node.selectionEnd = end;
+  }),
+  focus: vi.fn(() => {
+    page.activeElement = node;
   }),
 };
 const changed = vi.fn();
@@ -129,6 +138,32 @@ it("registers a nonpassive wheel listener and selects the changed date segment a
   expect(node.setSelectionRange).toHaveBeenLastCalledWith(5, 7);
   expect(page.activeElement).toBe(node);
 });
+
+it("offers duration step buttons that focus the input and use the latest draft", async () => {
+  await render(<Harness kind="duration" initial="5" />);
+  expect(input().props.rightSectionPointerEvents).toBe("auto");
+  const button = (label: string) =>
+    renderer!.root.findByProps({ "aria-label": label });
+  page.activeElement = {};
+  await act(async () => button("Increase start date").props.onClick());
+  expect(input().props.value).toBe("6");
+  expect(node.focus).toHaveBeenCalledOnce();
+  await act(async () => button("Decrease start date").props.onClick());
+  expect(input().props.value).toBe("5");
+  expect(changed.mock.calls.map(([value]) => value)).toEqual(["6", "5"]);
+  expect(button("Increase start date").props.type).toBe("button");
+  const down = { preventDefault: vi.fn() };
+  button("Increase start date").props.onMouseDown(down);
+  expect(down.preventDefault).toHaveBeenCalledOnce();
+});
+
+it.each(["date", "time"] as const)(
+  "keeps %s fields free of duration controls",
+  async (kind) => {
+    await render(<Harness kind={kind} />);
+    expect(input().props.rightSection).toBeUndefined();
+  },
+);
 
 it("leaves unfocused and horizontal-only wheel events available for page scrolling", async () => {
   await render();

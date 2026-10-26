@@ -26,7 +26,7 @@
   top: 1px;
   bottom: 1px;
   left: 112px;
-  right: 10px;
+  right: 28px;
   margin: 0;
   display: block;
   overflow: hidden;
@@ -47,6 +47,22 @@
 }
 .server-filter-pattern input::selection {
   background: var(--mantine-primary-color-light);
+}
+.server-filter-clear {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border: 0;
+  padding: 0;
+  border-radius: var(--mantine-radius-default);
+  color: var(--mantine-color-dimmed);
+  background: transparent;
+  cursor: pointer;
+}
+.server-filter-clear:hover {
+  color: var(--mantine-color-text);
+  background: var(--mantine-color-default-hover);
 }
 .aws-token-property {
   color: var(--mantine-color-blue-7);

@@ -15,6 +15,7 @@ import type {
   Workspace,
 } from "../shared/contracts";
 import { shortStreamId, sourceCount } from "../shared/source-labels";
+import { historyRetentionDays, recentClosedTabs } from "./closed-tab-history";
 import { LOG_LEVELS } from "../shared/log-data";
 import { parseHighlightProfiles } from "../shared/highlights";
 import {
@@ -35,6 +36,7 @@ import {
   type WorkspaceEntry,
 } from "./workspace-entries";
 import { parseRelativePreset } from "./query-state";
+import { normalizeRelativeTimeTemplates } from "../shared/relative-time-templates";
 import { decodeResourceDrop, mergeSources } from "./source-management";
 import type { ResourcePayload, ResourceActionMode } from "./resource-drag";
 
@@ -79,7 +81,7 @@ export type WorkspaceAction =
     }
   | { type: "tab/update"; tabId: string; patch: Partial<LogTab> }
   | { type: "tab/close"; tabId: string; allowPinned?: boolean }
-  | { type: "tab/reopen" }
+  | { type: "tab/reopen"; tabId?: string }
   | { type: "tab/reorder"; tabId: string; beforeTabId: string | null }
   | { type: "pane/split"; tabId?: string; paneId?: string; edge?: SplitEdge }
   | {
@@ -134,6 +136,8 @@ const DEFAULT_PREFERENCES: Preferences = {
   density: "compact",
   tabBarLayout: "scroll",
   pinnedTabsSeparateRow: false,
+  settingsDetached: false,
+  closedTabHistoryDays: 7,
   fontSize: 12,
   maxEvents: 10000,
   refreshSeconds: 0,
@@ -141,6 +145,9 @@ const DEFAULT_PREFERENCES: Preferences = {
   highlightText: "",
   autoExpandFilterMatches: true,
   shortcuts: {
+    newTab: "Control+T",
+    openSettings: "Control+,",
+    toggleTheme: "Control+Shift+L",
     closeTab: "Control+W",
     reopenTab: "Control+Shift+T",
     nextTab: "Control+Tab",
@@ -203,6 +210,7 @@ function defaultView(): ViewConfig {
     localSearch: "",
     highlightText: "",
     inspectorInfoCollapsed: false,
+    inspectorWrap: true,
     level: "",
     levels: [...LOG_LEVELS],
     wrap: false,
@@ -268,6 +276,7 @@ function parseView(value: unknown): ViewConfig {
     ),
     localSearch: string(raw.localSearch),
     inspectorInfoCollapsed: raw.inspectorInfoCollapsed === true,
+    inspectorWrap: raw.inspectorWrap !== false,
     ...(typeof raw.highlightText === "string"
       ? { highlightText: string(raw.highlightText, "", 200) }
       : {}),
@@ -323,7 +332,7 @@ function parseSources(value: unknown): LogSource[] {
 }
 function tabTitle(sources: LogSource[]): string {
   const count = sourceCount(sources);
-  if (count > 1) return `Mixed Sources (${count})`;
+  if (count > 1) return "Mixed Sources";
   if (!sources.length) return "Log view";
   const title =
     sources[0].logGroup.split("/").filter(Boolean).at(-1) ||
@@ -365,6 +374,11 @@ function parseTab(value: unknown, connections: Connection[]): LogTab | null {
   const defaults = baseTab(id, connectionId, sources);
   return {
     ...defaults,
+    ...(typeof raw.closedAt === "number" &&
+    Number.isFinite(raw.closedAt) &&
+    raw.closedAt >= 0
+      ? { closedAt: raw.closedAt }
+      : {}),
     ...(typeof raw.preview === "boolean" ? { preview: raw.preview } : {}),
     ...(typeof raw.pinned === "boolean"
       ? { pinned: raw.pinned, ...(raw.pinned ? { preview: false } : {}) }
@@ -428,6 +442,11 @@ function parsePreferences(value: unknown): Preferences {
     density: raw.density === "comfortable" ? "comfortable" : "compact",
     tabBarLayout: raw.tabBarLayout === "wrap" ? "wrap" : "scroll",
     pinnedTabsSeparateRow: raw.pinnedTabsSeparateRow === true,
+    settingsDetached: raw.settingsDetached === true,
+    closedTabHistoryDays: historyRetentionDays(raw.closedTabHistoryDays),
+    relativeTimeTemplates: normalizeRelativeTimeTemplates(
+      raw.relativeTimeTemplates,
+    ),
     fontSize: number(raw.fontSize, 12, 10, 20),
     maxEvents: Math.round(number(raw.maxEvents, 10000, 100, 100000)),
     refreshSeconds:
@@ -881,7 +900,6 @@ function openViewFavorite(input: Workspace, favorite: ViewFavorite): Workspace {
         preferences: { ...state.preferences, timezone: favorite.timezone },
       },
       id,
-      true,
     ),
   );
 }
@@ -936,16 +954,20 @@ export function restoreWorkspace(value: unknown): Workspace {
     : defaults.tabs.filter((tab) =>
         connections.some((connection) => connection.id === tab.connectionId),
       );
-  const closedTabs = unique(
-    list(raw.closedTabs, 30)
-      .map((tab) => parseTab(tab, connections))
-      .filter(valid),
-  )
-    .filter((tab) => !tabs.some((open) => open.id === tab.id))
-    .map((tab) => {
-      const { customTitle: _closedAlias, ...rest } = tab;
-      return rest;
-    });
+  const preferences = parsePreferences(raw.preferences);
+  const closedTabs = recentClosedTabs(
+    unique(
+      list(raw.closedTabs, 30)
+        .map((tab) => parseTab(tab, connections))
+        .filter(valid),
+    )
+      .filter((tab) => !tabs.some((open) => open.id === tab.id))
+      .map((tab) => {
+        const { customTitle: _closedAlias, ...rest } = tab;
+        return { ...rest, closedAt: rest.closedAt ?? Date.now() };
+      }),
+    preferences.closedTabHistoryDays,
+  );
   const shown = new Set<string>();
   const panes: Pane[] = unique(
     list(raw.panes, MAX_SPLIT_PANES).map((value, index) => {
@@ -979,7 +1001,7 @@ export function restoreWorkspace(value: unknown): Workspace {
     activePaneId: panes.some((pane) => pane.id === activePaneId)
       ? activePaneId
       : panes[0].id,
-    sidebarWidth: number(raw.sidebarWidth, 280, 180, 600),
+    sidebarWidth: number(raw.sidebarWidth, 280, 180, 1200),
     sidebarVisible: raw.sidebarVisible !== false,
     splitSizes: parseSplitSizes(raw.splitSizes),
     layout:
@@ -1009,7 +1031,7 @@ export function restoreWorkspace(value: unknown): Workspace {
     ),
     history: unique(list(raw.history, 100).map(parseQuery).filter(valid)),
     presets: unique(list(raw.presets, 500).map(parsePreset).filter(valid)),
-    preferences: parsePreferences(raw.preferences),
+    preferences,
   };
   return normalizeWorkspaceEntries(restored, raw);
 }
@@ -1131,7 +1153,7 @@ function legacyWorkspaceReducer(
           action.patch.sidebarWidth,
           state.sidebarWidth,
           180,
-          600,
+          1200,
         ),
         sidebarVisible:
           typeof action.patch.sidebarVisible === "boolean"
@@ -1422,14 +1444,20 @@ function legacyWorkspaceReducer(
           : [{ ...OFFLINE_CONNECTION }],
       });
     }
-    case "preferences/update":
+    case "preferences/update": {
+      const preferences = parsePreferences({
+        ...state.preferences,
+        ...action.patch,
+      });
       return {
         ...state,
-        preferences: parsePreferences({
-          ...state.preferences,
-          ...action.patch,
-        }),
+        preferences,
+        closedTabs: recentClosedTabs(
+          state.closedTabs,
+          preferences.closedTabHistoryDays,
+        ),
       };
+    }
     case "recents/add": {
       const favorite = parseFavorite(action.favorite, state.connections);
       return favorite
@@ -1516,7 +1544,6 @@ function entryFor(state: Workspace, id: string): WorkspaceEntry | undefined {
 function projectEntry(
   state: Workspace,
   id: string | null | undefined,
-  updateConnection = false,
 ): Workspace {
   const entries = workspaceEntries(state);
   const entry = entries.find((item) => item.id === id) ?? entries[0];
@@ -1545,18 +1572,12 @@ function projectEntry(
       : `pane:${entry.id.slice(0, 155)}`;
   const panes = split ? split.panes : [{ id: paneId, tabId: entry.id }];
   const activePaneId = split?.activePaneId ?? paneId;
-  const activeView = state.tabs.find(
-    (tab) => tab.id === panes.find((pane) => pane.id === activePaneId)?.tabId,
-  );
   return {
     ...state,
     splitTabs: state.splitTabs ?? [],
     tabOrder: entries.map((item) => item.id),
     activeTabId: entry.id,
-    activeConnectionId:
-      updateConnection && activeView
-        ? activeView.connectionId
-        : activeConnectionId,
+    activeConnectionId,
     panes,
     layout: split?.layout ?? { type: "leaf", paneId },
     activePaneId,
@@ -1665,8 +1686,7 @@ function normalizeWorkspaceEntries(
     (connection) => connection.id === raw.activeConnectionId,
   )
     ? String(raw.activeConnectionId)
-    : (state.tabs.find((tab) => tab.id === projectedTab)?.connectionId ??
-      state.connections[0].id);
+    : state.connections[0].id;
   return projectEntry(
     {
       ...state,
@@ -1775,7 +1795,7 @@ function closeViews(state: Workspace, ids: string[]): Workspace {
     .filter((tab) => closing.has(tab.id))
     .map((tab) => {
       const { customTitle: _alias, ...rest } = tab;
-      return rest;
+      return { ...rest, closedAt: Date.now() };
     });
   const order = (state.tabOrder ?? entries.map((entry) => entry.id)).flatMap(
     (id) => replacements.get(id) ?? (closing.has(id) ? [] : [id]),
@@ -1785,10 +1805,10 @@ function closeViews(state: Workspace, ids: string[]): Workspace {
     tabs,
     splitTabs,
     tabOrder: order,
-    closedTabs: [
-      ...closed,
-      ...state.closedTabs.filter((tab) => !closing.has(tab.id)),
-    ].slice(0, 30),
+    closedTabs: recentClosedTabs(
+      [...closed, ...state.closedTabs.filter((tab) => !closing.has(tab.id))],
+      state.preferences.closedTabHistoryDays,
+    ).slice(0, 30),
   };
   const available = workspaceEntries(next);
   const nextActive = available.some((entry) => entry.id === active)
@@ -1796,11 +1816,7 @@ function closeViews(state: Workspace, ids: string[]): Workspace {
     : (replacements.get(active ?? "")?.[0] ??
       available[Math.min(activeIndex, available.length - 1)]?.id ??
       null);
-  return projectEntry(
-    next,
-    nextActive,
-    nextActive !== active && nextActive !== null,
-  );
+  return projectEntry(next, nextActive);
 }
 
 function addView(
@@ -1840,15 +1856,10 @@ function addView(
       closedTabs: state.closedTabs.filter((closed) => closed.id !== id),
     },
     id,
-    true,
   );
 }
 
-function activateViewOrEntry(
-  state: Workspace,
-  id: string,
-  updateConnection = true,
-): Workspace {
+function activateViewOrEntry(state: Workspace, id: string): Workspace {
   const entry = entryFor(state, id);
   if (!entry) return state;
   let next = state;
@@ -1864,7 +1875,7 @@ function activateViewOrEntry(
           : split,
       ),
     };
-  return projectEntry(next, entry.id, updateConnection);
+  return projectEntry(next, entry.id);
 }
 
 function combineEntries(state: Workspace, ids: string[]): Workspace {
@@ -1923,7 +1934,6 @@ function combineEntries(state: Workspace, ids: string[]): Workspace {
       tabOrder: order,
     },
     id,
-    true,
   );
 }
 
@@ -2024,7 +2034,6 @@ export function projectWorkspaceDrop(
         return projectEntry(
           saveActiveProjection({ ...state, layout, activePaneId: from.id }),
           source.id,
-          true,
         );
       }
       const panes = state.panes.map((pane) =>
@@ -2037,7 +2046,6 @@ export function projectWorkspaceDrop(
       return projectEntry(
         saveActiveProjection({ ...state, panes, activePaneId: target.id }),
         source.id,
-        true,
       );
     }
     if (edge === null || state.tabs.length >= 100) return null;
@@ -2127,7 +2135,6 @@ export function projectWorkspaceDrop(
       tabOrder: order,
     },
     id,
-    true,
   );
 }
 
@@ -2431,7 +2438,7 @@ export function workspaceReducer(
       for (const id of added)
         next = moveStripEntry(next, id, action.beforeTabId);
       return addResourceRecents(
-        projectEntry(next, added[0], true),
+        projectEntry(next, added[0]),
         added.flatMap((id) => next.tabs.find((tab) => tab.id === id) ?? []),
       );
     }
@@ -2459,20 +2466,8 @@ export function workspaceReducer(
       };
     case "favorites/open":
       return projectFavoriteOpen(state, action.favoriteId).workspace;
-    case "tab/update": {
-      const previous = state.tabs.find((tab) => tab.id === action.tabId);
-      const next = legacyWorkspaceReducer(state, action);
-      const updated = next.tabs.find((tab) => tab.id === action.tabId);
-      const activeViewId = state.panes.find(
-        (pane) => pane.id === state.activePaneId,
-      )?.tabId;
-      return previous &&
-        updated &&
-        activeViewId === action.tabId &&
-        previous.connectionId !== updated.connectionId
-        ? { ...next, activeConnectionId: updated.connectionId }
-        : next;
-    }
+    case "tab/update":
+      return legacyWorkspaceReducer(state, action);
     case "connection/select":
       return state.connections.some(
         (connection) => connection.id === action.connectionId,
@@ -2486,7 +2481,7 @@ export function workspaceReducer(
           input
         );
       return entryFor(state, action.tabId)
-        ? activateViewOrEntry(state, action.tabId, !action.preserveConnection)
+        ? activateViewOrEntry(state, action.tabId)
         : input;
     case "tab/open":
     case "tab/preview":
@@ -2601,7 +2596,6 @@ export function workspaceReducer(
               : state.splitTabs,
           },
           id,
-          true,
         ),
       );
     }
@@ -2618,11 +2612,20 @@ export function workspaceReducer(
       return ids.length ? closeViews(state, ids) : input;
     }
     case "tab/reopen": {
-      const tab = state.closedTabs[0];
-      if (!tab || state.tabs.length >= 100) return input;
-      const { customTitle: _closedAlias, ...rest } = tab;
+      const closedTabs = recentClosedTabs(
+        state.closedTabs,
+        state.preferences.closedTabHistoryDays,
+      );
+      const tab = action.tabId
+        ? closedTabs.find((tab) => tab.id === action.tabId)
+        : closedTabs[0];
+      if (!tab || state.tabs.length >= 100) return { ...state, closedTabs };
+      const { customTitle: _closedAlias, closedAt: _closedAt, ...rest } = tab;
       return addView(
-        { ...state, closedTabs: state.closedTabs.slice(1) },
+        {
+          ...state,
+          closedTabs: closedTabs.filter((closed) => closed.id !== tab.id),
+        },
         { ...rest, preview: false },
         false,
       );
@@ -2695,7 +2698,7 @@ export function workspaceReducer(
         before,
       ).map((entry) => entry.id);
       return orderedFlatTabs(
-        projectEntry({ ...extracted, tabOrder: order }, action.tabId, true),
+        projectEntry({ ...extracted, tabOrder: order }, action.tabId),
       );
     }
     case "pane/drop-resource": {
@@ -2803,7 +2806,7 @@ export function workspaceReducer(
         ...state,
         activePaneId: action.paneId,
       });
-      return projectEntry(next, activeEntryId(next), true);
+      return projectEntry(next, activeEntryId(next));
     }
     case "pane/reorder":
     case "pane/resize": {

@@ -2,7 +2,17 @@ import type { ColumnConfig } from "../shared/contracts";
 import { reorderVisibleColumns } from "./column-order";
 
 export type ColumnAction =
-  "move-left" | "move-right" | "pin" | "pin-left" | "unpin" | "unpin-right";
+  | "move-left"
+  | "move-right"
+  | "pin"
+  | "pin-left"
+  | "unpin"
+  | "unpin-right"
+  | "remove";
+
+export function isProtectedColumn(path: string): boolean {
+  return ["@timestamp", "@level", "@message", "@source"].includes(path);
+}
 
 export function applyColumnAction(
   columns: ColumnConfig[],
@@ -11,6 +21,20 @@ export function applyColumnAction(
 ): ColumnConfig[] {
   const source = columns.find((column) => column.path === path);
   if (!source) return columns;
+  if (action === "remove") {
+    if (
+      !source.hidden &&
+      columns.filter((column) => !column.hidden).length <= 1
+    )
+      return columns;
+    if (!isProtectedColumn(path))
+      return columns.filter((column) => column !== source);
+    return source.hidden
+      ? columns
+      : columns.map((column) =>
+          column === source ? { ...column, hidden: true } : column,
+        );
+  }
   if (source.hidden) {
     if (action !== "pin" && action !== "unpin") return columns;
     const pinned = action === "pin";

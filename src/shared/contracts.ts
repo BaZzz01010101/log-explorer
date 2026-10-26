@@ -77,6 +77,7 @@ export interface ColumnConfig {
   hidden?: boolean;
 }
 export interface ViewConfig {
+  inspectorWrap?: boolean;
   highlightText?: string;
   inspectorInfoCollapsed?: boolean;
   mode: ViewMode;
@@ -89,6 +90,7 @@ export interface ViewConfig {
 }
 export interface LogTab {
   id: string;
+  closedAt?: number;
   pinned?: boolean;
   preview?: boolean;
   title: string;
@@ -156,13 +158,25 @@ export interface VisualizationPreset {
   logGroup?: string;
   view: ViewConfig;
 }
+export interface RelativeTimeTemplate {
+  id: string;
+  label: string;
+  duration: number;
+  unit: "m" | "h" | "d" | "w";
+}
 export interface Preferences {
+  settingsDetached?: boolean;
+  relativeTimeTemplates?: {
+    quick: RelativeTimeTemplate[];
+    dropdown: RelativeTimeTemplate[];
+  };
   profileVisibility?: Record<string, boolean>;
   highlightProfiles?: import("./highlights").HighlightProfile[];
   theme: "dark" | "light";
   density: "compact" | "comfortable";
   tabBarLayout: "scroll" | "wrap";
   pinnedTabsSeparateRow?: boolean;
+  closedTabHistoryDays?: number;
   fontSize: number;
   maxEvents: number;
   refreshSeconds: number;

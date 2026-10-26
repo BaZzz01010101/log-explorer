@@ -17,7 +17,11 @@ import {
   TextInput,
   type NumberInputProps,
 } from "@mantine/core";
-import { IconMaximize, IconTrash } from "@tabler/icons-react";
+import {
+  IconExternalLink,
+  IconLayoutSidebarLeftCollapse,
+  IconTrash,
+} from "@tabler/icons-react";
 import { notifications } from "@mantine/notifications";
 import type { EnvironmentInfo, Workspace } from "../../shared/contracts";
 import type { WorkspaceAction } from "../workspace";
@@ -31,6 +35,8 @@ import {
   createProfileConnectionsEditorState,
 } from "./ProfileConnectionsEditor";
 import { Tooltip } from "./AppTooltip";
+import { RelativeTimeTemplatesEditor } from "./RelativeTimeTemplatesEditor";
+import { normalizeRelativeTimeTemplates } from "../../shared/relative-time-templates";
 import "./settings.css";
 
 function NumericPreference({
@@ -89,6 +95,9 @@ export function Settings({
   onEnvironment,
   presentation = "modal",
   onOpenModal,
+  onReturnToPane,
+  requestedTab,
+  requestedTabKey,
 }: {
   opened: boolean;
   onClose(): void;
@@ -98,6 +107,9 @@ export function Settings({
   onEnvironment(info: EnvironmentInfo): void;
   presentation?: "modal" | "pane";
   onOpenModal?(): void;
+  onReturnToPane?(): void;
+  requestedTab?: string | null;
+  requestedTabKey?: number;
 }) {
   const [profiles, setProfiles] = useState<string[]>([]);
   const [accessPending, setAccessPending] = useState(false);
@@ -113,6 +125,9 @@ export function Settings({
     createProfileConnectionsEditorState,
   );
   const preferences = workspace.preferences;
+  useEffect(() => {
+    if (requestedTab) setActiveTab(requestedTab);
+  }, [requestedTab, requestedTabKey]);
   useEffect(() => {
     if (environment?.awsEnabled)
       window.explorer
@@ -141,10 +156,16 @@ export function Settings({
     }
   };
   const content = (
-    <Tabs className="settings-tabs" value={activeTab} onChange={setActiveTab}>
+    <Tabs
+      className="settings-tabs"
+      variant="outline"
+      value={activeTab}
+      onChange={setActiveTab}
+    >
       <Tabs.List aria-label="Settings categories">
         <Tabs.Tab value="connections">Connections</Tabs.Tab>
         <Tabs.Tab value="appearance">Preferences</Tabs.Tab>
+        <Tabs.Tab value="time-ranges">Time ranges</Tabs.Tab>
         <Tabs.Tab value="highlights">Highlights</Tabs.Tab>
         <Tabs.Tab value="shortcuts">Shortcuts</Tabs.Tab>
         <Tabs.Tab value="workspace">Workspace</Tabs.Tab>
@@ -243,6 +264,19 @@ export function Settings({
               })
             }
           />
+          <NumericPreference
+            label="Closed tab history (days)"
+            description="Closed tabs are kept for at most this many days after closing."
+            min={1}
+            max={365}
+            value={preferences.closedTabHistoryDays ?? 7}
+            onCommit={(closedTabHistoryDays) =>
+              dispatch({
+                type: "preferences/update",
+                patch: { closedTabHistoryDays },
+              })
+            }
+          />
           <Checkbox
             label="Automatically expand inspector paths to highlighted matches"
             checked={preferences.autoExpandFilterMatches !== false}
@@ -312,6 +346,19 @@ export function Settings({
             }
           />
         </Stack>
+      </Tabs.Panel>
+      <Tabs.Panel value="time-ranges" pt="md">
+        <RelativeTimeTemplatesEditor
+          value={normalizeRelativeTimeTemplates(
+            preferences.relativeTimeTemplates,
+          )}
+          onChange={(relativeTimeTemplates) =>
+            dispatch({
+              type: "preferences/update",
+              patch: { relativeTimeTemplates },
+            })
+          }
+        />
       </Tabs.Panel>
       <Tabs.Panel value="highlights" pt="md" className="settings-highlights">
         <HighlightProfilesEditor
@@ -479,7 +526,7 @@ export function Settings({
               disabled={!onOpenModal}
               onClick={onOpenModal}
             >
-              <IconMaximize size={16} />
+              <IconExternalLink size={16} />
             </ActionIcon>
           </Tooltip>
         </header>
@@ -490,7 +537,28 @@ export function Settings({
     <Modal
       opened={opened}
       onClose={onClose}
-      title="Workspace settings"
+      classNames={{
+        title: "settings-modal-title",
+        body: "settings-modal-body",
+      }}
+      attributes={{ title: { "aria-label": "Workspace settings" } }}
+      title={
+        <Group justify="space-between" wrap="nowrap">
+          <Text fw={600}>Workspace settings</Text>
+          {onReturnToPane && (
+            <Tooltip label="Return settings to pane">
+              <ActionIcon
+                aria-label="Return settings to pane"
+                variant="subtle"
+                size="sm"
+                onClick={onReturnToPane}
+              >
+                <IconLayoutSidebarLeftCollapse size={16} />
+              </ActionIcon>
+            </Tooltip>
+          )}
+        </Group>
+      }
       size={
         activeTab === "highlights" ? "min(1200px, calc(100vw - 48px))" : "lg"
       }

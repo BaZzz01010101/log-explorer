@@ -8,7 +8,7 @@ import {
   type Page,
 } from "@playwright/test";
 import { execFileSync } from "node:child_process";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join, resolve, sep } from "node:path";
 
 test.setTimeout(150000);
@@ -39,6 +39,10 @@ test.beforeEach(async ({}, testInfo) => {
     { path: "@message", width: 380 },
     { path: "@logGroup", width: 220, hidden: true },
   ];
+  if (testInfo.title.includes("Hybrid wrapping"))
+    state.tabs[0].view.columns.find(
+      (column) => column.path === "@message",
+    )!.width = 220;
   await writeFile(join(directory, "workspace.json"), JSON.stringify(state));
 
   const env: Record<string, string> = {};
@@ -250,16 +254,24 @@ function expected(message: string, timestamp: number) {
   };
 }
 for (const mode of ["Table", "Hybrid", "JSON"])
-  test(`${mode} toolbar copies typed selected records with visible pinned-column order and preserves one-click messages`, async () => {
+  test(`${mode} context menu copies typed records with visible pinned-column order and keyboard messages`, async () => {
     await installClipboardProbe();
     const { messages, timestamps } = await selectPair();
     await page
       .locator("label")
       .filter({ hasText: new RegExp(`^${mode}$`) })
       .click();
-    await page
-      .getByRole("button", { name: "Copy selected events as", exact: true })
-      .click();
+    await expect(
+      page.getByRole("button", {
+        name: "Copy selected events as",
+        exact: true,
+      }),
+    ).toHaveCount(0);
+    await rows()
+      .nth(1)
+      .locator(".inspect-cell, .message-summary, .json-card-meta")
+      .first()
+      .click({ button: "right" });
     await page
       .getByRole("menuitem", { name: /^Copy selected records(?:\s|$)/ })
       .click();
@@ -271,9 +283,7 @@ for (const mode of ["Table", "Hybrid", "JSON"])
     ]);
     expect(Object.keys(copied[0])).toEqual(fields);
     expect(copied[0]).not.toHaveProperty("@logGroup");
-    await page
-      .getByRole("button", { name: "Copy selected messages", exact: true })
-      .click();
+    await viewer().press("Control+c");
     await expect
       .poll(async () => (await capturedCopies())[1])
       .toBe(messages[1] + "\n" + messages[3]);
@@ -347,13 +357,13 @@ test("record shortcut respects text input and disabled empty selection", async (
   await expect(viewer()).toHaveAttribute("aria-rowcount", "0");
   await expect(
     page.getByRole("button", { name: "Copy selected events as", exact: true }),
-  ).toBeDisabled();
+  ).toHaveCount(0);
   await viewer().press("Control+Shift+c");
   expect(await capturedCopies()).toHaveLength(1);
 });
 
 for (const theme of ["light", "dark"])
-  test(`${theme} multiline Hybrid messages keep one-line row height while details, inspector and copies retain the full message`, async () => {
+  test(`${theme} Hybrid wrapping preserves newlines, virtual row geometry, independent inspector wrapping and full copies`, async () => {
     await installClipboardProbe();
     await page
       .locator("label")
@@ -381,6 +391,7 @@ for (const theme of ["light", "dark"])
       .toBe(true);
     const first = rows().first(),
       primary = first.locator(".log-table-row");
+    let wrappedHeight = normalHeight;
     for (const wrap of [false, true]) {
       const toggle = page.getByRole("button", {
         name: "Toggle line wrap",
@@ -388,9 +399,39 @@ for (const theme of ["light", "dark"])
       });
       if ((await toggle.getAttribute("aria-pressed")) !== String(wrap))
         await toggle.click();
-      expect(
-        Math.abs((await primary.boundingBox())!.height - normalHeight),
-      ).toBeLessThanOrEqual(0.5);
+      await expect(toggle).toHaveAttribute("aria-pressed", String(wrap));
+      const cell = primary
+        .locator('[role="cell"]')
+        .last()
+        .locator(".inspect-cell");
+      await expect
+        .poll(() =>
+          cell.evaluate((element) => getComputedStyle(element).whiteSpace),
+        )
+        .toBe(wrap ? "pre-wrap" : "nowrap");
+      const height = (await primary.boundingBox())!.height;
+      if (wrap) {
+        expect(height).toBeGreaterThan(normalHeight + 20);
+        const fragments = await cell.evaluate((element) => {
+          const range = document.createRange();
+          range.selectNodeContents(element);
+          return [...range.getClientRects()]
+            .filter((rect) => rect.width > 0)
+            .map((rect) => ({ width: rect.width, top: rect.top }));
+        });
+        // The stack trace has four explicit lines; the long TypeError also
+        // needs a soft break within the configured message column.
+        expect(
+          new Set(fragments.map((rect) => Math.round(rect.top))).size,
+        ).toBeGreaterThan(4);
+        expect(
+          Math.max(...fragments.map((rect) => rect.width)),
+        ).toBeLessThanOrEqual((await cell.boundingBox())!.width + 1);
+        wrappedHeight = height;
+      } else expect(Math.abs(height - normalHeight)).toBeLessThanOrEqual(0.5);
+      const current = (await first.boundingBox())!;
+      const next = (await rows().nth(1).boundingBox())!;
+      expect(next.y).toBeGreaterThanOrEqual(current.y + current.height - 1);
     }
     await primary.locator(".inspect-cell").first().click();
     const message =
@@ -408,11 +449,68 @@ for (const theme of ["light", "dark"])
       "at async handler",
     );
     expect(
-      Math.abs((await primary.boundingBox())!.height - normalHeight),
+      Math.abs((await primary.boundingBox())!.height - wrappedHeight),
     ).toBeLessThanOrEqual(0.5);
     await inspector()
       .locator("label")
       .filter({ hasText: /^Raw message$/ })
       .click();
     await expect(inspector().locator(".raw-content pre")).toHaveText(message);
+    const inspectorWrap = inspector().getByRole("button", {
+      name: "Toggle inspector line wrap",
+      exact: true,
+    });
+    await expect(inspectorWrap).toHaveAttribute("aria-pressed", "true");
+    await inspectorWrap.click();
+    await expect(inspector().locator(".raw-content pre")).toHaveCSS(
+      "white-space",
+      "pre",
+    );
+    await expect(
+      page.getByRole("button", { name: "Toggle line wrap", exact: true }),
+    ).toHaveAttribute("aria-pressed", "true");
+    const details = first.getByRole("region", {
+      name: "Expanded event content",
+      exact: true,
+    });
+    const detailHeight = (await details.boundingBox())!.height;
+    await page
+      .getByRole("button", { name: "Toggle line wrap", exact: true })
+      .click();
+    await expect(inspectorWrap).toHaveAttribute("aria-pressed", "false");
+    await inspectorWrap.click();
+    await expect(inspector().locator(".raw-content pre")).toHaveCSS(
+      "white-space",
+      "pre-wrap",
+    );
+    expect((await details.boundingBox())!.height).toBeCloseTo(detailHeight, 0);
+    await expect(
+      page.getByRole("button", { name: "Toggle line wrap", exact: true }),
+    ).toHaveAttribute("aria-pressed", "false");
+    await page
+      .getByRole("button", { name: "Toggle line wrap", exact: true })
+      .click();
+    await inspectorWrap.click();
+    await expect
+      .poll(async () => {
+        const saved = JSON.parse(
+          await readFile(join(directory, "workspace.json"), "utf8"),
+        );
+        return {
+          wrap: saved.tabs[0].view.wrap,
+          inspectorWrap: saved.tabs[0].view.inspectorWrap,
+        };
+      })
+      .toEqual({ wrap: true, inspectorWrap: false });
+    await page.reload();
+    await expect(
+      page.getByRole("button", { name: "Toggle line wrap", exact: true }),
+    ).toHaveAttribute("aria-pressed", "true");
+    await rows().first().locator(".inspect-cell").first().click();
+    await expect(
+      inspector().getByRole("button", {
+        name: "Toggle inspector line wrap",
+        exact: true,
+      }),
+    ).toHaveAttribute("aria-pressed", "false");
   });

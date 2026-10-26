@@ -76,9 +76,16 @@ input:focus-visible {
 .activity-spacer {
   flex: 1;
 }
+.activity-menu-separator {
+  flex: 0 0 1px;
+  align-self: stretch;
+  margin: -6px 2px;
+  background: var(--line);
+}
 .sidebar-shell {
   flex-shrink: 0;
   min-width: 180px;
+  max-width: min(1200px, calc(100vw - 448px));
   position: relative;
   border-right: 1px solid var(--line);
 }
@@ -89,8 +96,35 @@ input:focus-visible {
 .explorer-host {
   height: 100%;
 }
-.activity-bar [aria-label="AWS logs explorer"] svg {
-  color: #e58a13;
+.application-menu-shortcut {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--mantine-color-dimmed);
+  font: 11px var(--mantine-font-family-monospace);
+  white-space: nowrap;
+}
+.application-menu-key-part {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+.application-menu-shortcut kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 14px;
+  padding: 1px 3px;
+  border: 1px solid var(--mantine-color-default-border);
+  border-radius: 3px;
+  background: var(--mantine-color-default-hover);
+  font: inherit;
+  line-height: 14px;
+}
+.application-menu-version {
+  float: right;
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
 }
 .sidebar-resizer {
   -webkit-app-region: no-drag;
@@ -274,13 +308,11 @@ input:focus-visible {
   overflow: hidden;
 }
 .active-pane .pane-heading {
-  border-top-color: var(--mantine-color-indigo-5);
   background: color-mix(
     in srgb,
     var(--mantine-color-indigo-5) 14%,
     var(--pane-header)
   );
-  box-shadow: inset 3px 0 0 var(--mantine-color-indigo-5);
 }
 .pane-heading {
   height: 38px;
@@ -322,6 +354,14 @@ input:focus-visible {
   display: flex;
   flex: 1;
   flex-direction: column;
+  min-height: 0;
+}
+.retained-view-slot,
+.retained-view-host,
+.retained-view-content {
+  display: flex;
+  flex: 1;
+  min-width: 0;
   min-height: 0;
 }
 .query-toolbar {

@@ -200,6 +200,8 @@ for (const theme of ["light", "dark"]) {
     await activity("AWS logs explorer").click();
     await expect(page.locator(".sidebar-shell")).toBeHidden();
     await activity("Workspace settings").click();
+    await expect(modal).toBeVisible();
+    await activity("Return settings to pane").click();
     await expect(pane).toBeVisible();
     await activity("AWS logs explorer").click();
     await expect(filter).toBeVisible();

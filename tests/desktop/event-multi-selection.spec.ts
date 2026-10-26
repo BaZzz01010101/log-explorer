@@ -217,9 +217,7 @@ test("modifier clicks select multiple rows and copy raw messages in displayed or
   await expect(
     page.locator('.virtual-event[data-selected="true"]'),
   ).toHaveCount(2);
-  await page
-    .getByRole("button", { name: "Copy selected messages", exact: true })
-    .click();
+  await viewer().press("Control+c");
   await expect
     .poll(capturedCopies)
     .toEqual([
@@ -233,9 +231,7 @@ test("modifier clicks select multiple rows and copy raw messages in displayed or
   )
     await timestamp.locator(".column-sort").click();
   await expect(timestamp).toHaveAttribute("aria-sort", "descending");
-  await page
-    .getByRole("button", { name: "Copy selected messages", exact: true })
-    .click();
+  await viewer().press("Control+c");
   await expect
     .poll(capturedCopies)
     .toEqual([
@@ -317,8 +313,11 @@ test("keyboard ranges and select-all stay scoped to displayed filtered events wi
   expect(await page.evaluate(() => window.getSelection()?.toString())).toBe("");
   const count = Number(await viewer().getAttribute("aria-rowcount"));
   await expect(
+    page.locator('.virtual-event[data-selected="true"]'),
+  ).toHaveCount(Math.min(count, await rows().count()));
+  await expect(
     page.getByRole("button", { name: "Copy selected messages", exact: true }),
-  ).toContainText(`${count} selected`);
+  ).toHaveCount(0);
   await viewer().press("Control+c");
   await expect
     .poll(capturedCopies)

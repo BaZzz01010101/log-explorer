@@ -11,7 +11,6 @@ import "./event-inspector.css";
 
 interface Props {
   opened: boolean;
-  onClose(): void;
   children: ReactNode;
   eventId?: string;
 }
@@ -25,7 +24,7 @@ interface ResizeSession {
   cleanup(): void;
 }
 
-export function EventInspector({ opened, onClose, children, eventId }: Props) {
+export function EventInspector({ opened, children, eventId }: Props) {
   const container = useRef<HTMLElement>(null);
   const session = useRef<ResizeSession | null>(null);
   const [desiredWidth, setDesiredWidth] = useState<number | null>(null);
@@ -189,14 +188,6 @@ export function EventInspector({ opened, onClose, children, eventId }: Props) {
       />
       <header className="event-inspector-header">
         <span>Event inspector</span>
-        <button
-          type="button"
-          className="event-inspector-hide"
-          aria-label="Hide inspector"
-          onClick={onClose}
-        >
-          Hide
-        </button>
       </header>
       <div className="event-inspector-body">{children}</div>
     </aside>

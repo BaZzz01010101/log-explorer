@@ -248,7 +248,7 @@ test("combined tabs own their layout, member tooltip, rename and exit lifecycle"
   const tooltip = page.getByRole("tooltip");
   await expect(tooltip).toContainText("orders-api");
   await expect(tooltip).toContainText("payments-worker");
-  await page.mouse.move(10, 10);
+  await page.locator(".pane-heading").first().hover();
   await expect(tooltip).toHaveCount(0);
   await rename(combined(), "Backend investigation");
   await expect(combined()).toContainText("Backend investigation");

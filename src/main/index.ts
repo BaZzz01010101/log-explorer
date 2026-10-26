@@ -13,6 +13,7 @@ import { randomUUID } from "node:crypto";
 import { writeFile } from "node:fs/promises";
 import { z } from "zod";
 import { COPY_TEXT_LIMIT } from "../shared/event-copy";
+import type { Workspace, WorkspaceLoad } from "../shared/contracts";
 import {
   WINDOW_CHROME_COLORS,
   WINDOW_CHROME_HEIGHT,
@@ -53,6 +54,8 @@ let acknowledgeClose: ((success: boolean) => void) | null = null;
 const primaryInstance = app.requestSingleInstanceLock();
 if (!primaryInstance) app.quit();
 const store = new WorkspaceStore(app.getPath("userData"), parseWorkspaceInput);
+let startupWorkspace: WorkspaceLoad | undefined;
+let windowTheme: Workspace["preferences"]["theme"] = "dark";
 const service = createLogService(
   (update) => {
     if (window && !window.isDestroyed())
@@ -182,6 +185,8 @@ const cursorSchema = z.string().max(100000).optional();
 handle("explorer:environment", environment);
 handle("explorer:window-theme", (theme) => {
   const mode = z.enum(["light", "dark"]).parse(theme);
+  windowTheme = mode;
+  window?.setBackgroundColor(WINDOW_CHROME_COLORS[mode].color);
   if (process.platform === "win32" || process.platform === "linux")
     window?.setTitleBarOverlay({
       ...WINDOW_CHROME_COLORS[mode],
@@ -252,7 +257,11 @@ handle("explorer:live", (request) => service.live(querySchema.parse(request)));
 handle("explorer:cancel", (id) =>
   service.cancel(z.string().min(1).max(160).parse(id)),
 );
-handle("explorer:load", () => store.load());
+handle("explorer:load", () => {
+  const loaded = startupWorkspace;
+  startupWorkspace = undefined;
+  return loaded ?? store.load();
+});
 handle("explorer:save", (workspace) =>
   store.save(workspaceSchema.parse(workspace)),
 );
@@ -292,7 +301,7 @@ function createWindow(): void {
       ? {
           titleBarStyle: "hidden" as const,
           titleBarOverlay: {
-            ...WINDOW_CHROME_COLORS.dark,
+            ...WINDOW_CHROME_COLORS[windowTheme],
             height: WINDOW_CHROME_HEIGHT,
           },
         }
@@ -300,7 +309,7 @@ function createWindow(): void {
     icon: app.isPackaged
       ? join(process.resourcesPath, "icon.png")
       : join(__dirname, "../../build/icon.png"),
-    backgroundColor: "#10141c",
+    backgroundColor: WINDOW_CHROME_COLORS[windowTheme].color,
     show: false,
     webPreferences: {
       preload: join(__dirname, "../preload/index.js"),
@@ -386,9 +395,15 @@ function createWindow(): void {
   else void window.loadFile(rendererFile);
 }
 
-void app.whenReady().then(() => {
+void app.whenReady().then(async () => {
   if (!primaryInstance) return;
   Menu.setApplicationMenu(null);
+  // Use the validated/recovered workspace before the first native paint. The
+  // renderer consumes this same result once, preserving any recovery warning.
+  startupWorkspace = await store.load();
+  windowTheme =
+    (startupWorkspace.workspace as Workspace | null)?.preferences.theme ??
+    "dark";
   createWindow();
   app.on("activate", () => {
     if (!window) createWindow();

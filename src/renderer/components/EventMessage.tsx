@@ -1,4 +1,12 @@
-import { memo, useContext, useEffect, useMemo, useState } from "react";
+import {
+  memo,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import {
   filterHighlightSpans,
   matchColors,
@@ -14,6 +22,9 @@ import {
   IconDots,
   IconBraces,
   IconCopy,
+  IconArrowsVertical,
+  IconFold,
+  IconTextWrap,
 } from "@tabler/icons-react";
 import type { LogEvent } from "../../shared/contracts";
 import {
@@ -228,6 +239,29 @@ function JsonFieldMenu({
   );
 }
 
+function MessageWrapControl({
+  enabled,
+  onToggle,
+}: {
+  enabled: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      className="message-action"
+      aria-label="Toggle inspector line wrap"
+      aria-pressed={enabled}
+      data-tooltip={
+        enabled ? "Disable inspector line wrapping" : "Wrap inspector lines"
+      }
+      onClick={onToggle}
+    >
+      <IconTextWrap size={16} />
+    </button>
+  );
+}
+
 export function JsonTree({
   value,
   highlight,
@@ -236,6 +270,8 @@ export function JsonTree({
   onAddFilter,
   onCopyValue,
   controls = false,
+  lineWrap,
+  renderActions,
   onDeserialize,
   deserializedPaths,
   decodedLabels,
@@ -248,6 +284,8 @@ export function JsonTree({
   onAddFilter?: (path: string, value: JsonValue) => void;
   onCopyValue?: (text: string) => void;
   controls?: boolean;
+  lineWrap?: { enabled: boolean; onToggle: () => void };
+  renderActions?: (actions: ReactNode) => ReactNode;
   onDeserialize?: (path: string, encoding?: FieldDecoding) => void;
   deserializedPaths?: ReadonlySet<string>;
   decodedLabels?: ReadonlyMap<string, string>;
@@ -255,9 +293,18 @@ export function JsonTree({
 }) {
   const match = useContext(EventHighlightContext);
   const matchPaths = match?.paths ?? {};
-  const pathKey = JSON.stringify(matchPaths);
+  const pathKey = JSON.stringify(Object.keys(matchPaths).sort());
+  const processedMatch = useRef<{ paths: string; enabled: boolean } | null>(
+    null,
+  );
   const [expanded, setExpanded] = useState(() => new Set([""]));
   useEffect(() => {
+    if (
+      processedMatch.current?.paths === pathKey &&
+      processedMatch.current.enabled === autoExpandMatches
+    )
+      return;
+    processedMatch.current = { paths: pathKey, enabled: autoExpandMatches };
     if (!autoExpandMatches) return;
     const ancestors = new Set<string>();
     for (const path of Object.keys(matchPaths)) {
@@ -277,7 +324,7 @@ export function JsonTree({
         ? previous
         : new Set([...previous, ...ancestors]),
     );
-  }, [autoExpandMatches, pathKey, match?.matchKey]);
+  }, [autoExpandMatches, pathKey]);
   const model = useMemo(
     () => inspectionRows(value, expanded, { maxNodes: compact ? 120 : 800 }),
     [value, expanded, compact],
@@ -289,6 +336,14 @@ export function JsonTree({
       else next.add(path);
       return next;
     });
+  const allExpanded =
+    model.rows.some((row) => row.childCount > 0) &&
+    model.rows.every(
+      (row) => row.childCount === 0 || row.depthLimited || row.expanded,
+    );
+  const foldLabel = allExpanded
+    ? "Fold structured object"
+    : "Unfold structured object";
   const unfoldAll = () => {
     const paths = new Set([""]);
     for (let depth = 0; depth < 24; depth++) {
@@ -300,26 +355,30 @@ export function JsonTree({
     }
     setExpanded(paths);
   };
+  const actions = (controls || lineWrap) && (
+    <div className="structured-actions">
+      {lineWrap && <MessageWrapControl {...lineWrap} />}
+      {controls && (
+        <button
+          type="button"
+          className="message-action"
+          aria-label={foldLabel}
+          aria-pressed={allExpanded}
+          data-tooltip={foldLabel}
+          onClick={() => (allExpanded ? setExpanded(new Set()) : unfoldAll())}
+        >
+          {allExpanded ? (
+            <IconFold size={16} />
+          ) : (
+            <IconArrowsVertical size={16} />
+          )}
+        </button>
+      )}
+    </div>
+  );
   return (
     <div className={`json-tree ${compact ? "json-tree-compact" : ""}`}>
-      {controls && (
-        <div className="structured-actions">
-          <button
-            type="button"
-            aria-label="Fold structured object"
-            onClick={() => setExpanded(new Set())}
-          >
-            Fold all
-          </button>
-          <button
-            type="button"
-            aria-label="Unfold structured object"
-            onClick={unfoldAll}
-          >
-            Unfold all
-          </button>
-        </div>
-      )}
+      {renderActions ? renderActions(actions) : actions}
       {model.rows.map((row) => {
         const container = row.value !== null && typeof row.value === "object";
         const array = Array.isArray(row.value);
@@ -454,6 +513,8 @@ export function MessageContent({
   onAddFilter,
   onCopyValue,
   controls = false,
+  lineWrap,
+  renderActions,
   onDeserialize,
   deserializedPaths,
   decodedLabels,
@@ -466,6 +527,8 @@ export function MessageContent({
   onAddFilter?: (path: string, value: JsonValue) => void;
   onCopyValue?: (text: string) => void;
   controls?: boolean;
+  lineWrap?: { enabled: boolean; onToggle: () => void };
+  renderActions?: (actions: ReactNode) => ReactNode;
   onDeserialize?: (path: string, encoding?: FieldDecoding) => void;
   deserializedPaths?: ReadonlySet<string>;
   decodedLabels?: ReadonlyMap<string, string>;
@@ -481,6 +544,8 @@ export function MessageContent({
         onAddColumn={onAddColumn}
         onAddFilter={onAddFilter}
         controls={controls}
+        lineWrap={lineWrap}
+        renderActions={renderActions}
         onDeserialize={onDeserialize}
         deserializedPaths={deserializedPaths}
         decodedLabels={decodedLabels}
@@ -488,8 +553,14 @@ export function MessageContent({
       />
     );
   const displayLimit = compact ? 6000 : 200_000;
+  const actions = lineWrap && (
+    <div className="structured-actions">
+      <MessageWrapControl {...lineWrap} />
+    </div>
+  );
   return (
     <div className="raw-content">
+      {renderActions ? renderActions(actions) : actions}
       {row.parsed.reason && (
         <div className="inspection-note">{row.parsed.reason}</div>
       )}

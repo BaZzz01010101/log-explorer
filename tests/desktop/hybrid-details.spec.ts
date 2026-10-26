@@ -384,7 +384,7 @@ test("message preview prefers non-empty msg then message in both Table and Hybri
       await expect(
         eventRow("hybrid-" + index)
           .getByRole("cell")
-          .nth(3),
+          .last(),
       ).toHaveText(text);
     }
   }

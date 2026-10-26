@@ -32,11 +32,12 @@ vi.mock("@mantine/core", () => {
       ].map((name) => [name, component]),
     ),
     Tabs,
-    Modal: ({ opened, children, ...props }: Record<string, unknown>) =>
+    Modal: ({ opened, children, title, ...props }: Record<string, unknown>) =>
       opened
         ? createElement(
             "div",
             { ...props, role: "dialog" },
+            title as ReactNode,
             children as ReactNode,
           )
         : null,
@@ -213,3 +214,154 @@ it("defaults to the existing modal and hides an inactive pane", async () => {
   );
   expect(renderer.root.findByType("section").props.hidden).toBe(true);
 });
+
+it("returns detached settings to its pane and opens the requested time-ranges category", async () => {
+  const onReturnToPane = vi.fn();
+  await act(async () => {
+    renderer = create(
+      <Settings
+        {...props}
+        presentation="modal"
+        onReturnToPane={onReturnToPane}
+        requestedTab="time-ranges"
+      />,
+    );
+  });
+  expect(tabs().props.value).toBe("time-ranges");
+  const dock = renderer.root.findAll(
+    (node) =>
+      node.type === "div" &&
+      node.props["aria-label"] === "Return settings to pane",
+  )[0];
+  await act(async () => dock.props.onClick());
+  expect(onReturnToPane).toHaveBeenCalledOnce();
+  expect(onClose).not.toHaveBeenCalled();
+});
+
+it("edits fixed quick slots and pushes following values without changing dropdown slots", async () => {
+  await act(async () => {
+    renderer = create(<Settings {...props} presentation="pane" />);
+  });
+  const label = renderer.root.findAll(
+    (node) =>
+      node.type === "div" &&
+      node.props["aria-label"] === "Quick toolbar Minutes slot 1",
+  )[0];
+  await act(async () => label.props.onChange(9));
+  const patch = dispatch.mock.lastCall![0].patch;
+  expect(patch.relativeTimeTemplates.quick[0]).toMatchObject({
+    label: "9m",
+    duration: 9,
+    unit: "m",
+  });
+  expect(patch.relativeTimeTemplates.dropdown[0]).toMatchObject({
+    duration: 5,
+    unit: "m",
+  });
+  expect(
+    dispatch.mock
+      .lastCall![0].patch.relativeTimeTemplates.quick.slice(0, 2)
+      .map((entry: { duration: number }) => entry.duration),
+  ).toEqual([9, 10]);
+});
+
+it("renders only fixed numeric slots and synchronously cascades dropdown collisions", async () => {
+  await act(async () => {
+    renderer = create(<Settings {...props} presentation="pane" />);
+  });
+  const input = (label: string) =>
+    renderer.root.findAll(
+      (node) => node.type === "div" && node.props["aria-label"] === label,
+    )[0];
+  await act(async () =>
+    input("Relative dropdown Minutes slot 2").props.onChange(40),
+  );
+  expect(
+    dispatch.mock
+      .lastCall![0].patch.relativeTimeTemplates.dropdown.slice(0, 5)
+      .map((entry: { duration: number }) => entry.duration),
+  ).toEqual([5, 40, 41, 42, 45]);
+  const editor = renderer.root
+    .findAllByProps({ className: "time-template-editor" })
+    .find((node) => node.type === "div")!;
+  const numericInputs = editor.findAll(
+    (node) => node.type === "div" && node.props.allowDecimal === false,
+  );
+  expect(numericInputs).toHaveLength(27);
+  expect(
+    editor.findAll((node) => typeof node.props.onClick === "function"),
+  ).toHaveLength(0);
+  expect(editor.findAll((node) => node.props.data !== undefined)).toHaveLength(
+    0,
+  );
+});
+
+it("reopens the time-ranges category for a repeated settings request", async () => {
+  await act(async () => {
+    renderer = create(
+      <Settings {...props} requestedTab="time-ranges" requestedTabKey={1} />,
+    );
+  });
+  await act(async () => tabs().props.onChange("appearance"));
+  expect(tabs().props.value).toBe("appearance");
+  await act(async () =>
+    renderer.update(
+      <Settings {...props} requestedTab="time-ranges" requestedTabKey={2} />,
+    ),
+  );
+  expect(tabs().props.value).toBe("time-ranges");
+});
+
+it.each(["pane", "modal"] as const)(
+  "edits the maximum closed-tab history age in %s preferences",
+  async (presentation) => {
+    await act(async () => {
+      renderer = create(
+        <Settings
+          {...props}
+          presentation={presentation}
+          workspace={{
+            ...workspace,
+            preferences: {
+              ...workspace.preferences,
+              closedTabHistoryDays: undefined,
+            },
+          }}
+        />,
+      );
+    });
+    const history = () => control("Closed tab history (days)");
+    expect(history()?.props).toMatchObject({
+      value: 7,
+      min: 1,
+      max: 365,
+      allowDecimal: false,
+      allowNegative: false,
+      description:
+        "Closed tabs are kept for at most this many days after closing.",
+    });
+    await act(async () => history().props.onChange(14));
+    expect(dispatch).not.toHaveBeenCalled();
+    await act(async () => history().props.onBlur());
+    expect(dispatch).toHaveBeenLastCalledWith({
+      type: "preferences/update",
+      patch: { closedTabHistoryDays: 14 },
+    });
+    await act(async () =>
+      renderer.update(
+        <Settings
+          {...props}
+          presentation={presentation}
+          workspace={{
+            ...workspace,
+            preferences: {
+              ...workspace.preferences,
+              closedTabHistoryDays: 14,
+            },
+          }}
+        />,
+      ),
+    );
+    expect(history().props.value).toBe(14);
+  },
+);

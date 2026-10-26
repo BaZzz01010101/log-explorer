@@ -52,9 +52,6 @@
   flex: none;
   min-height: 40px;
 }
-.pinned-tab-row {
-  border-bottom: 2px solid var(--mantine-color-default-border);
-}
 .empty-pinned-tabs {
   padding: 11px 12px;
   font-size: 11px;
@@ -69,7 +66,6 @@
   overflow-y: auto;
 }
 .workspace-tab-list.is-wrapped .workspace-tab {
-  border-bottom: 1px solid var(--mantine-color-default-border);
   min-width: min(130px, 100%);
   max-width: min(310px, 100%);
 }
@@ -80,6 +76,7 @@
   position: relative;
   max-width: 310px;
   min-width: 130px;
+  border-top: 1px solid var(--mantine-color-default-border);
   border-right: 1px solid var(--mantine-color-default-border);
   color: color-mix(
     in srgb,
@@ -203,7 +200,8 @@
   border-radius: 3px;
   font-weight: 700;
 }
-.tab-member-count {
+.tab-member-count,
+.tab-source-count {
   font-size: 9px;
   line-height: 16px;
   min-width: 16px;
@@ -212,6 +210,83 @@
   border-radius: 3px;
   background: var(--mantine-color-default-hover);
   color: var(--mantine-color-dimmed);
+  flex-shrink: 0;
+}
+.tab-activity-slot {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  flex: 0 0 18px;
+  align-self: stretch;
+}
+.tab-activity {
+  display: flex;
+  color: var(--mantine-color-blue-5);
+}
+.tab-activity.is-live {
+  color: var(--mantine-color-teal-5);
+}
+.tab-query-spinner {
+  animation: tab-query-spin 1s linear infinite;
+}
+@keyframes tab-query-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tab-query-spinner {
+    animation: none;
+  }
+}
+.closed-tab-history {
+  max-width: calc(100vw - 20px);
+  max-height: calc(100dvh - 56px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.closed-tab-history > .closed-tab-reopen,
+.closed-tab-history > .mantine-Menu-divider {
+  flex-shrink: 0;
+}
+.closed-tab-history-list {
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: thin;
+}
+.closed-tab-history .mantine-Menu-itemLabel {
+  min-width: 0;
+  overflow: hidden;
+}
+.closed-tab-history .mantine-Menu-itemSection {
+  flex-shrink: 0;
+}
+.closed-tab-history .closed-tab-reopen {
+  font-weight: 600;
+  background: var(--mantine-color-blue-light);
+  padding-top: 10px;
+  padding-bottom: 10px;
+}
+.closed-tab-history .closed-tab-date {
+  font-size: 10px;
+  padding-top: 10px;
+  padding-bottom: 5px;
+  color: var(--mantine-color-dimmed);
+}
+.closed-tab-history .closed-tab-entry {
+  border-bottom: 1px solid var(--mantine-color-default-border);
+  border-radius: 0;
+  padding-top: 9px;
+  padding-bottom: 9px;
+}
+.closed-tab-title {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .split-tab-tooltip {
   overflow-wrap: anywhere;
@@ -244,7 +319,6 @@
   align-items: center;
   gap: 3px;
   flex-shrink: 0;
-  border-left: 1px solid var(--mantine-color-default-border);
   height: var(--chrome-height);
   align-self: flex-start;
 }

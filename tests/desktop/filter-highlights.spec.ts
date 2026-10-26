@@ -319,6 +319,11 @@ for (const mode of ["Table", "Hybrid", "JSON"])
       await expect(auto).toBeChecked();
       await auto.uncheck();
       await page.keyboard.press("Escape");
+      const unfoldAll = inspector.getByRole("button", {
+        name: "Unfold structured object",
+        exact: true,
+      });
+      if (await unfoldAll.count()) await unfoldAll.click();
       await inspector
         .getByRole("button", { name: "Fold structured object", exact: true })
         .click();

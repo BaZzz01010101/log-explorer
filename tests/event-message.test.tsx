@@ -1,6 +1,9 @@
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { JsonTree } from "../src/renderer/components/EventMessage";
+import {
+  JsonTree,
+  MessageContent,
+} from "../src/renderer/components/EventMessage";
 import { Menu } from "../src/renderer/components/AppMenu";
 vi.mock("@mantine/core", async () => {
   const { createElement } = await import("react");
@@ -77,8 +80,15 @@ it("unfolds nested structured values and folds the entire object", async () => {
     );
   });
   expect(button("Unfold structured object")).toBeDefined();
+  expect(button("Fold structured object")).toBeUndefined();
+  expect(button("Unfold structured object")!.props["aria-pressed"]).toBe(false);
+  expect(button("Unfold structured object")!.props["data-tooltip"]).toBe(
+    "Unfold structured object",
+  );
   await act(async () => button("Unfold structured object")!.props.onClick());
   expect(button("Collapse /request/ids")).toBeDefined();
+  expect(button("Unfold structured object")).toBeUndefined();
+  expect(button("Fold structured object")!.props["aria-pressed"]).toBe(true);
   expect(
     renderer.root.findAll((node) => node.props.className === "json-key"),
   ).toHaveLength(5);
@@ -88,6 +98,123 @@ it("unfolds nested structured values and folds the entire object", async () => {
     renderer.root.findAll((node) => node.props.className === "json-key"),
   ).toHaveLength(1);
 });
+
+it("renders inspector actions in a toolbar slot without resetting expanded branches", async () => {
+  const row = {
+    event: {
+      id: "actions",
+      timestamp: 1,
+      message: "{}",
+      logGroup: "/test",
+      logStream: "test",
+    },
+    level: "info" as const,
+    parsed: { kind: "json" as const, value: { request: { ids: [7, 8] } } },
+  };
+  const content = (ready: boolean) => (
+    <MessageContent
+      row={row}
+      highlight=""
+      controls
+      lineWrap={{ enabled: true, onToggle: () => {} }}
+      renderActions={(actions) =>
+        ready ? (
+          <section aria-label="Inspector message actions">{actions}</section>
+        ) : null
+      }
+    />
+  );
+  await act(async () => {
+    renderer = create(content(false));
+  });
+  expect(button("Toggle inspector line wrap")).toBeUndefined();
+  await act(async () => button("Expand /request")!.props.onClick());
+  await act(async () => renderer.update(content(true)));
+  const toolbar = renderer.root.findByProps({
+    "aria-label": "Inspector message actions",
+  });
+  expect(toolbar.findAllByType("button")).toHaveLength(2);
+  expect(button("Collapse /request")).toBeDefined();
+  expect(button("Unfold structured object")).toBeDefined();
+  await act(async () => button("Unfold structured object")!.props.onClick());
+  expect(button("Collapse /request/ids")).toBeDefined();
+  expect(toolbar.findAllByType("button")).toHaveLength(2);
+  await act(async () => button("Fold structured object")!.props.onClick());
+  expect(button("Expand root")).toBeDefined();
+});
+
+it("places raw-message wrapping in the inspector toolbar slot without structured folding", async () => {
+  await act(async () => {
+    renderer = create(
+      <MessageContent
+        row={{
+          event: {
+            id: "raw-actions",
+            timestamp: 1,
+            message: "plain text",
+            logGroup: "/test",
+            logStream: "test",
+          },
+          level: "info",
+          parsed: { kind: "text" },
+        }}
+        highlight=""
+        lineWrap={{ enabled: false, onToggle: () => {} }}
+        renderActions={(actions) => (
+          <section aria-label="Inspector message actions">{actions}</section>
+        )}
+      />,
+    );
+  });
+  const toolbar = renderer.root.findByProps({
+    "aria-label": "Inspector message actions",
+  });
+  expect(toolbar.findAllByType("button")).toHaveLength(1);
+  expect(button("Toggle inspector line wrap")!.props["aria-pressed"]).toBe(
+    false,
+  );
+  expect(button("Unfold structured object")).toBeUndefined();
+});
+
+it.each(["json", "text"] as const)(
+  "keeps inspector wrapping independent of folding for %s messages",
+  async (kind) => {
+    const onToggle = vi.fn();
+    const row = {
+      event: {
+        id: "wrap",
+        timestamp: 1,
+        message: "line one\nline two",
+        logGroup: "/test",
+        logStream: "test",
+      },
+      level: "info" as const,
+      parsed:
+        kind === "json"
+          ? { kind: "json" as const, value: { nested: { message: "value" } } }
+          : { kind: "text" as const },
+    };
+    await act(async () => {
+      renderer = create(
+        <MessageContent
+          row={row}
+          highlight=""
+          controls
+          lineWrap={{ enabled: false, onToggle }}
+        />,
+      );
+    });
+    const wrap = button("Toggle inspector line wrap")!;
+    expect(wrap.props["aria-pressed"]).toBe(false);
+    expect(wrap.props["data-tooltip"]).toBe("Wrap inspector lines");
+    await act(async () => wrap.props.onClick());
+    expect(onToggle).toHaveBeenCalledExactlyOnceWith();
+    if (kind === "json") {
+      expect(button("Unfold structured object")).toBeDefined();
+      expect(button("Expand /nested")).toBeDefined();
+    }
+  },
+);
 
 it("adds the exact property value to filtering without losing JSON Pointer escaping", async () => {
   const filtered = vi.fn();

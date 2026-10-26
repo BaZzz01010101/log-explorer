@@ -1,0 +1,22 @@
+:root {
+  --app-floating-shadow: 0 4px 16px #0002;
+}
+
+/* One elevation for floating controls, selectable tooltips and drag previews. */
+.app-tooltip,
+.mantine-Menu-dropdown,
+.mantine-Popover-dropdown,
+.mantine-Combobox-dropdown,
+.mantine-Select-dropdown,
+.mantine-MultiSelect-dropdown,
+.mantine-Autocomplete-dropdown,
+.server-filter-suggestions,
+.workspace-drag-preview,
+[data-tab-row-preview],
+.workspace-tab.is-dragging,
+.pane-drag-header.is-dragging,
+.resource-drag-preview,
+.column-dragging,
+.highlight-rules-table tr[data-dragging="true"] {
+  box-shadow: var(--app-floating-shadow) !important;
+}

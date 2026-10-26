@@ -1,5 +1,58 @@
 # Implementation plan
 
+## Settings activity separator (0.1.46)
+
+Match the main-menu separator above the Settings activity button and verify both
+themes and Settings panel behavior in hidden offline windows.
+
+## Window controls divider (0.1.45)
+
+Remove the thin gray vertical divider before the window controls and validate the
+existing native window layout and interactions in hidden offline tests.
+
+## Settings baseline and workspace tab edges (0.1.44)
+
+Use one consistent gray Settings baseline while retaining its blue active accent.
+Restore top borders below pinned rows and along exposed wrapped tabs.
+See [the checklist](tab-border-rendering-0.1.44.md).
+
+## Settings hints and baseline (0.1.43)
+
+Strengthen the unit-hint text, remove the Settings content frame and extend the
+tab baseline to the pane/modal edges. See [the checklist](settings-contrast-and-borders-0.1.43.md).
+
+## Startup theme and connected Settings tabs (0.1.42)
+
+Apply the saved theme before native/renderer first paint, separate the main menu
+activity icon and replace Settings button cards with tabs joined to their panel.
+See [the checklist](startup-and-settings-tabs-0.1.42.md).
+
+## Visual corrections (0.1.41)
+
+Join the time-template grouping guide, use a distinct AWS wordmark and show compact
+per-key shortcut badges with unambiguous plus separators. See [the checklist](visual-corrections-0.1.41.md).
+
+## History, settings and activity controls (0.1.40)
+
+Expand and truncate closed-view history with seven-day configurable retention,
+align quick-template slots on one axis, refine Settings tabs and activity icons,
+and expose app version and working menu shortcuts. See [the checklist](interface-polish-0.1.40.md).
+
+## Tab state and viewing controls (0.1.39)
+
+Retain each tab's loaded viewer state across selection and split transitions, add clear-and-query for server filters, expose time-field steppers/wheel editing, and consolidate inspector actions. See [the checklist](tab-state-and-controls-0.1.39.md).
+
+## Viewing and time-template corrections (0.1.38)
+
+Restore numeric relative-time rows and compact fixed-slot editing, retain inactive Live indicators, decouple Explorer selection from views, and correct toolbar order and independent wrapping. See [the checklist](viewing-corrections-0.1.38.md).
+
+## Workspace controls and viewing preferences (0.1.37)
+
+Raise the pane width limit; persist Settings detach/dock mode; configure quick
+and dropdown relative templates; show dated closed-tab history, source-count
+badges and query/Live status. Align floating shadows, protect core columns while
+supporting removal, and scope undo to the focused input. See [the checklist](workspace-polish-0.1.37.md).
+
 ## Activity panels and contextual pinned row (0.1.36)
 
 Hide the empty separate pinned row until a drag reaches the window top edge.

@@ -306,15 +306,11 @@ test("field menus deserialize nested values temporarily, preserve raw records an
   const original = await app.evaluate(
     () => (globalThis as any).__fieldEvents[0].message,
   );
-  await page
-    .getByRole("button", { name: "Copy selected messages", exact: true })
-    .click();
+  await page.locator(".viewer-scroll").press("Control+c");
   expect(
     (await app.evaluate(() => (globalThis as any).__fieldCopies)).at(-1),
   ).toBe(original);
-  await page
-    .getByRole("button", { name: "Copy selected events as", exact: true })
-    .click();
+  await event.locator(".inspect-cell").first().click({ button: "right" });
   await page.getByRole("menuitem", { name: /^Copy selected records/ }).click();
   const records = JSON.parse(
     (await app.evaluate(() => (globalThis as any).__fieldCopies)).at(-1),
@@ -348,9 +344,11 @@ test("field menus deserialize nested values temporarily, preserve raw records an
     await page.keyboard.press("Escape");
     await expect(page.getByRole("dialog")).toBeHidden();
     await expect(line("/payload")).toHaveAttribute("data-deserialized", "true");
-    await inspector
-      .getByRole("button", { name: "Unfold structured object", exact: true })
-      .click();
+    const unfold = inspector.getByRole("button", {
+      name: "Unfold structured object",
+      exact: true,
+    });
+    if (await unfold.count()) await unfold.click();
     await expect(line("/payload/a~1b/value")).toBeVisible();
     await page.waitForTimeout(150);
     const image = await app.evaluate(async ({ BrowserWindow }) => {

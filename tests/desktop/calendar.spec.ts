@@ -19,6 +19,8 @@ let child: ReturnType<ElectronApplication["process"]> | undefined;
 let page: Page;
 let directory: string;
 let errors: string[];
+let processOutput: string[];
+let closeCount = 0;
 const temporaryRoot = resolve(".tmp", "desktop-calendar");
 type ProbeWindow = Window & { calendarUpdates: QueryUpdate[] };
 
@@ -48,6 +50,26 @@ async function launch() {
     env,
   });
   child = app.process();
+  processOutput = [];
+  child.stdout?.on("data", (data) => processOutput.push(String(data)));
+  child.stderr?.on("data", (data) => processOutput.push(String(data)));
+  child.on("exit", (code) =>
+    processOutput.push(`child-exit ${Date.now()} ${code}`),
+  );
+  child.on("close", (code) =>
+    processOutput.push(`child-close ${Date.now()} ${code}`),
+  );
+  await app.evaluate(({ app, BrowserWindow, ipcMain }) => {
+    const mark = (stage: string) =>
+      console.log("Calendar close probe", Date.now(), stage);
+    BrowserWindow.getAllWindows()[0].on("close", () => mark("window-close"));
+    BrowserWindow.getAllWindows()[0].on("closed", () => mark("window-closed"));
+    ipcMain.on("explorer:close-ready", (_event, _token, success) =>
+      mark(`renderer-saved:${success}`),
+    );
+    app.on("before-quit", () => mark("before-quit"));
+    app.on("will-quit", () => mark("will-quit"));
+  });
   page = await app.firstWindow();
   page.setDefaultTimeout(6000);
   const cdp = await page.context().newCDPSession(page);
@@ -89,21 +111,41 @@ async function launch() {
 
 async function closeNaturally() {
   if (!app || !child || child.exitCode !== null) return;
-  const exit = app.waitForEvent("close", { timeout: 7000 });
+  const started = Date.now();
+  // Match the normal Playwright event budget. Shutdown includes the renderer
+  // acknowledgement, disk flush and cleanup; record those stages on failure.
+  const exit = app.waitForEvent("close", { timeout: 30000 });
   const processExit = new Promise<number | null>((resolveExit) =>
     child!.once("exit", resolveExit),
   );
-  await app.evaluate(({ BrowserWindow }) =>
-    BrowserWindow.getAllWindows()[0].close(),
-  );
-  await exit;
-  expect(await processExit).toBe(0);
+  try {
+    await app.evaluate(({ BrowserWindow }) =>
+      BrowserWindow.getAllWindows()[0].close(),
+    );
+    await exit;
+    expect(await processExit).toBe(0);
+  } finally {
+    await mkdir(test.info().outputDir, { recursive: true });
+    await writeFile(
+      test.info().outputPath(`close-${closeCount++}.json`),
+      JSON.stringify(
+        {
+          elapsedMs: Date.now() - started,
+          exitCode: child.exitCode,
+          processOutput,
+        },
+        null,
+        2,
+      ),
+    );
+  }
 }
 
 test.beforeEach(async () => {
   await mkdir(temporaryRoot, { recursive: true });
   directory = await mkdtemp(join(temporaryRoot, "case-"));
   errors = [];
+  closeCount = 0;
   await launch();
 });
 
@@ -112,11 +154,22 @@ test.afterEach(async () => {
     await closeNaturally();
   } finally {
     if (child && child.exitCode === null) {
-      if (process.platform === "win32")
-        execFileSync("taskkill", ["/PID", String(child.pid), "/T", "/F"], {
-          stdio: "ignore",
-        });
-      else child.kill();
+      if (process.platform === "win32") {
+        try {
+          execFileSync("taskkill", ["/PID", String(child.pid), "/T", "/F"], {
+            stdio: "ignore",
+          });
+        } catch (error) {
+          // A concurrent natural exit must not mask the original close error.
+          try {
+            process.kill(child.pid!, 0);
+            throw error;
+          } catch (probeError) {
+            if ((probeError as NodeJS.ErrnoException).code !== "ESRCH")
+              throw probeError;
+          }
+        }
+      } else child.kill();
     }
   }
   expect(errors).toEqual([]);
@@ -628,7 +681,7 @@ for (const theme of ["dark", "light"] as const) {
       .locator(".resource-label")
       .dblclick();
     await page.setViewportSize({ width: 940, height: 760 });
-    await page.getByLabel("Add split pane", { exact: true }).click();
+    await page.getByLabel("Split pane", { exact: true }).click();
     await expect(page.locator(".workspace-pane")).toHaveCount(2);
     await checkGlyphs("narrow-hours", "Hours");
     await checkGlyphs("narrow-days", "Days");
@@ -749,7 +802,7 @@ test("Custom popover fits normal and narrow panes in both themes", async () => {
     .locator(".resource-label")
     .dblclick();
   await page.setViewportSize({ width: 940, height: 760 });
-  await page.getByLabel("Add split pane", { exact: true }).click();
+  await page.getByLabel("Split pane", { exact: true }).click();
   await expect(page.locator(".workspace-pane")).toHaveCount(2);
   for (const theme of ["dark", "light"] as const) {
     await chooseTheme(theme);

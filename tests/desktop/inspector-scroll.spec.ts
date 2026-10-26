@@ -44,6 +44,7 @@ test.beforeEach(async ({}, info) => {
   workspace.tabs[0].filterPattern = "";
   workspace.tabs[0].view.mode = "table";
   workspace.tabs[0].view.wrap = false;
+  workspace.tabs[0].view.inspectorWrap = false;
   workspace.tabs[0].view.localSearch = "";
   if (info.title.includes("profile")) {
     workspace.preferences.highlightProfiles = [
@@ -549,8 +550,17 @@ test("raw multiline message map uses rendered positions and navigates after wrap
   await assertOnlyMessageScrolls();
   await page.setViewportSize({ width: 950, height: 680 });
   const wrap = page
-    .getByRole("button", { name: "Toggle line wrap", exact: true })
+    .getByRole("button", { name: "Toggle inspector line wrap", exact: true })
     .first();
+  await expect(wrap).toHaveAttribute("aria-pressed", "false");
+  await wrap.click();
+  await expect(messageScroll()).toHaveClass(/inspector-wrap/);
+  await assertOnlyMessageScrolls();
+  await assertProportions();
+  await wrap.click();
+  await expect(messageScroll()).not.toHaveClass(/inspector-wrap/);
+  await assertOnlyMessageScrolls();
+  await assertProportions();
   await wrap.click();
   await expect(messageScroll()).toHaveClass(/inspector-wrap/);
   await assertOnlyMessageScrolls();
@@ -590,7 +600,33 @@ test("folded structured branches keep measured map markers and clicking reveals 
   );
   await expect(folded).toBeVisible();
   await expect(messageMarks("manual")).toHaveCount(2);
-  await messageMarks("manual").last().click();
+  // Wait for the asynchronous map measurement to reflect the folded indicator,
+  // rather than the now-removed descendant mark. Hidden native windows can delay
+  // Playwright's animation-frame stability check; use a trusted pointer click
+  // after checking the actual geometry, then verify its navigation below.
+  await expect
+    .poll(() =>
+      inspector().evaluate((element) => {
+        const scroll =
+          element.querySelector<HTMLElement>(".inspector-content")!;
+        const indicator = element.querySelector<HTMLElement>(
+          '[data-json-path="/nested"] .json-match-indicator i[data-match-origin="manual"]',
+        )!;
+        const markers = element.querySelectorAll<HTMLElement>(
+          '.inspector-message-mark[data-match-origin="manual"]',
+        );
+        const start =
+          indicator.getBoundingClientRect().top +
+          scroll.scrollTop -
+          scroll.getBoundingClientRect().top -
+          scroll.clientTop;
+        return Math.abs(
+          Number(markers[markers.length - 1]?.dataset.contentStart) - start,
+        );
+      }),
+    )
+    .toBeLessThan(1);
+  await messageMarks("manual").last().click({ force: true });
   await expect(
     inspector().locator('[data-json-path="/nested"]'),
   ).toBeInViewport();
@@ -610,7 +646,7 @@ test("folded structured branches keep measured map markers and clicking reveals 
     "data-content-start",
     before!,
   );
-  await messageMarks("manual").last().click();
+  await messageMarks("manual").last().click({ force: true });
   await expect(
     inspector().locator('[data-json-path="/nested/deep/target"]'),
   ).toBeInViewport();

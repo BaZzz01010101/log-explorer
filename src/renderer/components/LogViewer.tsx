@@ -8,6 +8,7 @@ import {
   useState,
   type CSSProperties,
 } from "react";
+import { createPortal } from "react-dom";
 import {
   ActionIcon,
   Badge,
@@ -246,6 +247,8 @@ export function LogViewer({
   const expansion = useMessageExpansion(view.mode);
   const detailHeights = useRef(new WeakMap<LogEvent, number>());
   const [inspectorMode, setInspectorMode] = useState("structured");
+  const [inspectorActionsTarget, setInspectorActionsTarget] =
+    useState<HTMLDivElement | null>(null);
   const [columnsOpened, setColumnsOpened] = useState(false);
   const [columnInput, setColumnInput] = useState("");
   const [draggedColumn, setDraggedColumn] = useState<string | null>(null);
@@ -710,7 +713,7 @@ export function LogViewer({
   };
   return (
     <div
-      className={`log-viewer density-${preferences.density} ${view.wrap ? "viewer-wrap" : ""}`}
+      className={`log-viewer density-${preferences.density}`}
       style={
         { "--log-font-size": `${preferences.fontSize}px` } as CSSProperties
       }
@@ -842,6 +845,7 @@ export function LogViewer({
         <Tooltip label={view.wrap ? "Disable line wrapping" : "Wrap lines"}>
           <ActionIcon
             aria-label="Toggle line wrap"
+            aria-pressed={view.wrap}
             variant={view.wrap ? "light" : "subtle"}
             onClick={() => onViewChange({ ...view, wrap: !view.wrap })}
           >
@@ -865,76 +869,6 @@ export function LogViewer({
             ) : (
               <IconArrowsVertical size={16} />
             )}
-          </ActionIcon>
-        </Tooltip>
-        <Button.Group>
-          <Tooltip label="Copy selected raw messages (Ctrl/Cmd+C)">
-            <Button
-              size="xs"
-              variant="default"
-              aria-label="Copy selected messages"
-              disabled={selection.selectedIds.length === 0 || filtering}
-              leftSection={<IconCopy size={14} />}
-              onClick={() => void copySelected("messages")}
-            >
-              {selection.selectedIds.length.toLocaleString()} selected
-            </Button>
-          </Tooltip>
-          <Menu withinPortal transitionProps={{ duration: 0 }}>
-            <Menu.Target>
-              <Button
-                size="xs"
-                variant="default"
-                px={6}
-                aria-label="Copy selected events as"
-                disabled={selection.selectedIds.length === 0 || filtering}
-              >
-                <IconChevronDown size={14} />
-              </Button>
-            </Menu.Target>
-            <Menu.Dropdown onKeyDown={(event) => event.stopPropagation()}>
-              <Menu.Item
-                leftSection={<IconCopy size={14} />}
-                rightSection={
-                  <Text size="xs" c="dimmed">
-                    Ctrl/Cmd+C
-                  </Text>
-                }
-                onClick={() => void copySelected("messages")}
-              >
-                Copy selected messages
-              </Menu.Item>
-              <Menu.Item
-                leftSection={<IconBraces size={14} />}
-                rightSection={
-                  <Text size="xs" c="dimmed">
-                    Ctrl/Cmd+Shift+C
-                  </Text>
-                }
-                onClick={() => void copySelected("records")}
-              >
-                Copy selected records
-              </Menu.Item>
-            </Menu.Dropdown>
-          </Menu>
-        </Button.Group>
-        <Tooltip
-          label={
-            selection.opened ? "Hide event inspector" : "Show event inspector"
-          }
-        >
-          <ActionIcon
-            aria-label={
-              selection.opened ? "Hide event inspector" : "Show event inspector"
-            }
-            aria-pressed={selection.opened}
-            variant={selection.opened ? "light" : "default"}
-            onClick={() => {
-              if (selection.opened) closeInspector();
-              else selection.toggle();
-            }}
-          >
-            <IconLayoutSidebarRight size={16} />
           </ActionIcon>
         </Tooltip>
         <Menu position="bottom-end" withinPortal>
@@ -965,6 +899,25 @@ export function LogViewer({
             </Menu.Item>
           </Menu.Dropdown>
         </Menu>
+        <Tooltip
+          label={
+            selection.opened ? "Hide event inspector" : "Show event inspector"
+          }
+        >
+          <ActionIcon
+            aria-label={
+              selection.opened ? "Hide event inspector" : "Show event inspector"
+            }
+            aria-pressed={selection.opened}
+            variant={selection.opened ? "light" : "default"}
+            onClick={() => {
+              if (selection.opened) closeInspector();
+              else selection.toggle();
+            }}
+          >
+            <IconLayoutSidebarRight size={16} />
+          </ActionIcon>
+        </Tooltip>
       </div>
       {notice && (
         <div className="viewer-notice" role="status">
@@ -997,7 +950,9 @@ export function LogViewer({
           }
         }}
       >
-        <div className="event-scroll-layout">
+        <div
+          className={`event-scroll-layout${view.wrap ? " viewer-wrap" : ""}`}
+        >
           <div
             className="viewer-scroll"
             ref={scrollRef}
@@ -1791,11 +1746,7 @@ export function LogViewer({
             }}
           />
         </div>
-        <EventInspector
-          opened={selection.opened}
-          onClose={closeInspector}
-          eventId={inspected?.event.id}
-        >
+        <EventInspector opened={selection.opened} eventId={inspected?.event.id}>
           {!inspected && (
             <Text size="sm" c="dimmed">
               Select an event to inspect.
@@ -1929,22 +1880,25 @@ export function LogViewer({
                       { value: "raw", label: "Raw message" },
                     ]}
                   />
-                  <Group gap="xs">
+                  <Group gap={4}>
+                    <div
+                      className="inspector-message-actions"
+                      ref={setInspectorActionsTarget}
+                    />
                     <Menu withinPortal>
                       <Menu.Target>
-                        <Button
-                          size="xs"
+                        <ActionIcon
+                          size={28}
                           variant="light"
-                          leftSection={
-                            copied ? (
-                              <IconCheck size={13} />
-                            ) : (
-                              <IconCopy size={13} />
-                            )
-                          }
+                          aria-label="Copy"
+                          data-tooltip="Copy event message or metadata"
                         >
-                          Copy
-                        </Button>
+                          {copied ? (
+                            <IconCheck size={13} />
+                          ) : (
+                            <IconCopy size={13} />
+                          )}
+                        </ActionIcon>
                       </Menu.Target>
                       <Menu.Dropdown>
                         <Menu.Item
@@ -1975,7 +1929,9 @@ export function LogViewer({
                 </Group>
                 <InspectorMessage
                   eventId={inspected.event.id}
-                  className={view.wrap ? "inspector-wrap" : undefined}
+                  className={
+                    (view.inspectorWrap ?? true) ? "inspector-wrap" : undefined
+                  }
                   style={{ fontSize: preferences.fontSize }}
                 >
                   {inspectorMode === "structured" ? (
@@ -1995,6 +1951,19 @@ export function LogViewer({
                       deserializedPaths={deserialized.pathsFor(inspected.event)}
                       onAddFilter={addFilter}
                       controls
+                      renderActions={(actions) =>
+                        inspectorActionsTarget
+                          ? createPortal(actions, inspectorActionsTarget)
+                          : null
+                      }
+                      lineWrap={{
+                        enabled: view.inspectorWrap ?? true,
+                        onToggle: () =>
+                          onViewChange({
+                            ...view,
+                            inspectorWrap: !(view.inspectorWrap ?? true),
+                          }),
+                      }}
                       autoExpandMatches={
                         preferences.autoExpandFilterMatches !== false
                       }
@@ -2003,6 +1972,19 @@ export function LogViewer({
                   ) : (
                     <MessageContent
                       row={{ ...inspected, parsed: { kind: "text" } }}
+                      renderActions={(actions) =>
+                        inspectorActionsTarget
+                          ? createPortal(actions, inspectorActionsTarget)
+                          : null
+                      }
+                      lineWrap={{
+                        enabled: view.inspectorWrap ?? true,
+                        onToggle: () =>
+                          onViewChange({
+                            ...view,
+                            inspectorWrap: !(view.inspectorWrap ?? true),
+                          }),
+                      }}
                       highlight={highlightText}
                     />
                   )}

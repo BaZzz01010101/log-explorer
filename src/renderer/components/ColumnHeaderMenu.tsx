@@ -1,7 +1,11 @@
 import {} from "@mantine/core";
 import { Menu } from "./AppMenu";
 import type { ColumnConfig } from "../../shared/contracts";
-import { applyColumnAction, type ColumnAction } from "../column-actions";
+import {
+  applyColumnAction,
+  isProtectedColumn,
+  type ColumnAction,
+} from "../column-actions";
 
 export interface ColumnHeaderMenuTarget {
   path: string;
@@ -30,7 +34,11 @@ export function ColumnHeaderMenu({
   onClose(): void;
   onChange(columns: ColumnConfig[]): void;
 }) {
-  if (!target) return null;
+  if (
+    !target ||
+    !columns.some((column) => column.path === target.path && !column.hidden)
+  )
+    return null;
   const close = () => {
     const origin = target.origin;
     onClose();
@@ -91,6 +99,18 @@ export function ColumnHeaderMenu({
             </Menu.Item>
           );
         })}
+        <Menu.Divider />
+        <Menu.Item
+          disabled={
+            applyColumnAction(columns, target.path, "remove") === columns
+          }
+          onClick={() => {
+            onChange(applyColumnAction(columns, target.path, "remove"));
+            close();
+          }}
+        >
+          {isProtectedColumn(target.path) ? "Hide column" : "Remove column"}
+        </Menu.Item>
       </Menu.Dropdown>
     </Menu>
   );

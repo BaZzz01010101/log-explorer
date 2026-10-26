@@ -24,21 +24,6 @@
   font-weight: 600;
 }
 
-.event-inspector-hide {
-  padding: 3px 7px;
-  border: 0;
-  border-radius: 4px;
-  background: transparent;
-  color: var(--mantine-color-dimmed);
-  cursor: pointer;
-  font: inherit;
-  font-size: 11px;
-}
-
-.event-inspector-hide:hover {
-  background: var(--mantine-color-default-hover);
-}
-
 .event-inspector-body {
   display: flex;
   flex-direction: column;
@@ -100,6 +85,12 @@
 .inspector-tools {
   flex: 0 0 auto;
   gap: 6px;
+}
+.inspector-message-actions:empty {
+  display: none;
+}
+.inspector-message-actions .structured-actions {
+  margin-bottom: 0;
 }
 
 @container event-inspector (max-height: 220px) {

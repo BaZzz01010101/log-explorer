@@ -216,6 +216,66 @@ async function action(path: string, name: string) {
   await page.getByRole("menuitem", { name, exact: true }).click();
   await expect(page.getByRole("menu")).toHaveCount(0);
 }
+
+test("removes custom columns and hides protected columns while preserving saved configuration", async () => {
+  await action("/service/name", "Remove column");
+  await expect(header("/service/name")).toHaveCount(0);
+  await action("@level", "Hide column");
+  await expect(header("@level")).toHaveCount(0);
+  await expect
+    .poll(async () => {
+      const columns = restoreWorkspace(
+        (await page.evaluate(() => window.explorer.loadWorkspace())).workspace,
+      ).tabs[0].view.columns;
+      return {
+        custom: columns.some((column) => column.path === "/service/name"),
+        level: columns.find((column) => column.path === "@level"),
+      };
+    })
+    .toEqual({
+      custom: false,
+      level: { path: "@level", width: 80, hidden: true },
+    });
+  await menu("@timestamp");
+  await expect(
+    page.getByRole("menuitem", { name: "Hide column", exact: true }),
+  ).toBeVisible();
+  await page.keyboard.press("Escape");
+});
+
+test("undo and redo remain in the focused local filter after editing highlight text", async () => {
+  const local = page.getByRole("textbox", {
+    name: "Local filter loaded events",
+    exact: true,
+  });
+  const highlight = page.getByRole("textbox", {
+    name: "Highlight text in loaded events",
+    exact: true,
+  });
+  await local.fill("");
+  await local.pressSequentially("order");
+  await highlight.fill("");
+  await highlight.pressSequentially("highlight");
+  await local.focus();
+  await local.press("Control+z");
+  await expect(local).toBeFocused();
+  await expect(local).toHaveValue("");
+  await expect(highlight).toHaveValue("highlight");
+  await local.press("Control+Shift+z");
+  await expect(local).toHaveValue("order");
+  await local.press("Control+z");
+  await highlight.focus();
+  await highlight.press("Control+z");
+  await expect(highlight).toHaveValue("");
+  await expect(local).toHaveValue("");
+  await highlight.press("Control+y");
+  await expect(highlight).toHaveValue("highlight");
+  // Controlled React state must agree with the DOM after an unrelated render.
+  await local.pressSequentially("o");
+  await expect(highlight).toHaveValue("highlight");
+  await local.press("Control+z");
+  await expect(local).toHaveValue("");
+});
 for (const mode of ["Table", "Hybrid"])
   test(`${mode} column context actions preserve displayed order, pin pools and persisted configuration`, async () => {
     await page

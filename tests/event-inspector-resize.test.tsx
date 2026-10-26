@@ -67,9 +67,9 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-function content(opened = true, onClose = vi.fn()) {
+function content(opened = true) {
   return (
-    <EventInspector opened={opened} eventId="event-two" onClose={onClose}>
+    <EventInspector opened={opened} eventId="event-two">
       <button type="button">Copy event</button>
     </EventInspector>
   );
@@ -125,7 +125,7 @@ async function resizeParent(width: number) {
   await act(async () => notifyResize([], {} as ResizeObserver));
 }
 
-it("exposes a nonmodal inspector with an accessible resize handle and hide action", async () => {
+it("exposes a nonmodal inspector with an accessible resize handle and no duplicate hide action", async () => {
   await mount();
   const region = renderer!.root.findByType("aside");
   expect(region.props.role).toBe("region");
@@ -137,12 +137,9 @@ it("exposes a nonmodal inspector with an accessible resize handle and hide actio
   expect(divider().props["aria-valuenow"]).toBe(300);
   expect(divider().props["aria-valuemin"]).toBe(260);
   expect(divider().props["aria-valuemax"]).toBe(860);
-  const close = vi.fn();
-  await act(async () => renderer!.update(content(true, close)));
-  renderer!.root
-    .findByProps({ "aria-label": "Hide inspector" })
-    .props.onClick();
-  expect(close).toHaveBeenCalledOnce();
+  expect(
+    renderer!.root.findAllByProps({ "aria-label": "Hide inspector" }),
+  ).toHaveLength(0);
 });
 
 it("resizes the right dock live under pointer capture and restores selection on release", async () => {

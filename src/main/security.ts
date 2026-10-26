@@ -42,6 +42,7 @@ export const querySchema = z
   })
   .refine((v) => v.endTime > v.startTime, "End time must be after start time");
 const viewSchema = z.object({
+  inspectorWrap: z.boolean().optional(),
   highlightText: z.string().max(200).optional(),
   inspectorInfoCollapsed: z.boolean().optional(),
   mode: z.enum(["hybrid", "table", "json"]),
@@ -70,6 +71,7 @@ const viewSchema = z.object({
   sort: z.object({ path: z.string().max(2048), desc: z.boolean() }).optional(),
 });
 const tabSchema = z.object({
+  closedAt: z.number().finite().min(0).optional(),
   pinned: z.boolean().optional(),
   id,
   title: z.string().max(512),
@@ -198,7 +200,7 @@ export const workspaceSchema = z
       .max(MAX_SPLIT_PANES),
     activePaneId: id,
     layout: boundedPaneLayoutSchema().optional(),
-    sidebarWidth: z.number().min(180).max(600),
+    sidebarWidth: z.number().min(180).max(1200),
     sidebarVisible: z.boolean(),
     splitSizes: z
       .object({
@@ -221,6 +223,32 @@ export const workspaceSchema = z
       )
       .max(500),
     preferences: z.object({
+      settingsDetached: z.boolean().optional(),
+      closedTabHistoryDays: z.number().int().min(1).max(365).optional(),
+      relativeTimeTemplates: z
+        .object({
+          quick: z
+            .array(
+              z.object({
+                id,
+                label: z.string().max(80),
+                duration: z.number().int().min(1).max(9999),
+                unit: z.enum(["m", "h", "d", "w"]),
+              }),
+            )
+            .max(30),
+          dropdown: z
+            .array(
+              z.object({
+                id,
+                label: z.string().max(80),
+                duration: z.number().int().min(1).max(9999),
+                unit: z.enum(["m", "h", "d", "w"]),
+              }),
+            )
+            .max(30),
+        })
+        .optional(),
       profileVisibility: z
         .record(z.string().min(1).max(256), z.boolean())
         .refine(

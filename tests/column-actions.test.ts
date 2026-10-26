@@ -110,3 +110,26 @@ it("allows the column editor to pin and unpin hidden columns without moving thei
   expect(unpinned[1].pinned).toBe(false);
   expect(unpinned[1].hidden).toBe(true);
 });
+
+it("removes a custom column without changing the remaining configuration", () => {
+  const result = applyColumnAction(columns, "c", "remove");
+  expect(result).toEqual(columns.filter((column) => column.path !== "c"));
+  expect(result[1]).toBe(columns[1]);
+});
+
+it.each(["@timestamp", "@level", "@message", "@source"])(
+  "hides protected %s instead of removing it",
+  (path) => {
+    const config = [{ path, width: 240, pinned: true }, ...columns];
+    const result = applyColumnAction(config, path, "remove");
+    expect(result[0]).toEqual({ ...config[0], hidden: true });
+    expect(result.slice(1)).toEqual(columns);
+    expect(applyColumnAction(result, path, "remove")).toBe(result);
+  },
+);
+
+it("keeps at least one visible column and ignores a stale menu target", () => {
+  const config = [{ path: "/last", width: 180 }];
+  expect(applyColumnAction(config, "/last", "remove")).toBe(config);
+  expect(applyColumnAction(config, "/missing", "remove")).toBe(config);
+});

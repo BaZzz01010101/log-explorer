@@ -33,12 +33,22 @@ vi.mock("@mantine/core", async () => {
 
 let renderer: ReactTestRenderer | undefined;
 const patched = vi.fn();
-function Harness({ timezone = "utc" }: { timezone?: Preferences["timezone"] }) {
+function Harness({
+  timezone = "utc",
+  relativeTimeTemplates,
+  onOpenTimeRangeSettings,
+}: {
+  timezone?: Preferences["timezone"];
+  relativeTimeTemplates?: Preferences["relativeTimeTemplates"];
+  onOpenTimeRangeSettings?(): void;
+}) {
   const [tab, setTab] = useState(createWorkspace().tabs[0]);
   return (
     <TimeRangePicker
       tab={tab}
       timezone={timezone}
+      relativeTimeTemplates={relativeTimeTemplates}
+      onOpenTimeRangeSettings={onOpenTimeRangeSettings}
       onTimezoneChange={() => {}}
       onPatch={(patch) => {
         patched(patch);
@@ -181,4 +191,57 @@ it("keeps separate date/time edits as drafts until Apply commits a valid absolut
     customEnd: undefined,
   });
   expect(element("Time range").props["aria-pressed"]).toBe(false);
+});
+
+it("uses numeric shortcuts grouped by scale after migrating configured templates", async () => {
+  await act(async () => {
+    renderer = create(
+      <Harness
+        relativeTimeTemplates={{
+          quick: [{ id: "shift", label: "Shift", duration: 8, unit: "h" }],
+          dropdown: [
+            { id: "fortnight", label: "Fortnight", duration: 2, unit: "w" },
+            { id: "break", label: "Break", duration: 20, unit: "m" },
+          ],
+        }}
+      />,
+    );
+  });
+  expect(element("Set last 8 hours")).toBeDefined();
+  await act(async () => element("Set last 8 hours").props.onClick());
+  expect(patched).toHaveBeenLastCalledWith({ timePreset: "8h" });
+  await act(async () => element("Time range").props.onClick());
+  const rows = renderer!.root.findAllByProps({
+    className: "relative-range-row",
+  });
+  expect(
+    rows.map((row) =>
+      row.findAllByType("button").map((button) => button.props.children),
+    ),
+  ).toEqual([
+    [5, 10, 15, 20, 30],
+    [1, 2, 3, 6, 8, 12],
+    [1, 2, 3, 4, 5, 6],
+    [1, 2, 3, 4],
+  ]);
+  await act(async () => element("Last 2 weeks").props.onClick());
+  expect(patched).toHaveBeenCalledTimes(1);
+  await act(async () =>
+    renderer!.root.findByType("form").props.onSubmit({ preventDefault() {} }),
+  );
+  expect(patched).toHaveBeenLastCalledWith({ timePreset: "2w" });
+});
+
+it("opens time-range settings from the dropdown without applying a draft", async () => {
+  const openSettings = vi.fn();
+  await act(async () => {
+    renderer = create(<Harness onOpenTimeRangeSettings={openSettings} />);
+  });
+  await act(async () => element("Time range").props.onClick());
+  const gear = element("Time range settings");
+  expect(gear.props.children.type).toBeDefined();
+  expect(gear.parent?.props.className).toBe("time-range-mode-list");
+  await act(async () => element("Time range settings").props.onClick());
+  expect(openSettings).toHaveBeenCalledOnce();
+  expect(patched).not.toHaveBeenCalled();
 });

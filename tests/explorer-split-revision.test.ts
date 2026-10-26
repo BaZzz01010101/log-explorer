@@ -19,14 +19,14 @@ it("counts individual streams in generated mixed labels and totals all split pan
     tabId: primary.id,
     patch: { sources: [{ logGroup: "/same", logStreams: ["one", "two"] }] },
   });
-  expect(logTabLabel(state.tabs[0])).toBe("Mixed Sources (2)");
+  expect(logTabLabel(state.tabs[0])).toBe("Mixed Sources");
   const second = createTab("offline", [{ logGroup: "/other" }]);
   state = workspaceReducer(state, { type: "tab/open", tab: second });
   state = workspaceReducer(state, {
     type: "pane/show-tabs",
     tabIds: [primary.id, second.id],
   });
-  expect(workspaceEntries(state)[0].title).toBe("Mixed Sources (3)");
+  expect(workspaceEntries(state)[0].title).toBe("Mixed Sources");
   state = workspaceReducer(state, {
     type: "tab/rename",
     tabId: state.activeTabId!,
@@ -98,7 +98,7 @@ it("drops an Explorer source into a pane atomically without changing existing vi
     ...original,
     preview: false,
   });
-  expect(workspaceEntries(state)[0].title).toBe("Mixed Sources (2)");
+  expect(workspaceEntries(state)[0].title).toBe("Mixed Sources");
   expect(state.layout?.type === "split" && state.layout.axis).toBe("vertical");
   expect(workspaceSchema.safeParse(state).success).toBe(true);
   expect(

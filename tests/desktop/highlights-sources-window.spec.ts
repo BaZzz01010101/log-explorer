@@ -304,7 +304,7 @@ test("Explorer source badges refresh automatically, preserve individual streams 
   );
   await expect(page.locator(".query-status")).toContainText("1,080 loaded");
   await expect(page.locator(".workspace-tab").getByRole("tab")).toContainText(
-    "Mixed Sources (2)",
+    "Mixed Sources",
   );
   await expect(
     page.getByText("Sources updated. Run to query the current selection.", {
@@ -418,13 +418,15 @@ test("source-strip drops cancel with Escape and query another region", async () 
     .getByRole("menuitem", { name: "Before and after", exact: true })
     .hover();
   await page.getByRole("menuitem", { name: "1 minute", exact: true }).click();
-  await expect(page.getByRole("tab", { name: /^Context ·/ })).toBeVisible();
+  await expect(
+    page.getByRole("tab", { name: /^Context \u00b7/ }),
+  ).toBeVisible();
   await expect(page.locator(".pane-heading")).toContainText("us-east-1");
   await expect(
     page.locator('.source-badge[data-source-connection="other-fixtures"]'),
   ).toHaveCount(1);
   await page
-    .getByRole("tab", { name: /^Context ·/ })
+    .getByRole("tab", { name: /^Context \u00b7/ })
     .click({ button: "middle" });
   await expect(page.locator(".source-control")).toBeHidden();
 });
@@ -517,7 +519,7 @@ test("unused AWS anchor permits the selected fixture source with accurate Live h
   await expect(page.getByRole("tooltip")).toContainText(
     "explicitly simulated fixture stream",
   );
-  await expect(page.getByText(/limited fixture interpreter/)).toBeVisible();
+  await expect(page.getByText(/limited fixture interpreter/)).toHaveCount(0);
 });
 
 test("sole AWS source shows AWS Live costs despite an offline anchor without enabling AWS", async () => {
@@ -674,9 +676,7 @@ test("Explorer drags reveal another region's single-source tab without losing th
   await expect(page.locator(".query-pane")).toHaveCount(1);
   await expect(page.locator(".source-badge")).toHaveCount(2);
   await expect(page.locator(".query-status")).toContainText("1,080 loaded");
-  await expect(page.locator(".pane-heading")).toContainText(
-    "Mixed Sources (2)",
-  );
+  await expect(page.locator(".pane-heading")).toContainText("Mixed Sources");
 });
 
 test("Explorer groups and streams create and extend splits with exact drop previews", async () => {
@@ -718,7 +718,7 @@ test("Explorer groups and streams create and extend splits with exact drop previ
   );
   await expect(
     page.locator(".workspace-tab[data-entry-kind='split']"),
-  ).toContainText("Mixed Sources (2)");
+  ).toContainText("Mixed Sources");
   await expect(page.locator(".source-control").first()).toBeHidden();
   await page
     .getByRole("button", {
@@ -740,9 +740,7 @@ test("Explorer groups and streams create and extend splits with exact drop previ
   await page.mouse.up();
   await expect(page.locator(".query-pane")).toHaveCount(3);
   await expect(page.locator(".workspace-tab")).toHaveCount(1);
-  await expect(page.locator(".workspace-tab")).toContainText(
-    "Mixed Sources (3)",
-  );
+  await expect(page.locator(".workspace-tab")).toContainText("Mixed Sources");
   await expect(page.locator(".source-badge[data-source-stream]")).toHaveCount(
     1,
   );

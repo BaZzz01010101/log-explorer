@@ -1,6 +1,101 @@
 # Building and releasing
 
-## Latest local verification build (0.1.36)
+## Latest local verification build (0.1.46)
+
+Add a thin separator above Settings in the activity bar, reusing the themed
+separator below the main app menu. Build/typecheck, formatting, whitespace,
+packaging and hashes pass. Both targeted packaged activity-panel checks pass in
+hidden offline windows, covering light/dark themes and Settings pane/modal
+behavior. Existing unit evidence from 0.1.44 is retained for this decorative DOM
+addition; the full unit suite was not rerun. Artifacts:
+`release/0.1.46/artifact-manifest.json`. Evidence:
+`.tmp/desktop-verification-0.1.46.json`. The gated update waits for natural app
+exit and queues one hidden check of the standard executable afterward.
+State: `.tmp/standard-build-update-0.1.46.json`. Changes remain uncommitted.
+
+## Earlier local verification build (0.1.45)
+
+Remove the thin gray vertical divider beside the window controls. Build/typecheck,
+formatting, whitespace, packaging and artifact hashes pass. All eight targeted
+packaged window checks pass in hidden offline windows, covering both themes,
+narrow wrapping, zoom, menus and close-time saving. Existing unit evidence from
+0.1.44 is retained for this CSS-only update; the full unit suite was not rerun.
+Artifacts: `release/0.1.45/artifact-manifest.json`. Evidence:
+`.tmp/desktop-verification-0.1.45.json`. The gated local update waits for natural
+app exit and queues one hidden check of the standard executable afterward.
+State: `.tmp/standard-build-update-0.1.45.json`. Changes remain uncommitted.
+
+The standard-folder update completed. Its initial post-update test selector
+matched no cases; the corrected hidden check passed in
+`.tmp/test-results-standard-0.1.45-verified/report.json`.
+
+## Earlier local verification build (0.1.44)
+
+Settings uses one consistently aligned gray baseline across inactive tabs, gaps and outer margins, preserving the blue active-tab accent. Every workspace tab owns its top edge, including unpinned tabs below a separate pinned row and exposed tabs in ragged wrapped rows. See [details and evidence](tab-border-rendering-0.1.44.md).
+
+All 908 unit/integration tests and all 36 targeted final packaged native scenarios pass without failures, skips or flaky cases. Actual native pixels cover both themes and fractional zoom; interaction checks cover pin rows, wrapping, reordering, hover activation, painting and middle-click closing. Typecheck, formatting, whitespace, build, NSIS packaging and hashes pass. Tests remained hidden and offline; real AWS and installer installation were not exercised. Artifacts: `release/0.1.44/artifact-manifest.json`. Evidence: `.tmp/unit-0.1.44-final.json` and `.tmp/desktop-verification-0.1.44.json`. The gated standard-folder handoff waits for natural exit, retains a backup and queues three hidden checks afterward. State: `.tmp/standard-build-update-0.1.44.json`. Changes remain uncommitted.
+
+## Earlier local verification build (0.1.43)
+
+Minutes/Hours/Days grouping hints use stronger themed text and medium weight. Settings tab content has no left, right or bottom frame, and the tab baseline extends through the body's gutters to both pane/modal edges while preserving the open active tab. See [details and evidence](settings-contrast-and-borders-0.1.43.md).
+
+All 908 unit/integration tests and both targeted packaged native theme scenarios pass. Geometry checks and actual captures cover light/dark panes, modals and narrow navigation. Typecheck, formatting, whitespace, build, NSIS packaging and hashes pass. Tests remained hidden and offline; real AWS and installer installation were not exercised. Artifacts: `release/0.1.43/artifact-manifest.json`. Evidence: `.tmp/unit-0.1.43-verified.json` and `.tmp/desktop-verification-0.1.43.json`. The gated standard-folder handoff waits for natural exit, retains a backup and queues two hidden checks afterward. State: `.tmp/standard-build-update-0.1.43.json`. Changes remain uncommitted.
+
+## Earlier local verification build (0.1.42)
+
+Native caption/background colors use the saved or recovered workspace theme before the first window paint. The renderer waits for restoration before displaying its UI, eliminating the dark default frame when light mode is saved. The validated startup result is reused once, preserving recovery warnings; later workspace loads remain fresh. A thin divider separates the main app-menu icon from other activity controls. Settings now uses tabs joined to a bordered content panel, with top corners, a shared baseline and an open active bottom edge; the old boxed button container is removed. Narrow tab strips scroll independently. See [implementation and evidence](startup-and-settings-tabs-0.1.42.md).
+
+The old native dark background and renderer dark frames were reproduced on 0.1.41. All 908 unit/integration tests and all 30 affected packaged desktop scenarios pass without failures, skips or flaky cases. First-frame pixels and theme mutation samples cover delayed restoration; native checks also cover backup recovery, both themes, connected tab styling, narrow navigation, activity controls, pin dragging, window/menu/zoom and close-time saving. Startup lifecycle/cache/recovery received independent review. Typecheck, formatting, whitespace, build, NSIS packaging, hashes and visual inspection pass. Tests remained hidden and offline; real AWS and installer installation were not exercised.
+
+Artifacts: `release/0.1.42/artifact-manifest.json`; executable: `release/0.1.42/win-unpacked/AWS Log Explorer.exe`. Evidence: `.tmp/unit-0.1.42-final.json` and `.tmp/desktop-verification-0.1.42.json`. The gated standard-folder update waits for natural exit, retains a backup and queues three hidden startup checks afterward. State: `.tmp/standard-build-update-0.1.42.json`. Changes remain uncommitted.
+
+## Earlier local verification build (0.1.41)
+
+Quick-template grouping uses a continuous baseline with upward boundary ticks and centered labels. AWS Explorer has a distinct AWS wordmark and orange smile rather than a near-duplicate app icon. Main-menu shortcuts display compact per-key rounded badges with thin borders and separate combination indicators; the plus key remains distinguishable from its separator. See [corrections and evidence](visual-corrections-0.1.41.md).
+
+All 908 unit/integration tests and all eight targeted packaged desktop scenarios pass. Native geometry checks and actual captures cover both themes, pane/modal presentation, connected guides, compact key bounds and literal-plus rendering. Typecheck, formatting, whitespace, build, NSIS packaging and hashes pass. No production changes followed final packaging. Tests remained hidden and offline; real AWS and installer installation were not exercised.
+
+Artifacts: `release/0.1.41/artifact-manifest.json`; executable: `release/0.1.41/win-unpacked/AWS Log Explorer.exe`. Evidence: `.tmp/unit-0.1.41-final.json` and `.tmp/desktop-verification-0.1.41.json`. The standard-folder handoff waits for natural exit and retains a backup; three hidden exact-standard-path checks are queued afterward. State: `.tmp/standard-build-update-0.1.41.json`. Changes remain uncommitted.
+
+## Earlier local verification build (0.1.40)
+
+Closed-view history uses up to 760px and the available window height, clips long names with ellipsis and full-name custom tooltips, and displays the corresponding icon/source badge. Preferences sets a seven-day default retention bound, including migration and expiry on restore/reopen. Quick time-template slots occupy one grouped row; relative dropdown rows remain unchanged. Settings uses themed tab shapes, its activity button toggles visibility, the AWS icon matches the app icon and Settings uses a gear. The app menu includes version and working shortcut hints, Toggle side panel preserves panel content, and the heavy pinned-row separator is removed. See [behavior and evidence](interface-polish-0.1.40.md).
+
+All 906 unit/integration tests and all 39 affected packaged desktop scenarios pass without failures, skips or flaky cases on the same artifact. Both themes, narrow windows, retention persistence, full-name tooltips, every numeric stepper/wheel input, pinned dragging, tab/split retention and native menu/zoom/close are covered. Typecheck, formatting, whitespace, build, NSIS packaging, hashes, visual inspection and independent review pass. Tests remained hidden and offline; real AWS and installer installation were not exercised.
+
+Artifacts: `release/0.1.40/artifact-manifest.json`; executable: `release/0.1.40/win-unpacked/AWS Log Explorer.exe`. Evidence: `.tmp/unit-0.1.40-verified.json` and `.tmp/desktop-verification-0.1.40.json`. The hash-gated standard-folder update waits for natural app exit, retains a backup and runs three hidden checks afterward. State: `.tmp/standard-build-update-0.1.40.json`. Changes remain uncommitted.
+
+The standard-folder replacement subsequently completed after natural exit. Its three post-promotion checks passed in `.tmp/test-results-standard-0.1.40/report.json`. No normal app was stopped, focused or launched.
+
+## Earlier local verification build (0.1.39)
+
+Open tabs retain their loaded content, list/detail/inspector scroll, expanded rows and branches, resized detail height and temporary decoding when switching views or rearranging splits. Hidden view effects suspend without losing state. The server filter has a clear cross that immediately executes an empty-pattern query. All time-template fields and relative duration support up/down controls and focused wheel editing. Inspector Wrap/Fold sits beside icon-only Copy; the redundant Hide text is removed. See [implementation and evidence](tab-state-and-controls-0.1.39.md).
+
+All 901 unit/integration tests and 54 distinct packaged desktop scenarios have passing evidence on the same artifact. The broad run passed 51; focused checks resolve two stale selectors and one hidden-window animation-stability timeout, with actual folded-marker geometry verified before clicking. Original reports and instrumentation are retained. No production changes followed packaging. Typecheck, formatting, whitespace, build, NSIS packaging, hashes, visual inspection and independent review pass. Native tests remained hidden and offline; actual AWS and installer installation were not exercised.
+
+Artifacts: `release/0.1.39/artifact-manifest.json`; executable: `release/0.1.39/win-unpacked/AWS Log Explorer.exe`. Evidence: `.tmp/unit-0.1.39-final.json` and `.tmp/desktop-verification-0.1.39.json`. The hash-gated standard-folder update waits for natural app exit and retains a backup; three hidden exact-standard-path checks follow promotion. State: `.tmp/standard-build-update-0.1.39.json`. Changes remain uncommitted.
+
+The standard-folder update completed. All three additional hidden checks passed against `release/win-unpacked/AWS Log Explorer.exe`; executable, ASAR and installer hashes match the verified package. Report: `.tmp/test-results-standard-0.1.39/report.json`. No normal app was stopped, focused or launched.
+
+## Earlier local verification build (0.1.38)
+
+Relative time presets retain labeled numeric Minutes/Hours/Days/Weeks rows, with a gear-only settings action at the top right. Time ranges settings uses compact fixed numeric slots with ascending neighbor adjustment; quick and dropdown slots remain independent. Explorer profile/region no longer follows tabs or panes, including offline views. Inactive Live tabs retain a paused marker, and the SQL badge is removed. Export precedes the inspector toggle; the toolbar Copy dropdown is removed. Logs and inspector have separate persisted wrap settings, Hybrid respects wrapping, and inspector folding uses one icon toggle. See [implementation and evidence](viewing-corrections-0.1.38.md).
+
+All 890 unit/integration tests and 77 distinct packaged desktop scenarios have passing evidence on the same artifact. The broad run passed 72; five focused reruns resolve two transient process-close waits and three test-only expectations/capture issues. Instrumented parallel close checks recorded prompt saves and clean exits; original reports are retained. No production changes followed packaging; formatting produced byte-identical build output. Typecheck, formatting, whitespace, build, NSIS packaging, artifact hashes, visual inspection and independent review pass. Native testing remained hidden and offline; actual AWS and installer installation were not exercised.
+
+Artifacts: `release/0.1.38/artifact-manifest.json`; executable: `release/0.1.38/win-unpacked/AWS Log Explorer.exe`. Evidence: `.tmp/unit-0.1.38-verified.json` and `.tmp/desktop-verification-0.1.38.json`. The hash-gated standard-folder update waits for natural app exit and retains a backup; three hidden exact-standard-path checks follow promotion. State: `.tmp/standard-build-update-0.1.38.json`. Changes remain uncommitted.
+
+The standard-folder update completed after natural app exit. All three additional hidden checks passed against `release/win-unpacked/AWS Log Explorer.exe`; standard executable, ASAR and installer hashes match the verified package. Report: `.tmp/test-results-standard-0.1.38/report.json`.
+
+## Earlier local verification build (0.1.37)
+
+The left pane supports up to 1200px with responsive bounds and immediate resizing after a window narrows. Settings uses detach/dock controls, remembers its last presentation and provides independently configurable quick/dropdown relative-time templates. The narrower time picker links directly to that page. The wider tab menu shows dated closed-tab history newest first, with individual reopen actions. Mixed-source counts use rename-independent badges, while fixed status slots show queries/Live without growing tabs. Floating menus, tooltips and dragged items share one shadow; active pane borders are neutral. Column menus remove custom columns or hide the four protected columns, inspector Hide aligns right, and undo/redo remains in the focused edit control. See [behavior and evidence](workspace-polish-0.1.37.md).
+
+All 859 unit/integration tests and 96 distinct desktop scenarios passed in accepted evidence. The broad candidate exposed stale split/helper-text/encoding expectations, corrected without changing the app, plus native tooltip attributes on new template actions. After that three-prop correction, all 26 affected pane/settings/menu/undo/column checks passed on the final package; 70 unchanged scenarios retain their earlier verification. The aggregate records both manifests and every case/report explicitly. Independent review approved after correcting responsive resize dead zones. Typecheck, formatting, whitespace, build, NSIS packaging and artifact hashes pass. Tests remained hidden and offline; real AWS and installer installation were not exercised.
+
+Final artifacts: `release/0.1.37-final/artifact-manifest.json`; executable: `release/0.1.37-final/win-unpacked/AWS Log Explorer.exe`. Evidence: `.tmp/unit-0.1.37-verified.json` and `.tmp/desktop-verification-0.1.37-final.json`. The standard-folder handoff waits for natural app exit and retains a backup; three additional hidden checks follow promotion. State: `.tmp/standard-build-update-0.1.37-final.json`. The earlier candidate's pending helpers were retired without touching the running app. Changes remain uncommitted.
+
+## Earlier local verification build (0.1.36)
 
 The AWS activity button switches or hides Explorer; Settings opens in the left pane and expands into its existing modal while retaining editor selections and drafts. Redundant header Explorer/split actions and the Explorer settings button are removed. The empty separate pinned row appears only during a top-edge drag, including above-window positions; tab, pane-header and Explorer-resource drops reuse existing pin logic. Tab groups are removed, with legacy metadata stripped while retaining tabs, favorites and split views. See [implementation and evidence](activity-panels-0.1.36.md).
 

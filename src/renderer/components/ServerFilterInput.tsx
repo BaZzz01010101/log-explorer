@@ -1,5 +1,6 @@
 import { useId, useRef, useState } from "react";
 import { TextInput } from "@mantine/core";
+import { IconX } from "@tabler/icons-react";
 import { Menu } from "./AppMenu";
 import {
   compileServerFilter,
@@ -18,12 +19,14 @@ export function ServerFilterInput({
   onChange,
   onModeChange,
   onRun,
+  onClear,
 }: {
   value: string;
   mode?: ServerFilterMode;
   onChange(value: string): void;
   onModeChange(mode: ServerFilterMode): void;
   onRun(): void;
+  onClear(): void;
 }) {
   const input = useRef<HTMLInputElement>(null),
     paint = useRef<HTMLPreElement>(null);
@@ -159,6 +162,28 @@ export function ServerFilterInput({
           }
           leftSectionWidth={112}
           leftSectionPointerEvents="auto"
+          rightSection={
+            value ? (
+              <button
+                type="button"
+                className="server-filter-clear"
+                aria-label="Clear server filter"
+                data-tooltip="Clear server filter and run query"
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => {
+                  setDismissed(true);
+                  setCaret(0);
+                  setSelected(0);
+                  onClear();
+                  input.current?.focus();
+                }}
+              >
+                <IconX size={14} />
+              </button>
+            ) : undefined
+          }
+          rightSectionWidth={28}
+          rightSectionPointerEvents="auto"
         />
       </div>
       {suggestions.length > 0 && (

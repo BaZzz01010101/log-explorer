@@ -1,6 +1,11 @@
 import { useEffect, useState } from "react";
 import { Button, Group, Popover, Select, Tabs, Text } from "@mantine/core";
-import { IconChevronDown, IconClock, IconX } from "@tabler/icons-react";
+import {
+  IconChevronDown,
+  IconClock,
+  IconSettings,
+  IconX,
+} from "@tabler/icons-react";
 import type { LogTab, Preferences } from "../../shared/contracts";
 import {
   absoluteRangeFromFields,
@@ -14,6 +19,11 @@ import {
 } from "../time-range";
 import { RangeCalendar } from "./RangeCalendar";
 import { SegmentedDateTimeInput } from "./SegmentedDateTimeInput";
+import {
+  normalizeRelativeTimeTemplates,
+  RELATIVE_TIME_UNITS,
+  relativeTimeLabel,
+} from "../../shared/relative-time-templates";
 import "./time-range.css";
 
 interface Props {
@@ -21,6 +31,8 @@ interface Props {
   timezone: Preferences["timezone"];
   onPatch(patch: Partial<LogTab>): void;
   onTimezoneChange(timezone: Preferences["timezone"]): void;
+  relativeTimeTemplates?: Preferences["relativeTimeTemplates"];
+  onOpenTimeRangeSettings?(): void;
 }
 
 export function TimeRangePicker({
@@ -28,6 +40,8 @@ export function TimeRangePicker({
   timezone,
   onPatch,
   onTimezoneChange,
+  relativeTimeTemplates,
+  onOpenTimeRangeSettings,
 }: Props) {
   const [opened, setOpened] = useState(false);
   const [mode, setMode] = useState<string | null>(
@@ -169,18 +183,16 @@ export function TimeRangePicker({
     }
   };
   const appliedRelative = parseRelativePreset(tab.timePreset);
-  const quick = [
-    ["1m", "1m"],
-    ["5m", "5m"],
-    ["30m", "30m"],
-    ["1h", "1h"],
-    ["12h", "12h"],
-    ["1d", "1d"],
-  ] as const;
+  const templates = normalizeRelativeTimeTemplates(relativeTimeTemplates);
+  const quick = templates.quick;
   const customSelected =
     tab.timePreset === "custom" ||
     Boolean(
-      appliedRelative && !quick.some(([value]) => value === tab.timePreset),
+      appliedRelative &&
+      !quick.some(
+        (entry) =>
+          relativePreset(entry.duration, entry.unit) === tab.timePreset,
+      ),
     );
   const appliedStart = rangeInputFields(tab.customStart, timezone);
   const appliedEnd = rangeInputFields(tab.customEnd, timezone);
@@ -198,13 +210,6 @@ export function TimeRangePicker({
       : appliedRelative && customSelected
         ? relativeLabel(appliedRelative.duration, appliedRelative.unit)
         : "Custom";
-  const relativeRows: { name: string; unit: RelativeUnit; values: number[] }[] =
-    [
-      { name: "Minutes", unit: "m", values: [5, 10, 15, 30, 45] },
-      { name: "Hours", unit: "h", values: [1, 2, 3, 6, 8, 12] },
-      { name: "Days", unit: "d", values: [1, 2, 3, 4, 5, 6] },
-      { name: "Weeks", unit: "w", values: [1, 2, 3, 4] },
-    ];
   return (
     <Group gap={5} wrap="nowrap" className="time-range-controls">
       <div
@@ -225,18 +230,20 @@ export function TimeRangePicker({
         </Button>
         {tab.timePreset !== "custom" && (
           <div className="time-range-shortcuts">
-            {quick.map(([value, text]) => {
-              const parsed = parseRelativePreset(value)!;
+            {quick.map((entry) => {
+              const value = relativePreset(entry.duration, entry.unit);
+              const text = entry.label.trim() || value;
+              const accessibleLabel =
+                text === value
+                  ? relativeTimeLabel(entry.duration, entry.unit).toLowerCase()
+                  : text;
               return (
                 <Button
                   type="button"
-                  key={value}
+                  key={entry.id}
                   variant={tab.timePreset === value ? "light" : "subtle"}
                   size="compact-xs"
-                  aria-label={
-                    "Set " +
-                    relativeLabel(parsed.duration, parsed.unit).toLowerCase()
-                  }
+                  aria-label={"Set " + accessibleLabel}
                   aria-pressed={tab.timePreset === value}
                   onClick={() => {
                     onPatch({ timePreset: value });
@@ -252,7 +259,7 @@ export function TimeRangePicker({
         <Popover
           opened={opened}
           onChange={setOpened}
-          width={760}
+          width={608}
           position="bottom-end"
           trapFocus
           shadow="md"
@@ -307,6 +314,22 @@ export function TimeRangePicker({
                 <Tabs.List className="time-range-mode-list">
                   <Tabs.Tab value="absolute">Absolute</Tabs.Tab>
                   <Tabs.Tab value="relative">Relative</Tabs.Tab>
+                  <button
+                    type="button"
+                    className="time-range-settings"
+                    aria-label="Time range settings"
+                    data-tooltip="Time range settings"
+                    onClick={() => {
+                      setOpened(false);
+                      if (onOpenTimeRangeSettings) onOpenTimeRangeSettings();
+                      else
+                        window.dispatchEvent(
+                          new Event("explorer:open-time-range-settings"),
+                        );
+                    }}
+                  >
+                    <IconSettings size={16} />
+                  </button>
                 </Tabs.List>
                 <Tabs.Panel value="absolute" pt="sm">
                   <RangeCalendar
@@ -355,37 +378,43 @@ export function TimeRangePicker({
                   </Text>
                 </Tabs.Panel>
                 <Tabs.Panel value="relative" pt="sm">
-                  <div className="relative-range-presets">
-                    {relativeRows.map((row) => (
-                      <div
-                        className="relative-range-row"
-                        key={row.unit}
-                        role="group"
-                        aria-label={row.name}
-                      >
-                        <Text size="sm">{row.name}</Text>
-                        {row.values.map((value) => (
-                          <Button
-                            type="button"
-                            key={value}
-                            size="xs"
-                            variant={
-                              unit === row.unit && duration === String(value)
-                                ? "light"
-                                : "default"
-                            }
-                            aria-label={relativeLabel(value, row.unit)}
-                            aria-pressed={
-                              unit === row.unit && duration === String(value)
-                            }
-                            onClick={() => {
-                              setDuration(String(value));
-                              setUnit(row.unit);
-                            }}
-                          >
-                            {value}
-                          </Button>
-                        ))}
+                  <div
+                    className="relative-range-presets"
+                    role="group"
+                    aria-label="Relative time templates"
+                  >
+                    {RELATIVE_TIME_UNITS.map(([rowUnit, name]) => (
+                      <div className="relative-range-row" key={rowUnit}>
+                        <Text size="sm" c="dimmed">
+                          {name}
+                        </Text>
+                        {templates.dropdown
+                          .filter((entry) => entry.unit === rowUnit)
+                          .map((entry) => {
+                            const selected =
+                              unit === entry.unit &&
+                              duration === String(entry.duration);
+                            const templateLabel = relativeTimeLabel(
+                              entry.duration,
+                              entry.unit,
+                            );
+                            return (
+                              <Button
+                                type="button"
+                                key={entry.id}
+                                size="xs"
+                                variant={selected ? "light" : "default"}
+                                aria-label={templateLabel}
+                                aria-pressed={selected}
+                                onClick={() => {
+                                  setDuration(String(entry.duration));
+                                  setUnit(entry.unit);
+                                }}
+                              >
+                                {entry.duration}
+                              </Button>
+                            );
+                          })}
                       </div>
                     ))}
                   </div>

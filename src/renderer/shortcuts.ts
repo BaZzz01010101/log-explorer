@@ -1,3 +1,13 @@
+export function shortcutKeys(shortcut: string): string[] {
+  const keys =
+    shortcut === "+"
+      ? ["+"]
+      : shortcut.endsWith("++")
+        ? [...shortcut.slice(0, -2).split("+").filter(Boolean), "+"]
+        : shortcut.split("+").filter(Boolean);
+  return keys.map((key) => (key === "Control" ? "Ctrl" : key));
+}
+
 export function shortcutMatches(
   event: Pick<
     KeyboardEvent,

@@ -52,9 +52,11 @@ import {
   IconCopy,
   IconEdit,
   IconLayoutColumns,
+  IconLoader2,
   IconPlus,
   IconPin,
   IconRestore,
+  IconRadio,
   IconTerminal2,
   IconStack2,
   IconStar,
@@ -85,6 +87,7 @@ import {
   type ResourceDragMove,
 } from "../resource-drag";
 import { tabOverlapTarget } from "../tab-hover";
+import { closedTabHistory, recentClosedTabs } from "../closed-tab-history";
 import {
   tabReorderPreview,
   tabSlotRect,
@@ -92,7 +95,16 @@ import {
 } from "../tab-reorder-preview";
 import "./workspace-tabs.css";
 
-type Props = { workspace: Workspace; dispatch: Dispatch<WorkspaceAction> };
+type TabActivityRuntime = {
+  state: string;
+  live: boolean;
+  livePaused?: boolean;
+};
+type Props = {
+  workspace: Workspace;
+  dispatch: Dispatch<WorkspaceAction>;
+  runtimes?: Record<string, TabActivityRuntime | undefined>;
+};
 function saveFavorite(
   workspace: Workspace,
   dispatch: Dispatch<WorkspaceAction>,
@@ -115,6 +127,7 @@ function SortableTab({
   selected,
   workspace,
   dispatch,
+  runtimes,
   onSelect,
   onKeyDown,
 }: {
@@ -123,6 +136,7 @@ function SortableTab({
   selected: boolean;
   workspace: Workspace;
   dispatch: Dispatch<WorkspaceAction>;
+  runtimes?: Props["runtimes"];
   onSelect: (event: React.MouseEvent) => void;
   onKeyDown: (event: KeyboardEvent<HTMLButtonElement>) => void;
 }) {
@@ -158,6 +172,26 @@ function SortableTab({
     (id) => workspace.tabs.find((member) => member.id === id) ?? [],
   );
   const split = tab.kind === "split";
+  const memberRuntimes = tab.tabIds.flatMap((id) => runtimes?.[id] ?? []);
+  const liveMembers = memberRuntimes.filter(
+    (runtime) =>
+      runtime.live &&
+      (runtime.livePaused ||
+        runtime.state === "queued" ||
+        runtime.state === "running"),
+  );
+  const live = liveMembers.length > 0;
+  const livePaused = live && liveMembers.every((runtime) => runtime.livePaused);
+  const activityLabel = live
+    ? livePaused
+      ? "Live paused"
+      : "Live active"
+    : "Query running";
+  const querying = memberRuntimes.some(
+    (runtime) =>
+      !runtime.live &&
+      (runtime.state === "queued" || runtime.state === "running"),
+  );
   const tooltip = (
     <Stack gap={3} className="split-tab-tooltip">
       <Text size="xs" fw={600}>
@@ -305,11 +339,32 @@ function SortableTab({
                   <IconTerminal2 size={14} className="tab-source-icon" />
                 )}
                 <span>{tab.title}</span>
-                {!split && members[0]?.kind === "insights" && (
-                  <span className="tab-kind">SQL</span>
+                {tab.sourceCount > 1 && (
+                  <span
+                    className="tab-source-count"
+                    aria-label={`${tab.sourceCount} sources`}
+                  >
+                    {tab.sourceCount}
+                  </span>
                 )}
               </button>
             </Tooltip>
+            <span className="tab-activity-slot">
+              {(live || querying) && (
+                <span
+                  className={live ? "tab-activity is-live" : "tab-activity"}
+                  data-tab-activity={live ? "live" : "query"}
+                  aria-label={activityLabel}
+                  data-tooltip={activityLabel}
+                >
+                  {live ? (
+                    <IconRadio size={13} />
+                  ) : (
+                    <IconLoader2 size={13} className="tab-query-spinner" />
+                  )}
+                </span>
+              )}
+            </span>
             <button
               type="button"
               data-tab-control
@@ -1253,7 +1308,7 @@ export function PaneDropTarget({
   );
 }
 
-export function WorkspaceTabs({ workspace, dispatch }: Props) {
+export function WorkspaceTabs({ workspace, dispatch, runtimes }: Props) {
   const { selected, setSelected } = useContext(WorkspaceSelection);
   const { sourceKind, reorderPreview, revealEmptyPinnedRow } =
     useContext(WorkspaceDragMode);
@@ -1264,6 +1319,13 @@ export function WorkspaceTabs({ workspace, dispatch }: Props) {
   });
   const anchorRef = useRef<string | null>(null);
   const entries = workspaceEntries(workspace);
+  const [historyNow, setHistoryNow] = useState(() => Date.now());
+  const recentHistory = recentClosedTabs(
+    workspace.closedTabs,
+    workspace.preferences.closedTabHistoryDays,
+    historyNow,
+  );
+  const history = closedTabHistory(recentHistory, new Date(historyNow));
   const activeTabId = activeEntryId(workspace);
   useEffect(() => {
     if (!selected.some((id) => entries.some((entry) => entry.id === id)))
@@ -1310,6 +1372,7 @@ export function WorkspaceTabs({ workspace, dispatch }: Props) {
       selected={selectedIds.includes(tab.id)}
       workspace={workspace}
       dispatch={dispatch}
+      runtimes={runtimes}
       onKeyDown={(event) => onTabKey(event, tab)}
       onSelect={(event) => {
         const next = selectWorkspaceEntry(
@@ -1422,31 +1485,73 @@ export function WorkspaceTabs({ workspace, dispatch }: Props) {
               <IconPlus size={16} />
             </ActionIcon>
           </Tooltip>
-          <Menu width={235} position="bottom-end">
+          <Menu
+            width={760}
+            position="bottom-end"
+            onOpen={() => setHistoryNow(Date.now())}
+          >
             <Menu.Target>
               <ActionIcon variant="subtle" aria-label="Workspace tab menu">
                 <IconChevronDown size={15} />
               </ActionIcon>
             </Menu.Target>
-            <Menu.Dropdown>
+            <Menu.Dropdown className="closed-tab-history">
               <Menu.Item
+                className="closed-tab-reopen"
                 leftSection={<IconRestore size={14} />}
-                disabled={!workspace.closedTabs.length}
+                disabled={!recentHistory.length}
                 onClick={() => dispatch({ type: "tab/reopen" })}
               >
                 Reopen closed tab
               </Menu.Item>
-              <Menu.Label>Open views</Menu.Label>
-              {entries.map((tab) => (
-                <Menu.Item
-                  key={tab.id}
-                  onClick={() =>
-                    dispatch({ type: "tab/select", tabId: tab.id })
-                  }
-                >
-                  {tab.title}
-                </Menu.Item>
-              ))}
+              <Menu.Divider />
+              <div className="closed-tab-history-list">
+                {history.map((section, index) => (
+                  <div key={`${section.key}-${index}`}>
+                    <Menu.Label className="closed-tab-date">
+                      {section.label}
+                    </Menu.Label>
+                    {section.tabs.map((tab) => (
+                      <Menu.Item
+                        key={tab.id}
+                        data-closed-tab-id={tab.id}
+                        className="closed-tab-entry"
+                        data-tooltip={logTabLabel(tab)}
+                        leftSection={
+                          sourceCount(tab.sources) > 1 ? (
+                            <IconStack2 size={15} className="tab-source-icon" />
+                          ) : (
+                            <IconTerminal2
+                              size={15}
+                              className="tab-source-icon"
+                            />
+                          )
+                        }
+                        rightSection={
+                          sourceCount(tab.sources) > 1 ? (
+                            <span
+                              className="tab-source-count"
+                              aria-label={`${sourceCount(tab.sources)} sources`}
+                            >
+                              {sourceCount(tab.sources)}
+                            </span>
+                          ) : undefined
+                        }
+                        onClick={() =>
+                          dispatch({ type: "tab/reopen", tabId: tab.id })
+                        }
+                      >
+                        <span className="closed-tab-title">
+                          {logTabLabel(tab)}
+                        </span>
+                      </Menu.Item>
+                    ))}
+                  </div>
+                ))}
+                {!history.length && (
+                  <Menu.Label>No recently closed tabs</Menu.Label>
+                )}
+              </div>
             </Menu.Dropdown>
           </Menu>
         </div>

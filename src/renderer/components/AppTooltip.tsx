@@ -250,9 +250,11 @@ export function TextTooltips() {
       interactive
       multiline
       position={
-        hint.target.closest('[role="menu"], .mantine-Popover-dropdown')
-          ? "right-start"
-          : "top"
+        hint.target.closest(".activity-bar")
+          ? "right"
+          : hint.target.closest('[role="menu"], .mantine-Popover-dropdown')
+            ? "right-start"
+            : "top"
       }
       classNames={{ tooltip: "app-tooltip" }}
       portalProps={overlay ? { target: overlay } : undefined}

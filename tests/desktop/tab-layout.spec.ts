@@ -341,7 +341,7 @@ test("split separators have visible grips and pane headers retain an active cue 
     expect(style.grip).not.toBe("rgba(0, 0, 0, 0)");
     expect(style.divider).not.toBe(style.grip);
     expect(style.active).not.toBe(style.inactive);
-    expect(style.accent).not.toBe("none");
+    expect(style.accent).toBe("none");
     expect(style.height).toBe("38px");
     await expect(
       page.getByRole("button", { name: "Close pane 1", exact: true }),

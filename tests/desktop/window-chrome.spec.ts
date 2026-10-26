@@ -218,7 +218,7 @@ for (const mode of [
       .getByRole("button", { name: "Application menu", exact: true })
       .click();
     await page
-      .getByRole("menuitem", { name: "Hide explorer", exact: true })
+      .getByRole("menuitem", { name: "Toggle side panel", exact: true })
       .click();
     await expect(page.locator(".sidebar-shell")).toBeHidden();
     await page
@@ -416,12 +416,8 @@ test("narrow zoom keeps caption controls above content and clear of panel action
 });
 
 test("native zoom shortcuts still work when a log-event menu owns keyboard focus", async () => {
-  await expect(
-    page.getByRole("button", { name: "Copy selected events as", exact: true }),
-  ).toBeEnabled();
-  await page
-    .getByRole("button", { name: "Copy selected events as", exact: true })
-    .click();
+  const event = page.locator(".virtual-event").first();
+  await event.locator(".inspect-cell").first().click({ button: "right" });
   await page.getByRole("menuitem", { name: /^Copy selected records/ }).focus();
   await page.keyboard.press("Control+=");
   await expect

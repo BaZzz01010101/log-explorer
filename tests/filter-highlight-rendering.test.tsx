@@ -1,4 +1,5 @@
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
+import { Activity } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, expect, it, vi } from "vitest";
 import {
@@ -7,6 +8,7 @@ import {
 } from "../src/renderer/components/EventMessage";
 import { EventHighlightContext } from "../src/renderer/useEventHighlights";
 import { createWorkspace, restoreWorkspace } from "../src/renderer/workspace";
+import type { EventHighlights } from "../src/renderer/highlight-engine";
 
 let renderer: ReactTestRenderer | undefined;
 afterEach(async () => {
@@ -87,6 +89,96 @@ it("marks a folded branch and opens only matching inspector paths once", async (
   expect(
     renderer!.root.findAllByProps({ "data-json-path": "/outer/deep/value" }),
   ).toHaveLength(0);
+});
+
+it("preserves a manually folded match after Activity reveal and expands newly matched paths", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  vi.spyOn(console, "error").mockImplementation(() => {});
+  const value = {
+    outer: { deep: { value: "needle" } },
+    other: { nested: { value: "new needle" } },
+  };
+  const content = (
+    mode: "visible" | "hidden",
+    paths: EventHighlights["paths"] = { "/outer/deep/value": ["local"] },
+    matchKey = "query-one",
+  ) => (
+    <Activity mode={mode}>
+      <EventHighlightContext.Provider
+        value={{ row: {}, text: {}, paths, matchKey }}
+      >
+        <JsonTree value={value} highlight="" autoExpandMatches />
+      </EventHighlightContext.Provider>
+    </Activity>
+  );
+  const rowsAt = (path: string) =>
+    renderer!.root.findAllByProps({ "data-json-path": path });
+  await act(async () => {
+    renderer = create(content("visible"));
+  });
+  expect(rowsAt("/outer/deep/value")).toHaveLength(1);
+  await act(async () =>
+    renderer!.root
+      .findByProps({ "aria-label": "Collapse /outer" })
+      .props.onClick(),
+  );
+  await act(async () => renderer!.update(content("hidden")));
+  await act(async () => renderer!.update(content("visible")));
+  expect(rowsAt("/outer/deep/value")).toHaveLength(0);
+  expect(
+    renderer!.root.findAllByProps({ "aria-label": "Expand /outer" }),
+  ).toHaveLength(1);
+  await act(async () =>
+    renderer!.update(
+      content(
+        "visible",
+        { "/outer/deep/value": ["server"] },
+        "query-recomputed",
+      ),
+    ),
+  );
+  expect(rowsAt("/outer/deep/value")).toHaveLength(0);
+  await act(async () =>
+    renderer!.update(
+      content("hidden", { "/other/nested/value": ["local"] }, "query-two"),
+    ),
+  );
+  await act(async () =>
+    renderer!.update(
+      content("visible", { "/other/nested/value": ["local"] }, "query-two"),
+    ),
+  );
+  expect(rowsAt("/other/nested/value")).toHaveLength(1);
+  expect(rowsAt("/outer/deep/value")).toHaveLength(0);
+});
+
+it("expands current match paths again when automatic expansion is reenabled", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  vi.spyOn(console, "error").mockImplementation(() => {});
+  const value = { outer: { deep: { value: "needle" } } };
+  const content = (enabled: boolean) => (
+    <EventHighlightContext.Provider
+      value={{ row: {}, text: {}, paths: { "/outer/deep/value": ["local"] } }}
+    >
+      <JsonTree value={value} highlight="" autoExpandMatches={enabled} />
+    </EventHighlightContext.Provider>
+  );
+  await act(async () => {
+    renderer = create(content(true));
+  });
+  await act(async () =>
+    renderer!.root
+      .findByProps({ "aria-label": "Collapse /outer" })
+      .props.onClick(),
+  );
+  await act(async () => renderer!.update(content(false)));
+  expect(
+    renderer!.root.findAllByProps({ "data-json-path": "/outer/deep/value" }),
+  ).toHaveLength(0);
+  await act(async () => renderer!.update(content(true)));
+  expect(
+    renderer!.root.findAllByProps({ "data-json-path": "/outer/deep/value" }),
+  ).toHaveLength(1);
 });
 
 it("defaults automatic match expansion on and removes only the stock fixture columns", () => {

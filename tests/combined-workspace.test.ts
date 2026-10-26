@@ -183,7 +183,7 @@ describe("combined split workspace entries", () => {
     valid(state);
   });
 
-  it("follows an active view's edited connection without letting inactive or unchanged edits override explorer selection", () => {
+  it("keeps Explorer selection independent of active and inactive view connection edits", () => {
     let state = combine(views(2));
     state = workspaceReducer(state, {
       type: "connections/set",
@@ -207,7 +207,7 @@ describe("combined split workspace entries", () => {
       tabId: activeView,
       patch: { connectionId: "other" },
     });
-    expect(state.activeConnectionId).toBe("other");
+    expect(state.activeConnectionId).toBe("offline");
     state = workspaceReducer(state, {
       type: "connection/select",
       connectionId: "offline",
@@ -549,7 +549,7 @@ describe("combined split workspace entries", () => {
       type: "tab/select",
       tabId: state.activeTabId!,
     });
-    expect(state.activeConnectionId).toBe("offline");
+    expect(state.activeConnectionId).toBe("chosen");
     valid(state);
   });
   it("repairs combined membership when a connection is removed without retaining orphan views", () => {

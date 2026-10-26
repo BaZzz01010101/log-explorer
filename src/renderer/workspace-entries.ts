@@ -4,9 +4,7 @@ import { sourceCount } from "../shared/source-labels";
 
 export const logTabLabel = (tab: LogTab) =>
   tab.customTitle ??
-  (sourceCount(tab.sources) > 1
-    ? `Mixed Sources (${sourceCount(tab.sources)})`
-    : tab.title);
+  (sourceCount(tab.sources) > 1 ? "Mixed Sources" : tab.title);
 
 export interface WorkspaceEntry {
   id: string;
@@ -15,6 +13,7 @@ export interface WorkspaceEntry {
   preview?: boolean;
   kind: "single" | "split";
   tabIds: string[];
+  sourceCount: number;
 }
 
 /** Top-level strip entries; log-view configurations remain flat for job ownership. */
@@ -34,6 +33,7 @@ export function workspaceEntries(workspace: Workspace): WorkspaceEntry[] {
       ...(tab.pinned !== undefined ? { pinned: tab.pinned } : {}),
       kind: "single",
       tabIds: [tab.id],
+      sourceCount: sourceCount(tab.sources),
     }));
   for (const split of splits) {
     const tabIds = split.panes.flatMap((pane) =>
@@ -47,10 +47,11 @@ export function workspaceEntries(workspace: Workspace): WorkspaceEntry[] {
     );
     entries.push({
       id: split.id,
-      title: split.title ?? `Mixed Sources (${count})`,
+      title: split.title ?? "Mixed Sources",
       ...(split.pinned !== undefined ? { pinned: split.pinned } : {}),
       kind: "split",
       tabIds,
+      sourceCount: count,
     });
   }
   const byId = new Map(entries.map((entry) => [entry.id, entry]));

@@ -42,7 +42,7 @@ interface Props {
   runtime?: TabRuntime;
   onPatch(patch: Partial<LogTab>): void;
   onTimezoneChange(timezone: Workspace["preferences"]["timezone"]): void;
-  onRun(live?: boolean, more?: boolean): void;
+  onRun(live?: boolean, more?: boolean, filterPattern?: string): void;
   onCancel(): void;
   onSaveQuery(query: SavedQuery): void;
   onSavePreset(name: string): void;
@@ -157,6 +157,9 @@ export function QueryPane({
             <TimeRangePicker
               tab={tab}
               timezone={workspace.preferences.timezone}
+              relativeTimeTemplates={
+                workspace.preferences.relativeTimeTemplates
+              }
               onPatch={onPatch}
               onTimezoneChange={onTimezoneChange}
             />
@@ -256,6 +259,10 @@ export function QueryPane({
                 onChange={(filterPattern) => onPatch({ filterPattern })}
                 onModeChange={(filterMode) => onPatch({ filterMode })}
                 onRun={() => onRun()}
+                onClear={() => {
+                  onPatch({ filterPattern: "" });
+                  onRun(false, false, "");
+                }}
               />
             ) : (
               <Textarea

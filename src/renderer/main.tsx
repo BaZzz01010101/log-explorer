@@ -3,6 +3,10 @@ import { createRoot } from "react-dom/client";
 import "@mantine/core/styles.css";
 import "@mantine/notifications/styles.css";
 import App from "./App";
+import { installScopedEditHistory } from "./scoped-edit-history";
+
+const disposeEditHistory = installScopedEditHistory(document);
+import.meta.hot?.dispose(disposeEditHistory);
 
 class ErrorBoundary extends React.Component<
   { children: React.ReactNode },

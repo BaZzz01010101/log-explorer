@@ -6,7 +6,6 @@ import {
   Badge,
   Button,
   Group,
-  Loader,
   MantineProvider,
   Text,
   createTheme,
@@ -15,8 +14,7 @@ import { Tooltip } from "./components/AppTooltip";
 import { ApplicationMenu } from "./components/ApplicationMenu";
 import { Notifications, notifications } from "@mantine/notifications";
 import {
-  IconAdjustments,
-  IconBrandAws,
+  IconSettings,
   IconChevronRight,
   IconCloud,
   IconLayoutColumns,
@@ -59,11 +57,14 @@ import {
 } from "./components/WorkspaceTabs";
 import { ResourceDropSurface } from "./components/ResourceDropSurface";
 import { QueryPane } from "./components/QueryPane";
+import { RetainedViews, RetainedViewSlot } from "./components/RetainedViews";
 import { Settings } from "./components/Settings";
 import "./components/workspace-tabs.css";
 import "./app.css";
+import "./floating-surfaces.css";
 import { TextTooltips } from "./components/AppTooltip";
 import { shortcutMatches } from "./shortcuts";
+import awsExplorerIcon from "../../build/aws-explorer.svg";
 import {
   contextRangeLabel,
   contextTimeRange,
@@ -102,6 +103,8 @@ export default function App() {
   const [ready, setReady] = useState(false);
   const [environment, setEnvironment] = useState<EnvironmentInfo | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsPage, setSettingsPage] = useState<string | null>(null);
+  const [settingsPageRequest, setSettingsPageRequest] = useState(0);
   const [sidePanel, setSidePanel] = useState<"explorer" | "settings">(
     "explorer",
   );
@@ -133,16 +136,49 @@ export default function App() {
     workspace.panes[0];
   const activeTab = workspace.tabs.find((t) => t.id === activePane?.tabId);
   const activeConnectionId =
-    workspace.activeConnectionId ??
-    activeTab?.connectionId ??
-    workspace.connections[0].id;
+    workspace.activeConnectionId ?? workspace.connections[0].id;
   const entries = workspaceEntries(workspace);
   const activeWorkspaceTabId = activeEntryId(workspace);
   const openSettings = () => {
-    setSettingsOpen(false);
-    setSidePanel("settings");
-    dispatch({ type: "workspace/update", patch: { sidebarVisible: true } });
+    const detached = workspace.preferences.settingsDetached === true;
+    setSettingsOpen(detached);
+    setSidePanel(detached ? "explorer" : "settings");
+    if (!detached)
+      dispatch({ type: "workspace/update", patch: { sidebarVisible: true } });
   };
+  const toggleSettings = () => {
+    if (settingsOpen) setSettingsOpen(false);
+    else if (workspace.sidebarVisible && sidePanel === "settings")
+      dispatch({ type: "workspace/update", patch: { sidebarVisible: false } });
+    else openSettings();
+  };
+  const toggleSidePanel = () => {
+    dispatch({
+      type: "workspace/update",
+      patch: { sidebarVisible: !workspace.sidebarVisible },
+    });
+  };
+  useEffect(() => {
+    const showTimeRanges = () => {
+      setSettingsPage("time-ranges");
+      setSettingsPageRequest((request) => request + 1);
+      const detached =
+        workspaceRef.current.preferences.settingsDetached === true;
+      setSettingsOpen(detached);
+      setSidePanel(detached ? "explorer" : "settings");
+      if (!detached)
+        dispatch({ type: "workspace/update", patch: { sidebarVisible: true } });
+    };
+    window.addEventListener(
+      "explorer:open-time-range-settings",
+      showTimeRanges,
+    );
+    return () =>
+      window.removeEventListener(
+        "explorer:open-time-range-settings",
+        showTimeRanges,
+      );
+  }, []);
   const toggleExplorer = () => {
     const visible = workspace.sidebarVisible && sidePanel === "explorer";
     setSidePanel("explorer");
@@ -332,20 +368,47 @@ export default function App() {
       const isInput =
         event.target instanceof HTMLElement &&
         !!event.target.closest('input,textarea,[contenteditable="true"]');
-      if (
-        settingsOpen ||
-        (event.target instanceof HTMLElement &&
-          event.target.closest(".settings-pane"))
-      )
-        return;
       const entry = Object.entries(workspace.preferences.shortcuts).find(
         ([action, shortcut]) =>
           !action.startsWith("explorer") && shortcutMatches(event, shortcut),
       );
       if (!entry) return;
-      if (isInput && entry[0] !== "runQuery") return;
+      if (
+        (settingsOpen ||
+          (event.target instanceof HTMLElement &&
+            event.target.closest(".settings-pane"))) &&
+        !["openSettings", "toggleSidebar", "toggleTheme"].includes(entry[0])
+      )
+        return;
+      if (
+        isInput &&
+        !["runQuery", "openSettings", "toggleSidebar", "toggleTheme"].includes(
+          entry[0],
+        )
+      )
+        return;
       event.preventDefault();
       switch (entry[0]) {
+        case "newTab":
+          dispatch({
+            type: "tab/open",
+            tab: createTab(
+              workspace.activeConnectionId ?? workspace.connections[0].id,
+              [],
+            ),
+          });
+          break;
+        case "openSettings":
+          openSettings();
+          break;
+        case "toggleTheme":
+          dispatch({
+            type: "preferences/update",
+            patch: {
+              theme: workspace.preferences.theme === "dark" ? "light" : "dark",
+            },
+          });
+          break;
         case "closeTab":
           if (activeWorkspaceTabId)
             dispatch({ type: "tab/close", tabId: activeWorkspaceTabId });
@@ -354,10 +417,7 @@ export default function App() {
           dispatch({ type: "tab/reopen" });
           break;
         case "toggleSidebar":
-          dispatch({
-            type: "workspace/update",
-            patch: { sidebarVisible: !workspace.sidebarVisible },
-          });
+          toggleSidePanel();
           break;
         case "splitPane":
           dispatch({ type: "pane/split" });
@@ -396,13 +456,17 @@ export default function App() {
   const beginResize = (event: React.PointerEvent<HTMLDivElement>) => {
     event.currentTarget.setPointerCapture(event.pointerId);
     const start = event.clientX;
-    const width = workspace.sidebarWidth;
+    const width =
+      event.currentTarget.parentElement!.getBoundingClientRect().width;
     const target = event.currentTarget;
     const move = (e: PointerEvent) =>
       dispatch({
         type: "workspace/update",
         patch: {
-          sidebarWidth: Math.min(600, Math.max(180, width + e.clientX - start)),
+          sidebarWidth: Math.min(
+            1200,
+            Math.max(180, width + e.clientX - start),
+          ),
         },
       });
     const end = () => {
@@ -414,6 +478,9 @@ export default function App() {
     target.addEventListener("pointerup", end);
     target.addEventListener("pointercancel", end);
   };
+  // Do not paint the default workspace before its saved theme is restored.
+  // The native window already has the matching startup background.
+  if (!ready) return null;
   return (
     <MantineProvider
       theme={theme}
@@ -433,11 +500,10 @@ export default function App() {
                 workspace={workspace}
                 dispatch={dispatch}
                 onSettings={openSettings}
-                onExplorer={toggleExplorer}
-                explorerVisible={
-                  workspace.sidebarVisible && sidePanel === "explorer"
-                }
+                onToggleSidePanel={toggleSidePanel}
+                version={environment?.version ?? "…"}
               />
+              <div className="activity-menu-separator" aria-hidden="true" />
               <Tooltip label="AWS logs explorer" position="right">
                 <ActionIcon
                   variant={
@@ -452,21 +518,29 @@ export default function App() {
                   }
                   onClick={toggleExplorer}
                 >
-                  <IconBrandAws size={26} stroke={1.5} />
+                  <img
+                    src={awsExplorerIcon}
+                    width={27}
+                    height={27}
+                    alt=""
+                    draggable={false}
+                  />
                 </ActionIcon>
               </Tooltip>
               <div className="activity-spacer" />
+              <div className="activity-menu-separator" aria-hidden="true" />
               <Tooltip label="Settings" position="right">
                 <ActionIcon
                   variant="subtle"
                   size="lg"
                   aria-label="Workspace settings"
                   aria-pressed={
-                    workspace.sidebarVisible && sidePanel === "settings"
+                    settingsOpen ||
+                    (workspace.sidebarVisible && sidePanel === "settings")
                   }
-                  onClick={openSettings}
+                  onClick={toggleSettings}
                 >
-                  <IconAdjustments size={21} />
+                  <IconSettings size={22} />
                 </ActionIcon>
               </Tooltip>
             </nav>
@@ -530,7 +604,25 @@ export default function App() {
                 onOpenModal={() => {
                   setSidePanel("explorer");
                   setSettingsOpen(true);
+                  dispatch({
+                    type: "preferences/update",
+                    patch: { settingsDetached: true },
+                  });
                 }}
+                onReturnToPane={() => {
+                  setSettingsOpen(false);
+                  setSidePanel("settings");
+                  dispatch({
+                    type: "workspace/update",
+                    patch: { sidebarVisible: true },
+                  });
+                  dispatch({
+                    type: "preferences/update",
+                    patch: { settingsDetached: false },
+                  });
+                }}
+                requestedTab={settingsPage}
+                requestedTabKey={settingsPageRequest}
                 onClose={() => setSettingsOpen(false)}
                 workspace={workspace}
                 dispatch={dispatch}
@@ -554,9 +646,9 @@ export default function App() {
                         sidebarWidth: Math.max(
                           180,
                           Math.min(
-                            600,
-                            workspace.sidebarWidth +
-                              (e.key === "ArrowLeft" ? -20 : 20),
+                            1200,
+                            e.currentTarget.parentElement!.getBoundingClientRect()
+                              .width + (e.key === "ArrowLeft" ? -20 : 20),
                           ),
                         ),
                       },
@@ -567,15 +659,75 @@ export default function App() {
             </div>
             <main className="workspace-main">
               <ResourceDropSurface workspace={workspace} dispatch={dispatch} />
-              <WorkspaceTabs workspace={workspace} dispatch={dispatch} />
-              {!ready ? (
-                <div className="startup-loader">
-                  <Loader />
-                  <Text size="sm" c="dimmed">
-                    Restoring workspace
-                  </Text>
-                </div>
-              ) : (
+              <WorkspaceTabs
+                workspace={workspace}
+                dispatch={dispatch}
+                runtimes={runtimes}
+              />
+              <RetainedViews
+                ids={workspace.tabs.map((tab) => tab.id)}
+                visibleIds={workspace.panes.flatMap((pane) =>
+                  pane.tabId ? [pane.tabId] : [],
+                )}
+                onActivate={(id) => {
+                  const pane = workspace.panes.find(
+                    (pane) => pane.tabId === id,
+                  );
+                  if (pane && pane.id !== workspace.activePaneId)
+                    dispatch({ type: "pane/activate", paneId: pane.id });
+                }}
+                renderView={(id) => {
+                  const tab = workspace.tabs.find((tab) => tab.id === id)!;
+                  return (
+                    <QueryPane
+                      workspace={workspace}
+                      tab={tab}
+                      runtime={runtimes[tab.id]}
+                      onPatch={(patch) =>
+                        dispatch({
+                          type: "tab/update",
+                          tabId: tab.id,
+                          patch,
+                        })
+                      }
+                      onTimezoneChange={(timezone) =>
+                        dispatch({
+                          type: "preferences/update",
+                          patch: { timezone },
+                        })
+                      }
+                      onRun={(live, more, filterPattern) =>
+                        execute(
+                          filterPattern === undefined
+                            ? tab
+                            : { ...tab, filterPattern },
+                          live,
+                          more,
+                        )
+                      }
+                      onCancel={() => void cancel(tab.id)}
+                      onSaveQuery={(query) =>
+                        dispatch({ type: "query/save", query })
+                      }
+                      onSavePreset={(name) =>
+                        dispatch({
+                          type: "preset/save",
+                          preset: {
+                            id: crypto.randomUUID(),
+                            name,
+                            logGroup:
+                              tab.sources.length === 1
+                                ? tab.sources[0].logGroup
+                                : undefined,
+                            view: structuredClone(tab.view),
+                          },
+                        })
+                      }
+                      onContext={(event, range) => context(tab, event, range)}
+                    />
+                  );
+                }}
+              >
                 <PaneLayoutView
                   layout={paneLayout}
                   onResize={(path, ratio) =>
@@ -706,47 +858,7 @@ export default function App() {
                             </Group>
                           </PaneDragHeader>
                           {tab ? (
-                            <QueryPane
-                              key={tab.id}
-                              workspace={workspace}
-                              tab={tab}
-                              runtime={runtimes[tab.id]}
-                              onPatch={(patch) =>
-                                dispatch({
-                                  type: "tab/update",
-                                  tabId: tab.id,
-                                  patch,
-                                })
-                              }
-                              onTimezoneChange={(timezone) =>
-                                dispatch({
-                                  type: "preferences/update",
-                                  patch: { timezone },
-                                })
-                              }
-                              onRun={(live, more) => execute(tab, live, more)}
-                              onCancel={() => void cancel(tab.id)}
-                              onSaveQuery={(query) =>
-                                dispatch({ type: "query/save", query })
-                              }
-                              onSavePreset={(name) =>
-                                dispatch({
-                                  type: "preset/save",
-                                  preset: {
-                                    id: crypto.randomUUID(),
-                                    name,
-                                    logGroup:
-                                      tab.sources.length === 1
-                                        ? tab.sources[0].logGroup
-                                        : undefined,
-                                    view: structuredClone(tab.view),
-                                  },
-                                })
-                              }
-                              onContext={(event, range) =>
-                                context(tab, event, range)
-                              }
-                            />
+                            <RetainedViewSlot id={tab.id} />
                           ) : (
                             <div className="empty-pane">
                               <IconCloud size={38} stroke={1} />
@@ -778,7 +890,7 @@ export default function App() {
                     );
                   }}
                 />
-              )}
+              </RetainedViews>
             </main>
           </div>
           <footer className="app-footer">
