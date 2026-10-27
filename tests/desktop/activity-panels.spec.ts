@@ -167,14 +167,14 @@ for (const theme of ["light", "dark"]) {
       exact: true,
     });
     await filter.fill("orders");
-    await activity("Workspace settings").click();
+    await activity("Settings").click();
     const pane = page.getByRole("region", {
-      name: "Workspace settings",
+      name: "Settings",
       exact: true,
     });
     await expect(pane).toBeVisible();
     await expect(
-      page.getByRole("dialog", { name: "Workspace settings", exact: true }),
+      page.getByRole("dialog", { name: "Settings", exact: true }),
     ).toHaveCount(0);
     await expect(filter).toBeHidden();
     await pane.getByRole("tab", { name: "Preferences", exact: true }).click();
@@ -183,7 +183,7 @@ for (const theme of ["light", "dark"]) {
     await expect(font).toHaveValue("15");
     await activity("Open settings in window").click();
     const modal = page.getByRole("dialog", {
-      name: "Workspace settings",
+      name: "Settings",
       exact: true,
     });
     await expect(modal).toBeVisible();
@@ -199,7 +199,7 @@ for (const theme of ["light", "dark"]) {
     await expect(filter).toHaveValue("orders");
     await activity("AWS logs explorer").click();
     await expect(page.locator(".sidebar-shell")).toBeHidden();
-    await activity("Workspace settings").click();
+    await activity("Settings").click();
     await expect(modal).toBeVisible();
     await activity("Return settings to pane").click();
     await expect(pane).toBeVisible();
@@ -253,7 +253,7 @@ test("pin reveal cancels cleanly and shared row never creates an empty pinned st
         elements.map((element) => element.getAttribute("data-tab-id")),
       ),
   ).toEqual(before);
-  await activity("Workspace settings").click();
+  await activity("Settings").click();
   await page.getByRole("tab", { name: "Preferences", exact: true }).click();
   await page
     .getByLabel("Put pinned tabs on a separate row", { exact: true })
@@ -309,9 +309,9 @@ test("pane-header drag reveals the empty pin row and detaches a pinned tab witho
 });
 
 test("dark narrow settings categories stay inside the left pane with reachable expand control", async ({}, info) => {
-  await activity("Workspace settings").click();
+  await activity("Settings").click();
   const pane = page.getByRole("region", {
-    name: "Workspace settings",
+    name: "Settings",
     exact: true,
   });
   for (const category of [

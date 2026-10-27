@@ -237,7 +237,7 @@ test("settings adds and removes profiles and regions without listing every known
   );
   await load(workspace);
   await openSettingsWindow(page);
-  const settings = page.getByRole("dialog", { name: "Workspace settings" });
+  const settings = page.getByRole("dialog", { name: "Settings" });
   await expect(settings.locator("[data-profile]")).toHaveCount(2);
   await expect(settings.locator(".profile-region-options")).toHaveCount(0);
   await settings

@@ -1,7 +1,19 @@
 .highlight-editor {
   display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  height: 100%;
+  min-height: 0;
   gap: 12px;
   min-width: 0;
+}
+.highlight-editor[data-preview-enabled="true"] {
+  grid-template-rows: auto minmax(0, 1fr) auto auto;
+}
+.highlight-editor[data-preview-enabled="true"][data-preview-open="true"] {
+  grid-template-rows: auto minmax(0, 1fr) minmax(0, 0.85fr) auto;
+}
+.settings-tabs > .settings-highlights {
+  overflow: hidden;
 }
 .highlight-profile-config,
 .highlight-rule-list,
@@ -39,19 +51,17 @@
 }
 .highlight-master-detail {
   display: grid;
-  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+  grid-template-columns: minmax(480px, 1.1fr) minmax(300px, 1fr);
   gap: 12px;
-  height: clamp(260px, calc(100dvh - 470px), 480px);
+  min-height: 0;
   min-width: 0;
-}
-.highlight-editor[data-preview-open="true"] .highlight-master-detail {
-  height: clamp(240px, calc(100dvh - 650px), 340px);
 }
 .highlight-rule-list,
 .highlight-rule-detail {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  min-height: 0;
 }
 .highlight-panel-heading {
   display: flex;
@@ -183,6 +193,14 @@
   grid-template-columns: 1fr 1fr;
   gap: 12px;
 }
+.highlight-color-inputs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.highlight-color-inputs > * {
+  width: 100%;
+  max-width: none;
+}
 .highlight-preview-toggle {
   display: flex;
   width: 100%;
@@ -195,9 +213,18 @@
   border: 0;
   padding: 10px 12px;
   cursor: pointer;
+  flex: none;
+}
+.highlight-preview-section {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-height: 0;
 }
 .highlight-preview-body {
   padding: 0 12px 12px;
+  flex: 1;
+  min-height: 0;
 }
 .highlight-preview-inputs {
   display: grid;
@@ -205,25 +232,95 @@
   align-items: start;
   gap: 12px;
 }
-@media (max-width: 850px) {
+@container settings (max-width: 900px) {
   .highlight-profile-top {
-    grid-template-columns: minmax(120px, 1fr) auto minmax(120px, 1fr);
-  }
-  .highlight-profile-top > .mantine-Switch-root,
-  .highlight-profile-actions {
-    margin-top: 0;
-  }
-  .highlight-profile-pattern {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas: "profile add" "name name" "enabled actions";
     gap: 8px;
   }
+  .highlight-profile-picker {
+    grid-area: profile;
+  }
+  .highlight-profile-add {
+    grid-area: add;
+  }
+  .highlight-profile-name {
+    grid-area: name;
+  }
+  .highlight-profile-enabled {
+    grid-area: enabled;
+  }
+  .highlight-profile-actions {
+    grid-area: actions;
+    justify-self: end;
+  }
+  .highlight-profile-top > .mantine-Switch-root,
+  .highlight-profile-actions,
   .highlight-profile-pattern > .mantine-Switch-root {
     margin-top: 0;
   }
-  .highlight-master-detail {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  .highlight-profile-pattern {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 8px;
   }
-  .highlight-detail-columns {
-    grid-template-columns: 1fr;
+  .highlight-master-detail {
+    grid-template-columns: minmax(0, 1fr);
+    height: auto;
+  }
+  .highlight-panel-heading {
+    flex-wrap: wrap;
+  }
+}
+/* When a bounded editor cannot fit, the page owns form scrolling. Never put
+   competing page and Edit rule scrollbars around the same fields. */
+@container settings (max-width: 900px) or (max-height: 480px) {
+  .settings-tabs > .settings-highlights {
+    overflow: auto;
+  }
+  .highlight-editor,
+  .highlight-editor[data-preview-enabled="true"],
+  .highlight-editor[data-preview-enabled="true"][data-preview-open="true"] {
+    height: auto;
+    min-height: 100%;
+    grid-template-rows: none;
+    grid-auto-rows: max-content;
+  }
+  .highlight-master-detail {
+    height: auto;
+    align-items: start;
+  }
+  .highlight-rule-list {
+    height: clamp(180px, 38cqh, 320px);
+  }
+  .highlight-rule-detail {
+    overflow: visible;
+  }
+  .highlight-rule-detail .highlight-detail-fields {
+    flex: none;
+    overflow: visible;
+  }
+  .highlight-preview-body {
+    flex: none;
+    height: 560px;
+  }
+}
+@container settings (max-width: 600px) {
+  .highlight-color-inputs,
+  .highlight-detail-columns,
+  .highlight-preview-inputs {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+@container settings (max-width: 360px) {
+  .highlight-profile-config,
+  .highlight-detail-fields {
+    padding: 8px;
+  }
+  .highlight-detail-priority {
+    grid-template-columns: minmax(0, 1fr) 72px;
+    gap: 8px;
+  }
+  .highlight-profile-top {
+    grid-template-areas: "profile profile" "add add" "name name" "enabled enabled" "actions actions";
   }
 }

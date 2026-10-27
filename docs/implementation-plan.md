@@ -1,5 +1,23 @@
 # Implementation plan
 
+## Settings content sizing and captured log preview (0.1.50)
+
+Center single-column forms, stretch Workspace JSON and the Highlight rule editor,
+keep scroll ownership stable, and preview the opening tab's actual loaded events
+in light/dark hybrid tables only in detached Settings. See
+[the checklist](settings-layout-and-log-preview-0.1.50.md).
+
+## Responsive Settings pages (0.1.49)
+
+Adapt all six pages to the actual pane/dialog width and height, preserving state,
+navigation and existing features. See [the checklist](responsive-settings-0.1.49.md).
+
+## Stable Settings window (0.1.47)
+
+Rename the overall view Settings, keep one frame across categories, and support
+dragging/resizing with retained session geometry and constrained page scrolling.
+See [the checklist](settings-window-0.1.47.md).
+
 ## Settings activity separator (0.1.46)
 
 Match the main-menu separator above the Settings activity button and verify both

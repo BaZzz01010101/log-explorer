@@ -155,8 +155,7 @@ test.beforeEach(async ({}, testInfo) => {
   await expect(page.locator(".log-table-row").nth(1)).toBeVisible();
 });
 
-const settingsDialog = () =>
-  page.getByRole("dialog", { name: "Workspace settings" });
+const settingsDialog = () => page.getByRole("dialog", { name: "Settings" });
 const ruleRows = () => settingsDialog().locator("tbody > tr[data-rule-id]");
 async function openHighlights() {
   await openSettingsWindow(page);
@@ -194,14 +193,9 @@ async function capture(filename: string) {
   await writeFile(test.info().outputPath(filename), Buffer.from(png, "base64"));
 }
 
-test("expanding settings preserves the selected profile, rule and preview drafts", async () => {
-  await page
-    .getByRole("button", { name: "Workspace settings", exact: true })
-    .click();
-  const pane = page.getByRole("region", {
-    name: "Workspace settings",
-    exact: true,
-  });
+test("expanding settings preserves the selected profile and rule while enabling modal-only preview", async () => {
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  const pane = page.getByRole("region", { name: "Settings", exact: true });
   await pane.getByRole("tab", { name: "Highlights", exact: true }).click();
   await pane
     .getByRole("combobox", { name: "Highlight profile", exact: true })
@@ -210,15 +204,9 @@ test("expanding settings preserves the selected profile, rule and preview drafts
     .getByRole("option", { name: "Other (disabled)", exact: true })
     .click();
   await pane.locator('[data-rule-id="other-second"]').click();
-  await pane
-    .getByRole("button", { name: "Test and preview", exact: true })
-    .click();
-  await pane
-    .getByLabel("Preview log group", { exact: true })
-    .fill("/custom/preview");
-  await pane
-    .getByLabel("Preview event", { exact: true })
-    .fill("my draft ERROR");
+  await expect(
+    pane.getByRole("button", { name: "Test and preview", exact: true }),
+  ).toHaveCount(0);
   await pane
     .getByRole("button", { name: "Open settings in window", exact: true })
     .click();
@@ -231,12 +219,15 @@ test("expanding settings preserves the selected profile, rule and preview drafts
   await expect(
     settingsDialog().locator('[data-rule-id="other-second"]'),
   ).toHaveAttribute("aria-selected", "true");
-  await expect(
-    settingsDialog().getByLabel("Preview log group", { exact: true }),
-  ).toHaveValue("/custom/preview");
+  const toggle = settingsDialog().getByRole("button", {
+    name: "Test and preview",
+    exact: true,
+  });
+  await toggle.click();
+  await expect(toggle).toHaveAttribute("aria-expanded", "true");
   await expect(
     settingsDialog().getByLabel("Preview event", { exact: true }),
-  ).toHaveValue("my draft ERROR");
+  ).toHaveCount(0);
 });
 
 for (const theme of ["light", "dark"])
@@ -308,28 +299,35 @@ for (const theme of ["light", "dark"])
     await settingsDialog()
       .getByRole("button", { name: "Test and preview", exact: true })
       .click();
-    await expect(
-      settingsDialog().getByLabel("Highlight preview", { exact: true }),
-    ).toHaveCSS("background-color", "rgb(254, 202, 202)");
-    await settingsDialog()
-      .getByLabel("Preview event", { exact: true })
-      .fill("WARN careful");
-    await expect(
-      settingsDialog().getByLabel("Highlight preview", { exact: true }),
-    ).not.toHaveCSS("background-color", "rgb(254, 202, 202)");
-    await settingsDialog()
-      .getByLabel("Preview event", { exact: true })
-      .fill("ERROR payment failed");
-    await expect(
-      settingsDialog().getByLabel("Highlight preview", { exact: true }),
-    ).toHaveCSS("background-color", "rgb(254, 202, 202)");
+    const previewRow = settingsDialog()
+      .getByRole("region", { name: "Light preview", exact: true })
+      .locator(".virtual-event")
+      .filter({ hasText: "Payment provider timed out" })
+      .first();
+    await expect(previewRow).toHaveCSS(
+      "background-color",
+      "rgb(254, 202, 202)",
+    );
+    await detail.getByLabel("Match regex", { exact: true }).fill("WARN");
+    await expect(previewRow).not.toHaveCSS(
+      "background-color",
+      "rgb(254, 202, 202)",
+    );
+    await detail.getByLabel("Match regex", { exact: true }).fill("ERROR");
+    await expect(previewRow).toHaveCSS(
+      "background-color",
+      "rgb(254, 202, 202)",
+    );
     await capture(`master-detail-${theme}.png`);
     await settingsDialog()
       .getByRole("button", { name: "Test and preview", exact: true })
       .click();
     await expect(
-      settingsDialog().getByLabel("Preview event", { exact: true }),
-    ).toBeHidden();
+      settingsDialog().getByRole("region", {
+        name: "Light preview",
+        exact: true,
+      }),
+    ).toHaveCount(0);
     await capture(`master-detail-collapsed-${theme}.png`);
     await settingsDialog().locator(".mantine-Modal-close").click();
     await expect(

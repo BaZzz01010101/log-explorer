@@ -760,7 +760,7 @@ test("Custom popover fits normal and narrow panes in both themes", async () => {
     await page.getByRole("option", { name: theme, exact: true }).click();
     await page.keyboard.press("Escape");
     await expect(
-      page.getByRole("dialog", { name: "Workspace settings", exact: true }),
+      page.getByRole("dialog", { name: "Settings", exact: true }),
     ).toHaveCount(0);
   };
   const assertFit = async () => {

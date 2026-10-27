@@ -476,9 +476,9 @@ test("retained viewers survive becoming split panes and switching between split 
 for (const theme of ["light", "dark"]) {
   test(`${theme} all time slots have steppers and focused wheel editing, and relative duration has both`, async () => {
     test.setTimeout(240000);
-    await activity("Workspace settings").click();
+    await activity("Settings").click();
     const settings = page.getByRole("region", {
-      name: "Workspace settings",
+      name: "Settings",
       exact: true,
     });
     await settings

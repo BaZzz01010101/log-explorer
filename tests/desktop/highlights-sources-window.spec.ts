@@ -117,7 +117,7 @@ async function settings() {
   await openSettingsWindow(page);
   await page.getByRole("tab", { name: "Highlights", exact: true }).click();
 }
-const dialog = () => page.getByRole("dialog", { name: "Workspace settings" });
+const dialog = () => page.getByRole("dialog", { name: "Settings" });
 async function capture(filename: string) {
   let image = "";
   for (let i = 0; i < 3; i++) {
@@ -259,7 +259,35 @@ test("highlight profiles edit, scope, color rows and structured text, and persis
   await dialog().locator(".mantine-Modal-close").click();
   await expect(page.locator(".profile-highlight-text")).toHaveCount(0);
 });
-test("catastrophic preview regex times out in the worker and leaves controls responsive", async () => {
+test("catastrophic captured-log regex times out in preview workers and recovers", async () => {
+  await app.evaluate(({ ipcMain }) => {
+    ipcMain.removeHandler("explorer:query");
+    ipcMain.handle("explorer:query", (event, request) => {
+      setTimeout(
+        () =>
+          event.sender.send("explorer:update", {
+            requestId: request.requestId,
+            state: "complete",
+            events: [
+              {
+                id: "bounded-preview",
+                timestamp: 1720000000000,
+                logGroup: request.sources[0].logGroup,
+                logStream: "preview",
+                message: "ERROR recovered " + "a".repeat(200) + "!",
+              },
+            ],
+            replace: true,
+          }),
+        10,
+      );
+      return request.requestId;
+    });
+  });
+  await page.locator('[data-testid="run-query"]:visible').click();
+  await expect(
+    page.locator(".workspace-pane.active-pane .viewer-scroll"),
+  ).toHaveAttribute("aria-rowcount", "1");
   await settings();
   await dialog()
     .getByRole("button", { name: "Add profile", exact: true })
@@ -268,26 +296,27 @@ test("catastrophic preview regex times out in the worker and leaves controls res
   await dialog()
     .getByRole("button", { name: "Test and preview", exact: true })
     .click();
-  await dialog()
-    .getByLabel("Preview event", { exact: true })
-    .fill("a".repeat(200) + "!");
+  const light = dialog().getByRole("region", {
+    name: "Light preview",
+    exact: true,
+  });
   await expect(
-    dialog().getByText(/Highlighting paused: a regex exceeded/),
+    light.getByText(/Highlighting paused: a regex exceeded/),
   ).toBeVisible({ timeout: 10000 });
   await dialog().getByLabel("Match regex", { exact: true }).fill("ERROR");
-  await dialog()
-    .getByLabel("Preview event", { exact: true })
-    .fill("ERROR recovered");
-  await expect(dialog().getByLabel("Highlight preview")).toHaveCSS(
+  await expect(light.locator(".virtual-event").first()).toHaveCSS(
     "background-color",
     "rgb(113, 63, 18)",
   );
   await dialog().locator(".mantine-Modal-close").click();
   await page
     .getByRole("textbox", { name: "Local filter loaded events", exact: true })
-    .fill("Payment");
-  await expect(page.locator(".query-status")).toContainText("shown");
+    .fill("no-match");
+  await expect(
+    page.locator(".workspace-pane.active-pane .viewer-scroll"),
+  ).toHaveAttribute("aria-rowcount", "0");
 });
+
 test("Explorer source badges refresh automatically, preserve individual streams and manual titles", async () => {
   test.setTimeout(180000);
   const group = page.getByRole("button", {

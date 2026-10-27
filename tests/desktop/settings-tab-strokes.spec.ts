@@ -120,7 +120,7 @@ for (const theme of ["light", "dark"]) {
   test(`${theme} settings tab strokes align at fractional zoom`, async () => {
     await openSettingsWindow(page);
     const dialog = page.getByRole("dialog", {
-      name: "Workspace settings",
+      name: "Settings",
       exact: true,
     });
     await expect

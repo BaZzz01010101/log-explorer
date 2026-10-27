@@ -38,6 +38,8 @@ import { Tooltip } from "./AppTooltip";
 import { RelativeTimeTemplatesEditor } from "./RelativeTimeTemplatesEditor";
 import { normalizeRelativeTimeTemplates } from "../../shared/relative-time-templates";
 import "./settings.css";
+import { settingsResizeEdges, useSettingsWindow } from "./settings-window";
+import type { SettingsPreviewSnapshot } from "../settings-preview";
 
 function NumericPreference({
   value,
@@ -98,6 +100,7 @@ export function Settings({
   onReturnToPane,
   requestedTab,
   requestedTabKey,
+  previewSnapshot = null,
 }: {
   opened: boolean;
   onClose(): void;
@@ -110,11 +113,14 @@ export function Settings({
   onReturnToPane?(): void;
   requestedTab?: string | null;
   requestedTabKey?: number;
+  previewSnapshot?: SettingsPreviewSnapshot | null;
 }) {
   const [profiles, setProfiles] = useState<string[]>([]);
   const [accessPending, setAccessPending] = useState(false);
   const [activeTab, setActiveTab] = useState<string | null>("connections");
   const [importText, setImportText] = useState("");
+  const [previewPointer, setPreviewPointer] = useState<number | null>(null);
+  const settingsWindow = useSettingsWindow(opened && presentation === "modal");
   // Keep editor selections and drafts above the pane/modal remount boundary.
   const [highlightEditorState, setHighlightEditorState] = useState(() =>
     createHighlightProfilesEditorState(
@@ -125,6 +131,28 @@ export function Settings({
     createProfileConnectionsEditorState,
   );
   const preferences = workspace.preferences;
+  useEffect(() => {
+    if (!opened || presentation !== "modal") {
+      setPreviewPointer(null);
+      return;
+    }
+    if (typeof window === "undefined" || !window.addEventListener) return;
+    const release = (event: PointerEvent) =>
+      setPreviewPointer((pointer) =>
+        pointer === event.pointerId ? null : pointer,
+      );
+    const blur = () => setPreviewPointer(null);
+    window.addEventListener("pointerup", release, true);
+    window.addEventListener("pointercancel", release, true);
+    window.addEventListener("lostpointercapture", release, true);
+    window.addEventListener("blur", blur);
+    return () => {
+      window.removeEventListener("pointerup", release, true);
+      window.removeEventListener("pointercancel", release, true);
+      window.removeEventListener("lostpointercapture", release, true);
+      window.removeEventListener("blur", blur);
+    };
+  }, [opened, presentation]);
   useEffect(() => {
     if (requestedTab) setActiveTab(requestedTab);
   }, [requestedTab, requestedTabKey]);
@@ -170,8 +198,11 @@ export function Settings({
         <Tabs.Tab value="shortcuts">Shortcuts</Tabs.Tab>
         <Tabs.Tab value="workspace">Workspace</Tabs.Tab>
       </Tabs.List>
-      <Tabs.Panel value="connections" pt="md">
-        <Stack gap="sm">
+      <Tabs.Panel value="connections" pt="md" className="settings-form-page">
+        <Stack
+          gap="sm"
+          className="settings-form-content settings-connections-form"
+        >
           <Alert
             color={environment?.awsEnabled ? "teal" : "yellow"}
             title={
@@ -211,8 +242,11 @@ export function Settings({
           />
         </Stack>
       </Tabs.Panel>
-      <Tabs.Panel value="appearance" pt="md">
-        <Stack gap="sm">
+      <Tabs.Panel value="appearance" pt="md" className="settings-form-page">
+        <Stack
+          gap="sm"
+          className="settings-form-content settings-preferences-form"
+        >
           <Group grow className="settings-preference-row">
             <Select
               label="Theme"
@@ -254,16 +288,6 @@ export function Settings({
                 });
             }}
           />
-          <Checkbox
-            label="Put pinned tabs on a separate row"
-            checked={preferences.pinnedTabsSeparateRow === true}
-            onChange={(event) =>
-              dispatch({
-                type: "preferences/update",
-                patch: { pinnedTabsSeparateRow: event.currentTarget.checked },
-              })
-            }
-          />
           <NumericPreference
             label="Closed tab history (days)"
             description="Closed tabs are kept for at most this many days after closing."
@@ -274,6 +298,16 @@ export function Settings({
               dispatch({
                 type: "preferences/update",
                 patch: { closedTabHistoryDays },
+              })
+            }
+          />
+          <Checkbox
+            label="Put pinned tabs on a separate row"
+            checked={preferences.pinnedTabsSeparateRow === true}
+            onChange={(event) =>
+              dispatch({
+                type: "preferences/update",
+                patch: { pinnedTabsSeparateRow: event.currentTarget.checked },
               })
             }
           />
@@ -365,6 +399,8 @@ export function Settings({
           uiState={highlightEditorState}
           onUiStateChange={setHighlightEditorState}
           preferences={preferences}
+          previewEnabled={presentation === "modal"}
+          previewSnapshot={previewSnapshot}
           onChange={(highlightProfiles) =>
             dispatch({
               type: "preferences/update",
@@ -373,41 +409,43 @@ export function Settings({
           }
         />
       </Tabs.Panel>
-      <Tabs.Panel value="shortcuts" pt="md">
-        <Text size="sm" c="dimmed" mb="sm">
-          Use Control, Meta, Shift or Alt and a key. Explorer shortcuts apply
-          while the log group search field is focused.
-        </Text>
-        <Stack gap="xs">
-          {Object.entries(preferences.shortcuts).map(([action, shortcut]) => (
-            <TextInput
-              key={action}
-              label={
-                action === "explorerRegex"
-                  ? "Explorer regex"
-                  : action === "explorerCaseSensitive"
-                    ? "Explorer match case"
-                    : action.replace(/([A-Z])/g, " $1")
-              }
-              value={shortcut}
-              maxLength={80}
-              onChange={(e) =>
-                dispatch({
-                  type: "preferences/update",
-                  patch: {
-                    shortcuts: {
-                      ...preferences.shortcuts,
-                      [action]: e.currentTarget.value,
+      <Tabs.Panel value="shortcuts" pt="md" className="settings-form-page">
+        <div className="settings-form-content">
+          <Text size="sm" c="dimmed" mb="sm">
+            Use Control, Meta, Shift or Alt and a key. Explorer shortcuts apply
+            while the log group search field is focused.
+          </Text>
+          <Stack gap="xs" className="settings-shortcuts-grid">
+            {Object.entries(preferences.shortcuts).map(([action, shortcut]) => (
+              <TextInput
+                key={action}
+                label={
+                  action === "explorerRegex"
+                    ? "Explorer regex"
+                    : action === "explorerCaseSensitive"
+                      ? "Explorer match case"
+                      : action.replace(/([A-Z])/g, " $1")
+                }
+                value={shortcut}
+                maxLength={80}
+                onChange={(e) =>
+                  dispatch({
+                    type: "preferences/update",
+                    patch: {
+                      shortcuts: {
+                        ...preferences.shortcuts,
+                        [action]: e.currentTarget.value,
+                      },
                     },
-                  },
-                })
-              }
-            />
-          ))}
-        </Stack>
+                  })
+                }
+              />
+            ))}
+          </Stack>
+        </div>
       </Tabs.Panel>
       <Tabs.Panel value="workspace" pt="md">
-        <Stack gap="sm">
+        <Stack gap="sm" className="settings-workspace-form">
           <TextInput
             label="Workspace name"
             value={workspace.name}
@@ -432,11 +470,10 @@ export function Settings({
             Export workspace configuration
           </Button>
           <Textarea
+            className="settings-workspace-json"
             label="Import workspace JSON"
             description="Replaces the current layout and settings. Logs and credentials are never imported."
-            minRows={4}
-            maxRows={8}
-            autosize
+            rows={6}
             value={importText}
             onChange={(e) => setImportText(e.currentTarget.value)}
           />
@@ -466,7 +503,12 @@ export function Settings({
             Saved queries
           </Text>
           {workspace.savedQueries.map((q) => (
-            <Group key={q.id} justify="space-between">
+            <Group
+              key={q.id}
+              justify="space-between"
+              wrap="nowrap"
+              className="settings-saved-item"
+            >
               <Text size="sm">{q.name}</Text>
               <ActionIcon
                 aria-label={`Remove ${q.name}`}
@@ -484,7 +526,12 @@ export function Settings({
             Visualization presets
           </Text>
           {workspace.presets.map((p) => (
-            <Group key={p.id} justify="space-between">
+            <Group
+              key={p.id}
+              justify="space-between"
+              wrap="nowrap"
+              className="settings-saved-item"
+            >
               <Text size="sm">
                 {p.name}
                 <Badge ml="xs" size="xs">
@@ -509,14 +556,10 @@ export function Settings({
   );
   if (presentation === "pane")
     return (
-      <section
-        className="settings-pane"
-        aria-label="Workspace settings"
-        hidden={!opened}
-      >
+      <section className="settings-pane" aria-label="Settings" hidden={!opened}>
         <header className="settings-pane-header">
           <Text component="h2" size="sm" fw={600}>
-            Workspace settings
+            Settings
           </Text>
           <Tooltip label="Open settings in window">
             <ActionIcon
@@ -537,14 +580,40 @@ export function Settings({
     <Modal
       opened={opened}
       onClose={onClose}
+      closeOnEscape={!settingsWindow.interacting && previewPointer === null}
+      closeButtonProps={{ "aria-label": "Close Settings" }}
       classNames={{
+        inner: "settings-window-layer",
+        content: "settings-window",
+        header: "settings-window-header",
         title: "settings-modal-title",
         body: "settings-modal-body",
       }}
-      attributes={{ title: { "aria-label": "Workspace settings" } }}
+      attributes={{
+        title: { "aria-label": "Settings" },
+        header: settingsWindow.header,
+        body: {
+          onPointerDownCapture(event: React.PointerEvent<HTMLElement>) {
+            if (
+              event.button === 0 &&
+              (event.target as Element).closest(".highlight-events-theme")
+            )
+              setPreviewPointer(event.pointerId);
+          },
+        },
+      }}
+      styles={{
+        content: {
+          left: settingsWindow.frame.x,
+          top: settingsWindow.frame.y,
+          width: settingsWindow.frame.width,
+          height: settingsWindow.frame.height,
+        },
+      }}
+      transitionProps={{ transition: "fade", duration: 120 }}
       title={
         <Group justify="space-between" wrap="nowrap">
-          <Text fw={600}>Workspace settings</Text>
+          <Text fw={600}>Settings</Text>
           {onReturnToPane && (
             <Tooltip label="Return settings to pane">
               <ActionIcon
@@ -559,12 +628,25 @@ export function Settings({
           )}
         </Group>
       }
-      size={
-        activeTab === "highlights" ? "min(1200px, calc(100vw - 48px))" : "lg"
-      }
-      centered
     >
       {content}
+      {settingsResizeEdges.map((edge) => (
+        <div
+          key={edge}
+          className={`settings-window-resizer edge-${edge}`}
+          {...settingsWindow.resize(edge)}
+          role={edge === "se" ? "button" : undefined}
+          aria-label={edge === "se" ? "Resize Settings window" : undefined}
+          aria-hidden={edge === "se" ? undefined : true}
+          tabIndex={edge === "se" ? 0 : undefined}
+          onKeyDown={(event) => {
+            if (settingsWindow.resizeWithKey(event.key, event.shiftKey)) {
+              event.preventDefault();
+              event.stopPropagation();
+            }
+          }}
+        />
+      ))}
     </Modal>
   );
 }

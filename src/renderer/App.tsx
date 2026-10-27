@@ -59,6 +59,10 @@ import { ResourceDropSurface } from "./components/ResourceDropSurface";
 import { QueryPane } from "./components/QueryPane";
 import { RetainedViews, RetainedViewSlot } from "./components/RetainedViews";
 import { Settings } from "./components/Settings";
+import {
+  captureSettingsPreview,
+  type SettingsPreviewSnapshot,
+} from "./settings-preview";
 import "./components/workspace-tabs.css";
 import "./app.css";
 import "./floating-surfaces.css";
@@ -103,6 +107,8 @@ export default function App() {
   const [ready, setReady] = useState(false);
   const [environment, setEnvironment] = useState<EnvironmentInfo | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsPreview, setSettingsPreview] =
+    useState<SettingsPreviewSnapshot | null>(null);
   const [settingsPage, setSettingsPage] = useState<string | null>(null);
   const [settingsPageRequest, setSettingsPageRequest] = useState(0);
   const [sidePanel, setSidePanel] = useState<"explorer" | "settings">(
@@ -131,6 +137,15 @@ export default function App() {
     },
     environment?.awsEnabled ?? false,
   );
+  const runtimesRef = useRef(runtimes);
+  runtimesRef.current = runtimes;
+  const settingsVisible =
+    settingsOpen || (workspace.sidebarVisible && sidePanel === "settings");
+  const settingsVisibleRef = useRef(settingsVisible);
+  settingsVisibleRef.current = settingsVisible;
+  useEffect(() => {
+    if (!settingsVisible) setSettingsPreview(null);
+  }, [settingsVisible]);
   const activePane =
     workspace.panes.find((p) => p.id === workspace.activePaneId) ??
     workspace.panes[0];
@@ -140,6 +155,10 @@ export default function App() {
   const entries = workspaceEntries(workspace);
   const activeWorkspaceTabId = activeEntryId(workspace);
   const openSettings = () => {
+    if (!settingsVisible)
+      setSettingsPreview(
+        captureSettingsPreview(workspaceRef.current, runtimesRef.current),
+      );
     const detached = workspace.preferences.settingsDetached === true;
     setSettingsOpen(detached);
     setSidePanel(detached ? "explorer" : "settings");
@@ -160,6 +179,10 @@ export default function App() {
   };
   useEffect(() => {
     const showTimeRanges = () => {
+      if (!settingsVisibleRef.current)
+        setSettingsPreview(
+          captureSettingsPreview(workspaceRef.current, runtimesRef.current),
+        );
       setSettingsPage("time-ranges");
       setSettingsPageRequest((request) => request + 1);
       const detached =
@@ -533,7 +556,7 @@ export default function App() {
                 <ActionIcon
                   variant="subtle"
                   size="lg"
-                  aria-label="Workspace settings"
+                  aria-label="Settings"
                   aria-pressed={
                     settingsOpen ||
                     (workspace.sidebarVisible && sidePanel === "settings")
@@ -628,6 +651,7 @@ export default function App() {
                 dispatch={dispatch}
                 environment={environment}
                 onEnvironment={setEnvironment}
+                previewSnapshot={settingsPreview}
               />
               <div
                 className="sidebar-resizer"

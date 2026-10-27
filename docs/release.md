@@ -1,6 +1,82 @@
 # Building and releasing
 
-## Latest local verification build (0.1.46)
+## Latest local verification build (0.1.50)
+
+Connections, Preferences and Shortcuts are single-column forms with the entire
+page centered at a readable width. Time ranges center at their existing width
+limit. Workspace JSON fills the available width and grows vertically; Highlights
+uses the remaining window height for its rule list and editor with stable scroll
+ownership when preview folds. See
+[implementation and evidence](settings-layout-and-log-preview-0.1.50.md).
+
+Detached Settings previews the actual loaded events from the focused tab when
+Settings opened, in independent light/dark hybrid tables. Docking and switching
+main tabs preserve that snapshot. Docked Settings has no preview section. Empty
+data is reported honestly, and preview interactions leave the main tab and global
+theme unchanged. Escape cancels preview column gestures without closing Settings.
+
+All 925 unit/integration tests and all 28 targeted final packaged desktop checks
+pass with no failures, skips or flaky cases. Checks cover both themes, every page,
+three widths per presentation, text fit, centered notes, growing editors, repeated
+preview folding, captured data, hybrid expansion, regex timeout recovery, resizing,
+docking, cancellation and fractional-zoom tab strokes. Independent review,
+typecheck/build, formatting, whitespace, NSIS packaging and artifact hashes pass.
+Evidence: `.tmp/unit-0.1.50-final.json` and
+`.tmp/desktop-verification-0.1.50.json`. Artifacts:
+`release/0.1.50/artifact-manifest.json`. Tests remain hidden, isolated and offline;
+real AWS and installer installation were not exercised. The gated handoff waits
+for natural app exit, retains a backup and queues two hidden standard-path checks.
+State: `.tmp/standard-build-update-0.1.50.json`. Changes remain uncommitted.
+
+## Earlier local verification build (0.1.49)
+
+All six Settings pages use their actual container dimensions in docked and
+detached presentations. Profiles and actions reflow, Preferences and Shortcuts
+gain useful columns, narrow time slots wrap without clipping, and Highlights
+switches between side-by-side and stacked editing while using Settings height.
+Full color values remain readable; long workspace labels and actions stay inside
+the page. Category navigation stays fixed, and drafts survive resizing. See
+[implementation and evidence](responsive-settings-0.1.49.md).
+
+All 918 unit/integration tests and all 11 targeted final packaged checks pass
+without failures, skips or flaky cases. The matrix covers 72
+page/size/presentation/theme combinations, expanded previews, color readability,
+editor operations, draft retention and fractional-zoom tab rendering. A broader
+25-case Settings suite passed on the preceding candidate before the isolated
+color-field correction; that candidate was superseded before promotion.
+Independent review, visual inspection, typecheck/build, formatting, whitespace,
+NSIS packaging and hashes pass. Evidence: `.tmp/unit-0.1.49-final.json` and
+`.tmp/desktop-verification-0.1.49.json`. Artifacts:
+`release/0.1.49/artifact-manifest.json`. Tests were hidden, isolated and offline;
+real AWS and installer installation were not exercised. The gated handoff waits
+for natural exit, retains a backup and queues one hidden standard-path check.
+State: `.tmp/standard-build-update-0.1.49.json`. Changes remain uncommitted.
+
+## Earlier local verification build (0.1.47)
+
+Rename the overall view Settings, keeping Workspace as a category. Detached
+Settings now keeps one content-independent frame, supports header dragging and
+edge/corner resizing, and retains size/position during the session across
+reopening and docking. Pages scroll beneath fixed category tabs; geometry stays
+inside the app after window resizing or zooming. Gesture cancellation restores
+the frame and releases capture/cursor state. See
+[implementation and evidence](settings-window-0.1.47.md).
+
+All 918 unit/integration tests and all 31 targeted final packaged desktop cases
+pass without failures, skips or flaky cases. Both themes, every category,
+short-window scrolling, resizing, dragging, cancellation, docking persistence,
+Highlight editor drafts, time templates, native menus and zoom are covered.
+Independent review found no correctness issues; its cleanup-coverage suggestion
+was addressed. Two additional hidden theme captures pass for visual inspection.
+Typecheck, formatting, whitespace, build, NSIS packaging and artifact hashes pass.
+Tests remained hidden and offline; actual AWS and installer installation were not
+exercised. Artifacts: `release/0.1.47/artifact-manifest.json`. Evidence:
+`.tmp/unit-0.1.47-final.json` and `.tmp/desktop-verification-0.1.47.json`.
+The gated standard update waits for natural exit, retains a backup and queues
+three hidden checks afterward. State: `.tmp/standard-build-update-0.1.47.json`.
+Changes remain uncommitted.
+
+## Earlier local verification build (0.1.46)
 
 Add a thin separator above Settings in the activity bar, reusing the themed
 separator below the main app menu. Build/typecheck, formatting, whitespace,

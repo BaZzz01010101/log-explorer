@@ -68,6 +68,10 @@ vi.mock("../src/renderer/useEventHighlights", () => ({
 vi.mock("../src/renderer/components/EventMessage", () => ({
   MessageContent: () => null,
 }));
+vi.mock("../src/renderer/components/HighlightEventsPreview", () => ({
+  HighlightEventsPreview: ({ profile }: { profile: HighlightProfile }) =>
+    createElement("div", { "data-preview-profile": profile.id }),
+}));
 
 let renderer: ReactTestRenderer;
 const dispatch = vi.fn();
@@ -150,7 +154,7 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-it("keeps the selected highlight profile, rule and preview drafts when expanding settings", async () => {
+it("keeps the selected highlight profile, rule and modal preview state across docking", async () => {
   await act(async () => {
     renderer = create(<Settings {...props} presentation="pane" />);
   });
@@ -158,17 +162,9 @@ it("keeps the selected highlight profile, rule and preview drafts when expanding
   await act(async () =>
     renderer.root.findByProps({ "data-rule-id": "second-2" }).props.onClick(),
   );
-  await act(async () => previewToggle().props.onClick());
-  await act(async () =>
-    control("Preview log group").props.onChange({
-      currentTarget: { value: "/aws/custom" },
-    }),
-  );
-  await act(async () =>
-    control("Preview event").props.onChange({
-      currentTarget: { value: "custom preview draft" },
-    }),
-  );
+  expect(
+    renderer.root.findAllByProps({ className: "highlight-preview-toggle" }),
+  ).toHaveLength(0);
   await expand();
   expect(control("Highlight profile").props.value).toBe("second");
   expect(control("Match regex").props.value).toBe("second-2");
@@ -177,15 +173,21 @@ it("keeps the selected highlight profile, rule and preview drafts when expanding
       "aria-selected"
     ],
   ).toBe(true);
-  expect(previewToggle().props["aria-expanded"]).toBe(true);
-  expect(control("Preview log group").props.value).toBe("/aws/custom");
-  expect(control("Preview event").props.value).toBe("custom preview draft");
+  expect(previewToggle().props["aria-expanded"]).toBe(false);
+  await act(async () => previewToggle().props.onClick());
+  expect(
+    renderer.root.findAllByProps({ "data-preview-profile": "second" }),
+  ).toHaveLength(1);
   expect(dispatch).not.toHaveBeenCalled();
   await act(async () =>
     renderer.update(<Settings {...props} presentation="pane" />),
   );
   expect(control("Match regex").props.value).toBe("second-2");
-  expect(control("Preview event").props.value).toBe("custom preview draft");
+  expect(
+    renderer.root.findAllByProps({ className: "highlight-preview-toggle" }),
+  ).toHaveLength(0);
+  await expand();
+  expect(previewToggle().props["aria-expanded"]).toBe(true);
 });
 
 it("keeps pending connection profile and region choices when expanding settings", async () => {

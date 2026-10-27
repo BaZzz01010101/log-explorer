@@ -28,13 +28,112 @@
   flex: 1;
   min-height: 0;
   min-width: 0;
-  overflow: auto;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
   padding: var(--settings-gutter);
   background: var(--mantine-color-body);
 }
 .settings-modal-body {
   --settings-gutter: var(--mantine-spacing-md);
   padding: var(--settings-gutter);
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.settings-window-layer {
+  display: block;
+  padding: 0;
+}
+.settings-window {
+  position: fixed;
+  display: flex;
+  flex-direction: column;
+  flex: none;
+  max-height: none;
+  overflow: hidden;
+}
+.settings-window-header {
+  position: relative;
+  flex-shrink: 0;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+.settings-window-header button {
+  cursor: pointer;
+}
+.settings-window-resizer {
+  position: absolute;
+  z-index: 1002;
+  touch-action: none;
+  user-select: none;
+}
+.settings-window-resizer.edge-n,
+.settings-window-resizer.edge-s {
+  left: 8px;
+  right: 8px;
+  height: 6px;
+  cursor: ns-resize;
+}
+.settings-window-resizer.edge-e,
+.settings-window-resizer.edge-w {
+  top: 8px;
+  bottom: 8px;
+  width: 6px;
+  cursor: ew-resize;
+}
+.settings-window-resizer.edge-n {
+  top: 0;
+}
+.settings-window-resizer.edge-s {
+  bottom: 0;
+}
+.settings-window-resizer.edge-e {
+  right: 0;
+}
+.settings-window-resizer.edge-w {
+  left: 0;
+}
+.settings-window-resizer.edge-ne,
+.settings-window-resizer.edge-nw,
+.settings-window-resizer.edge-se,
+.settings-window-resizer.edge-sw {
+  width: 12px;
+  height: 12px;
+}
+.settings-window-resizer.edge-ne {
+  top: 0;
+  right: 0;
+  cursor: nesw-resize;
+}
+.settings-window-resizer.edge-nw {
+  top: 0;
+  left: 0;
+  cursor: nwse-resize;
+}
+.settings-window-resizer.edge-sw {
+  bottom: 0;
+  left: 0;
+  cursor: nesw-resize;
+}
+.settings-window-resizer.edge-se {
+  bottom: 0;
+  right: 0;
+  cursor: nwse-resize;
+}
+.settings-window-resizer.edge-se::after {
+  content: "";
+  position: absolute;
+  right: 3px;
+  bottom: 3px;
+  width: 5px;
+  height: 5px;
+  border-right: 1px solid var(--mantine-color-dimmed);
+  border-bottom: 1px solid var(--mantine-color-dimmed);
 }
 .settings-pane .settings-tabs,
 .settings-pane .mantine-Tabs-panel,
@@ -198,66 +297,169 @@
   font-size: 11px;
   font-variant-numeric: tabular-nums;
 }
-.settings-pane .settings-preference-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
+.settings-tabs {
+  container: settings / size;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
 }
-.settings-pane .mantine-Group-root:has(> .mantine-Select-root) {
-  flex-wrap: wrap;
+.settings-tabs > .mantine-Tabs-list {
+  flex-shrink: 0;
 }
-.settings-pane .mantine-Group-root > .mantine-Select-root {
-  flex-basis: 100%;
+.settings-tabs > .mantine-Tabs-panel {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
 }
-.settings-pane .mantine-Button-root {
+.settings-tabs .mantine-InputWrapper-root,
+.settings-tabs .mantine-Group-root > * {
+  min-width: 0;
+}
+.settings-tabs .mantine-Text-root,
+.settings-tabs .mantine-InputWrapper-label,
+.settings-tabs .mantine-InputWrapper-description {
+  overflow-wrap: anywhere;
+}
+.settings-tabs .mantine-Button-root {
   max-width: 100%;
-  height: auto;
   min-height: var(--button-height);
-  padding-block: 6px;
+  height: auto;
+  padding-block: 4px;
 }
-.settings-pane .mantine-Button-label {
+.settings-tabs .mantine-Button-label {
   white-space: normal;
 }
-.settings-pane .settings-highlights {
-  max-width: 100%;
-  overflow-x: auto;
+.settings-tabs .mantine-ActionIcon-root {
+  flex-shrink: 0;
 }
-.settings-pane .highlight-profile-top,
-.settings-pane .highlight-profile-pattern,
-.settings-pane .highlight-detail-columns,
-.settings-pane .highlight-preview-inputs {
+.settings-tabs .settings-preferences-form,
+.settings-tabs .settings-shortcuts-grid {
+  display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: 8px;
+  gap: 12px;
+  align-items: start;
 }
-.settings-pane .highlight-profile-top > .mantine-Switch-root,
-.settings-pane .highlight-profile-actions,
-.settings-pane .highlight-profile-pattern > .mantine-Switch-root {
-  margin-top: 0;
+.settings-form-content {
+  width: 100%;
+  max-width: 680px;
+  margin-inline: auto;
 }
-.settings-pane .highlight-master-detail,
-.settings-pane
-  .highlight-editor[data-preview-open="true"]
-  .highlight-master-detail {
-  grid-template-columns: minmax(0, 1fr);
-  height: auto;
+.settings-tabs .settings-preference-row {
+  display: contents;
 }
-.settings-pane .highlight-rule-list {
-  height: 300px;
+.settings-preference-row > * {
+  width: 100%;
+  max-width: none;
 }
-.settings-pane .highlight-rule-detail {
-  max-height: 560px;
+.settings-preferences-form > .mantine-Checkbox-root {
+  grid-column: 1 / -1;
 }
-.settings-pane .highlight-panel-heading {
-  flex-wrap: wrap;
+.settings-workspace-form {
+  height: 100%;
+  min-height: 100%;
+  max-width: none;
 }
-.settings-pane .highlight-detail-priority {
-  grid-template-columns: minmax(0, 1fr) 72px;
-  gap: 8px;
+.settings-workspace-form > * {
+  flex-shrink: 0;
 }
-.settings-pane .highlight-profile-config,
-.settings-pane .highlight-detail-fields {
-  padding: 8px;
+.settings-workspace-form > .settings-workspace-json {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 200px;
 }
-.settings-pane .highlight-preview-body {
+.settings-workspace-json > .mantine-Input-wrapper {
+  flex: 1;
+  min-height: 0;
+}
+.settings-workspace-json .mantine-Textarea-input {
+  height: 100%;
+  min-height: 0;
+  resize: none;
+  font-family: var(--mantine-font-family-monospace);
+}
+.settings-workspace-form > .mantine-Button-root {
+  align-self: flex-start;
+}
+.settings-saved-item > .mantine-Text-root {
+  flex: 1;
   min-width: 0;
-  overflow-x: auto;
+  overflow-wrap: anywhere;
+}
+.settings-profile-cards {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+}
+.settings-profile-card {
+  min-width: 0;
+}
+.settings-tabs .settings-profile-title {
+  flex: 1;
+  min-width: 0;
+  gap: 6px;
+}
+.settings-profile-heading {
+  align-items: flex-start;
+}
+.settings-connection-add {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+}
+.configured-region > div {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.time-template-editor {
+  width: 100%;
+  max-width: 840px;
+  margin-inline: auto;
+}
+.time-template-quick {
+  min-width: 0;
+}
+.time-template-row {
+  min-width: 0;
+}
+.time-template-rows,
+.time-template-quick-scroll {
+  overflow: visible;
+}
+
+@container settings (max-width: 480px) {
+  .time-template-row {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 4px;
+  }
+  .time-template-row .time-template-slots {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+@container settings (max-width: 420px) {
+  .time-template-quick {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    row-gap: 12px;
+  }
+  .time-template-quick-group:first-child .time-template-quick-caption {
+    margin-right: 0;
+  }
+  .time-template-quick-group:nth-child(2) .time-template-quick-caption {
+    margin-left: 0;
+  }
+  .time-template-quick-group:first-child .time-template-quick-caption::after {
+    display: block;
+  }
+}
+@container settings (max-width: 360px) {
+  .settings-connection-add {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 6px;
+  }
+  .settings-profile-heading .settings-profile-title {
+    flex-direction: column;
+    align-items: flex-start;
+  }
 }

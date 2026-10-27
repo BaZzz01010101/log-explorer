@@ -168,7 +168,7 @@ const stored = async () =>
 const tabNode = (id: string) => page.locator(`[data-tab-id="${id}"]`);
 
 const settings = () =>
-  page.getByRole("region", { name: "Workspace settings", exact: true });
+  page.getByRole("region", { name: "Settings", exact: true });
 const menuItem = (name: string) =>
   page.getByRole("menuitem", { name, exact: true });
 
@@ -206,7 +206,7 @@ for (const theme of ["light", "dark"]) {
     await tooltip.hover();
     await expect(tooltip).toBeVisible();
     await captureInterface("history-expanded.png");
-    await activity("Workspace settings").click();
+    await activity("Settings").click();
     await expect(menu).toHaveCount(0);
     await app.evaluate(({ BrowserWindow }) =>
       BrowserWindow.getAllWindows()[0].setContentSize(860, 700),
@@ -233,7 +233,7 @@ for (const theme of ["light", "dark"]) {
   });
 
   test(`${theme} settings uses shaped tabs, quick inputs on one axis and activity toggles preserve page`, async () => {
-    const gear = activity("Workspace settings");
+    const gear = activity("Settings");
     await expect(gear.locator("svg")).toHaveAttribute("class", /settings/);
     await expect(activity("AWS logs explorer").locator("img")).toBeVisible();
     await gear.click();
@@ -309,6 +309,24 @@ for (const theme of ["light", "dark"]) {
     expect(
       paneBorder.sideBorders.every((width) => parseFloat(width) === 0),
     ).toBe(true);
+    // The compact pane may wrap units; the continuous single-row guide remains
+    // the wide-layout contract.
+    const resize = (await page.locator(".sidebar-resizer").boundingBox())!;
+    const initialWidth = (await page.locator(".sidebar-shell").boundingBox())!
+      .width;
+    await page.mouse.move(resize.x + resize.width / 2, 200);
+    await page.mouse.down();
+    await page.mouse.move(
+      resize.x + resize.width / 2 + 900 - initialWidth,
+      200,
+      { steps: 6 },
+    );
+    await page.mouse.up();
+    await expect
+      .poll(async () =>
+        Math.round((await page.locator(".sidebar-shell").boundingBox())!.width),
+      )
+      .toBe(900);
     const quick = pane.getByRole("region", {
       name: "Quick toolbar templates",
       exact: true,
@@ -358,7 +376,7 @@ for (const theme of ["light", "dark"]) {
     await expect(active).toHaveAttribute("aria-selected", "true");
     await activity("Open settings in window").click();
     const dialog = page.getByRole("dialog", {
-      name: "Workspace settings",
+      name: "Settings",
       exact: true,
     });
     await expect(dialog).toBeVisible();
@@ -416,7 +434,7 @@ for (const theme of ["light", "dark"]) {
   });
 
   test(`${theme} history retention defaults to seven days and persists a smaller age across reload`, async () => {
-    await activity("Workspace settings").click();
+    await activity("Settings").click();
     await settings()
       .getByRole("tab", { name: "Preferences", exact: true })
       .click();
@@ -438,7 +456,7 @@ for (const theme of ["light", "dark"]) {
       .toBe(false);
     await page.reload();
     await expect(page.locator('[data-node-kind="group"]')).toHaveCount(9);
-    await activity("Workspace settings").click();
+    await activity("Settings").click();
     await settings()
       .getByRole("tab", { name: "Preferences", exact: true })
       .click();
@@ -452,7 +470,7 @@ for (const theme of ["light", "dark"]) {
 }
 
 test("application menu shows version, working hints and independent side-panel toggle", async () => {
-  await activity("Workspace settings").click();
+  await activity("Settings").click();
   await settings()
     .getByRole("tab", { name: "Time ranges", exact: true })
     .click();

@@ -114,7 +114,7 @@ export function ProfileConnectionsEditor({
           {error}
         </Alert>
       )}
-      <Group align="end" wrap="nowrap">
+      <Group align="end" wrap="nowrap" className="settings-connection-add">
         <Select
           label="Known profile"
           aria-label="Known profile to add"
@@ -151,132 +151,152 @@ export function ProfileConnectionsEditor({
           Add a profile to choose its regions.
         </Text>
       )}
-      {added.map((profile) => {
-        const existing = connections.filter(
-          (connection) =>
-            connection.mode === "aws" && connection.profile === profile,
-        );
-        const selected = [
-          ...new Set(
-            existing
-              .filter((connection) => connection.enabled !== false)
-              .map((connection) => connection.region),
-          ),
-        ].sort();
-        const catalog = [
-          ...AWS_REGIONS.map((region) => ({
-            value: region.id,
-            label: region.name + " · " + region.id,
-          })),
-          ...[...new Set(existing.map((connection) => connection.region))]
-            .filter((id) => !AWS_REGIONS.some((region) => region.id === id))
-            .map((id) => ({ value: id, label: id + " · Custom region" })),
-        ];
-        const choices = catalog.filter(
-          (region) => !selected.includes(region.value),
-        );
-        const draft = ownValue(regionToAdd, profile) ?? null;
-        return (
-          <Paper withBorder p="sm" key={profile} data-profile={profile}>
-            <Stack gap="sm">
-              <Group justify="space-between" wrap="nowrap">
-                <Group gap="xs" wrap="nowrap">
-                  <Text fw={600} size="sm" style={{ overflowWrap: "anywhere" }}>
-                    {profile}
-                  </Text>
-                  <Badge size="xs" variant="light">
-                    {selected.length}{" "}
-                    {selected.length === 1 ? "region" : "regions"}
-                  </Badge>
-                </Group>
-                <ActionIcon
-                  aria-label={`Remove profile ${profile}`}
-                  variant="subtle"
-                  color="red"
-                  onClick={() => changeVisibility(profile, false)}
-                >
-                  <IconX size={14} />
-                </ActionIcon>
-              </Group>
-              {selected.length === 0 && (
-                <Text size="xs" c="dimmed">
-                  Add a region to show this profile in Explorer.
-                </Text>
-              )}
-              {selected.map((region) => (
+      <div className="settings-profile-cards">
+        {added.map((profile) => {
+          const existing = connections.filter(
+            (connection) =>
+              connection.mode === "aws" && connection.profile === profile,
+          );
+          const selected = [
+            ...new Set(
+              existing
+                .filter((connection) => connection.enabled !== false)
+                .map((connection) => connection.region),
+            ),
+          ].sort();
+          const catalog = [
+            ...AWS_REGIONS.map((region) => ({
+              value: region.id,
+              label: region.name + " · " + region.id,
+            })),
+            ...[...new Set(existing.map((connection) => connection.region))]
+              .filter((id) => !AWS_REGIONS.some((region) => region.id === id))
+              .map((id) => ({ value: id, label: id + " · Custom region" })),
+          ];
+          const choices = catalog.filter(
+            (region) => !selected.includes(region.value),
+          );
+          const draft = ownValue(regionToAdd, profile) ?? null;
+          return (
+            <Paper
+              withBorder
+              p="sm"
+              key={profile}
+              data-profile={profile}
+              className="settings-profile-card"
+            >
+              <Stack gap="sm">
                 <Group
-                  key={region}
-                  className="configured-region"
                   justify="space-between"
                   wrap="nowrap"
+                  className="settings-profile-heading"
                 >
-                  <div>
-                    <Text size="xs" fw={500}>
-                      {region}
+                  <Group gap="xs" className="settings-profile-title">
+                    <Text
+                      fw={600}
+                      size="sm"
+                      style={{ overflowWrap: "anywhere" }}
+                    >
+                      {profile}
                     </Text>
-                    <Text size="xs" c="dimmed">
-                      {AWS_REGIONS.find((item) => item.id === region)?.name ??
-                        "Custom configured region"}
-                    </Text>
-                  </div>
+                    <Badge size="xs" variant="light">
+                      {selected.length}{" "}
+                      {selected.length === 1 ? "region" : "regions"}
+                    </Badge>
+                  </Group>
                   <ActionIcon
-                    size="sm"
+                    aria-label={`Remove profile ${profile}`}
                     variant="subtle"
                     color="red"
-                    aria-label={`Remove ${profile} region ${region}`}
-                    onClick={() => changeRegion(profile, region, false)}
+                    onClick={() => changeVisibility(profile, false)}
                   >
-                    <IconX size={13} />
+                    <IconX size={14} />
                   </ActionIcon>
                 </Group>
-              ))}
-              <Group align="end" wrap="nowrap">
-                <Select
-                  aria-label={`Add region for ${profile}`}
-                  placeholder="Choose a region or location…"
-                  searchable
-                  data={choices}
-                  value={
-                    choices.some((region) => region.value === draft)
-                      ? draft
-                      : null
-                  }
-                  onChange={(region) =>
-                    setUiState((previous) => ({
-                      ...previous,
-                      regionToAdd: {
-                        ...previous.regionToAdd,
-                        [profile]: region,
-                      },
-                    }))
-                  }
-                  size="xs"
-                  style={{ flex: 1 }}
-                  disabled={!choices.length}
-                />
-                <Button
-                  size="xs"
-                  variant="light"
-                  aria-label={`Confirm add region for ${profile}`}
-                  disabled={!draft || selected.includes(draft)}
-                  onClick={() => {
-                    if (draft && changeRegion(profile, draft, true))
+                {selected.length === 0 && (
+                  <Text size="xs" c="dimmed">
+                    Add a region to show this profile in Explorer.
+                  </Text>
+                )}
+                {selected.map((region) => (
+                  <Group
+                    key={region}
+                    className="configured-region"
+                    justify="space-between"
+                    wrap="nowrap"
+                  >
+                    <div>
+                      <Text size="xs" fw={500}>
+                        {region}
+                      </Text>
+                      <Text size="xs" c="dimmed">
+                        {AWS_REGIONS.find((item) => item.id === region)?.name ??
+                          "Custom configured region"}
+                      </Text>
+                    </div>
+                    <ActionIcon
+                      size="sm"
+                      variant="subtle"
+                      color="red"
+                      aria-label={`Remove ${profile} region ${region}`}
+                      onClick={() => changeRegion(profile, region, false)}
+                    >
+                      <IconX size={13} />
+                    </ActionIcon>
+                  </Group>
+                ))}
+                <Group
+                  align="end"
+                  wrap="nowrap"
+                  className="settings-connection-add"
+                >
+                  <Select
+                    aria-label={`Add region for ${profile}`}
+                    placeholder="Choose a region or location…"
+                    searchable
+                    data={choices}
+                    value={
+                      choices.some((region) => region.value === draft)
+                        ? draft
+                        : null
+                    }
+                    onChange={(region) =>
                       setUiState((previous) => ({
                         ...previous,
                         regionToAdd: {
                           ...previous.regionToAdd,
-                          [profile]: null,
+                          [profile]: region,
                         },
-                      }));
-                  }}
-                >
-                  Add region
-                </Button>
-              </Group>
-            </Stack>
-          </Paper>
-        );
-      })}
+                      }))
+                    }
+                    size="xs"
+                    style={{ flex: 1 }}
+                    disabled={!choices.length}
+                  />
+                  <Button
+                    size="xs"
+                    variant="light"
+                    aria-label={`Confirm add region for ${profile}`}
+                    disabled={!draft || selected.includes(draft)}
+                    onClick={() => {
+                      if (draft && changeRegion(profile, draft, true))
+                        setUiState((previous) => ({
+                          ...previous,
+                          regionToAdd: {
+                            ...previous.regionToAdd,
+                            [profile]: null,
+                          },
+                        }));
+                    }}
+                  >
+                    Add region
+                  </Button>
+                </Group>
+              </Stack>
+            </Paper>
+          );
+        })}
+      </div>
       {connections.some((connection) => connection.mode === "offline") && (
         <details>
           <summary>Offline fixture regions</summary>

@@ -2,14 +2,12 @@ import { useState, type Dispatch, type SetStateAction } from "react";
 import {
   ActionIcon,
   Button,
-  Collapse,
   ColorInput,
   Group,
   Select,
   Stack,
   Switch,
   Text,
-  Textarea,
   TextInput,
 } from "@mantine/core";
 import {
@@ -44,12 +42,8 @@ import {
   type HighlightRule,
 } from "../../shared/highlights";
 import type { Preferences } from "../../shared/contracts";
-import {
-  useEventHighlights,
-  EventHighlightContext,
-} from "../useEventHighlights";
-import { MessageContent } from "./EventMessage";
-import { parseLogMessage } from "../../shared/log-data";
+import type { SettingsPreviewSnapshot } from "../settings-preview";
+import { HighlightEventsPreview } from "./HighlightEventsPreview";
 
 const newRule = (): HighlightRule => ({
   id: crypto.randomUUID(),
@@ -188,7 +182,7 @@ function Colors({
     Partial<Record<keyof HighlightColors, string>>
   >({});
   return (
-    <Group grow align="start">
+    <Group grow align="start" className="highlight-color-inputs">
       {(["foreground", "background"] as const).map((key) => (
         <ColorInput
           key={key}
@@ -223,95 +217,10 @@ function Colors({
     </Group>
   );
 }
-function Preview({
-  profile,
-  preferences,
-  message,
-  group,
-  onMessage,
-  onGroup,
-}: {
-  profile: HighlightProfile;
-  preferences: Preferences;
-  message: string;
-  group: string;
-  onMessage(value: string): void;
-  onGroup(value: string): void;
-}) {
-  const result = useEventHighlights(
-    [
-      {
-        id: "preview",
-        timestamp: 0,
-        logGroup: group,
-        logStream: "preview",
-        message,
-      },
-    ],
-    { ...preferences, highlightProfiles: [profile] },
-    [],
-  );
-  const match = result.results.get("preview");
-  return (
-    <Stack gap="xs">
-      <div className="highlight-preview-inputs">
-        <TextInput
-          size="xs"
-          label="Preview log group"
-          value={group}
-          onChange={(event) => onGroup(event.currentTarget.value)}
-        />
-        <Textarea
-          size="xs"
-          label="Preview event"
-          value={message}
-          maxLength={20000}
-          onChange={(event) => onMessage(event.currentTarget.value)}
-        />
-      </div>
-      <EventHighlightContext.Provider value={match}>
-        <div
-          aria-label="Highlight preview"
-          style={{
-            margin: 0,
-            padding: 12,
-            borderRadius: 4,
-            whiteSpace: "pre-wrap",
-            color: match?.row.foreground,
-            backgroundColor: match?.row.background,
-          }}
-        >
-          <MessageContent
-            row={{
-              event: {
-                id: "preview",
-                timestamp: 0,
-                logGroup: group,
-                logStream: "preview",
-                message,
-              },
-              parsed: parseLogMessage(message),
-              level: "unknown",
-            }}
-            highlight=""
-            compact
-          />
-        </div>
-      </EventHighlightContext.Provider>
-      {result.error && (
-        <Text size="xs" c="orange">
-          {result.error}
-        </Text>
-      )}
-    </Stack>
-  );
-}
 export interface HighlightProfilesEditorState {
   selected?: string;
   selectedRules: Record<string, string>;
   previewOpened: boolean;
-  previewMessage: string;
-  previewGroup: string;
 }
 
 export function createHighlightProfilesEditorState(
@@ -321,8 +230,6 @@ export function createHighlightProfilesEditorState(
     selected,
     selectedRules: {},
     previewOpened: false,
-    previewMessage: "ERROR payment failed",
-    previewGroup: "/aws/lambda/orders-api",
   };
 }
 
@@ -331,8 +238,12 @@ export function HighlightProfilesEditor({
   onChange,
   uiState,
   onUiStateChange,
+  previewEnabled = true,
+  previewSnapshot = null,
 }: {
   preferences: Preferences;
+  previewEnabled?: boolean;
+  previewSnapshot?: SettingsPreviewSnapshot | null;
   onChange(profiles: HighlightProfile[]): void;
   uiState?: HighlightProfilesEditorState;
   onUiStateChange?: Dispatch<SetStateAction<HighlightProfilesEditorState>>;
@@ -389,13 +300,18 @@ export function HighlightProfilesEditor({
       onChange(arrayMove(profiles, source, target));
   };
   return (
-    <div className="highlight-editor" data-preview-open={previewOpened}>
+    <div
+      className="highlight-editor"
+      data-preview-enabled={previewEnabled && Boolean(profile)}
+      data-preview-open={previewEnabled && previewOpened}
+    >
       <section
         className="highlight-profile-config"
         aria-label="Profile configuration"
       >
         <div className="highlight-profile-top">
           <Select
+            className="highlight-profile-picker"
             size="xs"
             label="Highlight profile"
             placeholder="No profiles"
@@ -412,6 +328,7 @@ export function HighlightProfilesEditor({
             }
           />
           <Button
+            className="highlight-profile-add"
             size="xs"
             variant="default"
             disabled={profiles.length >= 20}
@@ -434,6 +351,7 @@ export function HighlightProfilesEditor({
           {profile && (
             <>
               <TextInput
+                className="highlight-profile-name"
                 size="xs"
                 label="Profile name"
                 maxLength={120}
@@ -441,6 +359,7 @@ export function HighlightProfilesEditor({
                 onChange={(event) => patch({ name: event.currentTarget.value })}
               />
               <Switch
+                className="highlight-profile-enabled"
                 size="xs"
                 label="Profile enabled"
                 checked={profile.enabled}
@@ -801,49 +720,44 @@ export function HighlightProfilesEditor({
               )}
             </section>
           </div>
-          <section className="highlight-preview-section">
-            <button
-              className="highlight-preview-toggle"
-              aria-expanded={previewOpened}
-              onClick={() =>
-                setUiState((previous) => ({
-                  ...previous,
-                  previewOpened: !previous.previewOpened,
-                }))
-              }
-            >
-              Test and preview{" "}
-              <IconChevronDown
-                size={16}
-                style={{
-                  transform: previewOpened ? "rotate(180deg)" : undefined,
-                }}
-              />
-            </button>
-            <Collapse expanded={previewOpened} transitionDuration={0}>
-              <div className="highlight-preview-body">
-                <Preview
-                  profile={profile}
-                  preferences={preferences}
-                  message={state.previewMessage}
-                  group={state.previewGroup}
-                  onMessage={(previewMessage) =>
-                    setUiState((previous) => ({ ...previous, previewMessage }))
-                  }
-                  onGroup={(previewGroup) =>
-                    setUiState((previous) => ({ ...previous, previewGroup }))
-                  }
+          {previewEnabled && (
+            <section className="highlight-preview-section">
+              <button
+                className="highlight-preview-toggle"
+                aria-expanded={previewOpened}
+                onClick={() =>
+                  setUiState((previous) => ({
+                    ...previous,
+                    previewOpened: !previous.previewOpened,
+                  }))
+                }
+              >
+                Test and preview{" "}
+                <IconChevronDown
+                  size={16}
+                  style={{
+                    transform: previewOpened ? "rotate(180deg)" : undefined,
+                  }}
                 />
-              </div>
-            </Collapse>
-          </section>
+              </button>
+              {previewOpened && (
+                <div className="highlight-preview-body">
+                  <HighlightEventsPreview
+                    snapshot={previewSnapshot}
+                    preferences={preferences}
+                    profile={profile}
+                  />
+                </div>
+              )}
+            </section>
+          )}
         </>
       ) : (
         <Text size="sm" c="dimmed" p="sm">
           Add a profile to configure highlight rules.
         </Text>
       )}
-      <Text size="xs" c="dimmed">
+      <Text size="xs" c="dimmed" className="highlight-editor-note">
         Up to 20 profiles and 20 rules each. Empty group pattern matches all
         groups. Matching is bounded; slow regex patterns are stopped without
         blocking the viewer.

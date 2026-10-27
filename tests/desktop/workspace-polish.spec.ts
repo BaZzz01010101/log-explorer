@@ -214,9 +214,9 @@ for (const theme of ["light", "dark"]) {
         async () => (await page.locator(".sidebar-shell").boundingBox())!.width,
       )
       .toBeLessThan(beforePointer - 40);
-    await activity("Workspace settings").click();
+    await activity("Settings").click();
     const pane = page.getByRole("region", {
-      name: "Workspace settings",
+      name: "Settings",
       exact: true,
     });
     await pane.getByRole("tab", { name: "Preferences", exact: true }).click();
@@ -225,7 +225,7 @@ for (const theme of ["light", "dark"]) {
     ).toHaveClass(/icon-external-link/);
     await activity("Open settings in window").click();
     const dialog = page.getByRole("dialog", {
-      name: "Workspace settings",
+      name: "Settings",
       exact: true,
     });
     await expect(dialog).toBeVisible();
@@ -236,7 +236,7 @@ for (const theme of ["light", "dark"]) {
       .poll(async () => (await stored()).preferences.settingsDetached)
       .toBe(true);
     await page.keyboard.press("Escape");
-    await activity("Workspace settings").click();
+    await activity("Settings").click();
     await expect(dialog).toBeVisible();
     await activity("Return settings to pane").click();
     await expect(dialog).toHaveCount(0);
@@ -250,7 +250,7 @@ for (const theme of ["light", "dark"]) {
       .toBe(true);
     await page.reload();
     await expect(page.locator('[data-node-kind="group"]')).toHaveCount(9);
-    await activity("Workspace settings").click();
+    await activity("Settings").click();
     await expect(dialog).toBeVisible();
     await activity("Return settings to pane").click();
     await expect
@@ -258,7 +258,7 @@ for (const theme of ["light", "dark"]) {
       .toBe(false);
     await page.reload();
     await expect(page.locator('[data-node-kind="group"]')).toHaveCount(9);
-    await activity("Workspace settings").click();
+    await activity("Settings").click();
     await expect(pane).toBeVisible();
     await expect(dialog).toHaveCount(0);
   });
@@ -303,9 +303,9 @@ for (const theme of ["light", "dark"]) {
 }
 
 test("time templates configure quick access and dropdown independently and repeatedly open the matching settings page", async () => {
-  await activity("Workspace settings").click();
+  await activity("Settings").click();
   const pane = page.getByRole("region", {
-    name: "Workspace settings",
+    name: "Settings",
     exact: true,
   });
   await pane.getByRole("tab", { name: "Time ranges", exact: true }).click();
@@ -401,7 +401,7 @@ test("floating surfaces and dragged tabs share tooltip elevation and active pane
     .getByRole("menu")
     .evaluate((element) => getComputedStyle(element).boxShadow);
   await page.keyboard.press("Escape");
-  await activity("Workspace settings").click();
+  await activity("Settings").click();
   await page.getByRole("tab", { name: "Preferences", exact: true }).click();
   await page.getByRole("combobox", { name: "Theme", exact: true }).click();
   expect(

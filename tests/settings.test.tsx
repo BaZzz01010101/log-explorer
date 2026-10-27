@@ -51,6 +51,9 @@ vi.mock("../src/renderer/components/AppTooltip", () => ({
 vi.mock("../src/renderer/components/EventMessage", () => ({
   MessageContent: () => null,
 }));
+vi.mock("../src/renderer/components/HighlightEventsPreview", () => ({
+  HighlightEventsPreview: () => null,
+}));
 vi.mock(
   "../src/renderer/components/HighlightProfilesEditor",
   async (importOriginal) => ({

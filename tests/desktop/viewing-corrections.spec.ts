@@ -225,7 +225,7 @@ for (const theme of ["light", "dark"]) {
     await capture("relative-picker.png");
     await gear.click();
     const settings = page.getByRole("region", {
-      name: "Workspace settings",
+      name: "Settings",
       exact: true,
     });
     await expect(
