@@ -11,6 +11,8 @@ interface Props {
   children: ReactNode;
   footer: ReactNode;
   initialHeight?: number;
+  height?: number | null;
+  eventId?: string;
   onHeightChange(height: number | undefined): void;
   onResizeStart?(): void;
 }
@@ -31,6 +33,8 @@ export function ExpandedEventDetails({
   children,
   footer,
   initialHeight,
+  height: controlledHeight,
+  eventId,
   onHeightChange,
   onResizeStart,
 }: Props) {
@@ -40,7 +44,9 @@ export function ExpandedEventDetails({
   const [draft, setDraft] = useState<number | undefined>();
   const commit = useRef(onHeightChange);
   commit.current = onHeightChange;
-  const currentHeight = draft ?? height;
+  const currentHeight =
+    draft ??
+    (controlledHeight === undefined ? height : (controlledHeight ?? undefined));
   const measuredHeight = () =>
     currentHeight ?? content.current?.getBoundingClientRect().height ?? 245;
   const finish = useCallback((save: boolean, update = true) => {
@@ -79,6 +85,7 @@ export function ExpandedEventDetails({
       <div
         ref={content}
         className="expanded-event-content"
+        data-event-id={eventId}
         role="region"
         aria-label="Expanded event content"
         style={{ height: currentHeight, maxHeight: currentHeight ?? 245 }}

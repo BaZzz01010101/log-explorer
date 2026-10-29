@@ -379,6 +379,147 @@ test("dark nested context menus keep one owner, themed hoverable hints and dismi
   expect(await requests()).toHaveLength(1);
 });
 
+for (const paged of [false, true])
+  test(`opening surrounding context selects and reveals the origin ${paged ? "after paging" : "on the first page"}`, async () => {
+    await loadEvents();
+    await app!.evaluate(
+      ({ ipcMain, BrowserWindow }, { origin, paged }) => {
+        const probe = globalThis as Probe;
+        const contents = BrowserWindow.getAllWindows()[0].webContents;
+        ipcMain.removeHandler("explorer:query");
+        ipcMain.handle("explorer:query", (event, request: QueryRequest) => {
+          if (
+            event.sender !== contents ||
+            event.senderFrame !== contents.mainFrame ||
+            request.connection.mode !== "offline"
+          )
+            throw new Error("Unexpected context query source");
+          probe.contextRequests.push(request);
+          const start = request.cursor ? 400 : 0;
+          const events = Array.from(
+            { length: request.cursor || !paged ? 300 : 400 },
+            (_, index) => ({
+              ...origin,
+              id: `context-neighbor-${start + index}`,
+              timestamp: origin.timestamp - 600 + start + index,
+              message: JSON.stringify({
+                level: "info",
+                message: `neighbor ${start + index}`,
+              }),
+            }),
+          );
+          if (request.cursor || !paged)
+            events.splice(200, 0, { ...origin, id: "context-returned-anchor" });
+          contents.send("explorer:update", {
+            requestId: request.requestId,
+            state: "complete",
+            events,
+            replace: !request.cursor,
+            cursor: request.cursor || !paged ? undefined : "origin-page-2",
+          });
+        });
+      },
+      { origin: anchor, paged },
+    );
+    await openContext();
+    await page
+      .getByRole("menuitem", { name: "Before and after", exact: true })
+      .hover();
+    await page
+      .getByRole("menuitem", { name: "5 minutes", exact: true })
+      .click();
+    await expect
+      .poll(async () => (await requests()).length)
+      .toBe(paged ? 3 : 2);
+    const selected = page.locator(
+      '.virtual-event[data-event-id="context-returned-anchor"]',
+    );
+    await expect(selected).toBeVisible();
+    await expect(selected).toHaveAttribute("aria-selected", "true");
+    await expect(selected).toHaveAttribute("data-current", "true");
+    const position = await selected.evaluate((row) => {
+      const viewport = row.closest(".viewer-scroll")!;
+      const item = row.getBoundingClientRect(),
+        outer = viewport.getBoundingClientRect();
+      return {
+        inside: item.top >= outer.top && item.bottom <= outer.bottom,
+        top: viewport.scrollTop,
+      };
+    });
+    expect(position.inside).toBe(true);
+    expect(position.top).toBeGreaterThan(0);
+    // Subsequent renders must not take selection back from the user.
+    await page.locator(".viewer-scroll:visible").press("ArrowUp");
+    await expect(selected).toHaveAttribute("data-current", "false");
+  });
+
+for (const theme of ["light", "dark"])
+  test(`${theme} inspector Ctrl-click recursively toggles only the requested JSON branch`, async () => {
+    await loadEvents([
+      {
+        ...anchor,
+        message: JSON.stringify({
+          level: "error",
+          message: "anchor recursive toggle",
+          payload: { nested: { list: [{ value: "leaf" }] } },
+          sibling: { keep: { value: 2 } },
+        }),
+      },
+    ]);
+    const inspector = page.getByRole("region", {
+      name: "Event inspector",
+      exact: true,
+    });
+    await inspector
+      .getByRole("button", { name: "Expand /sibling", exact: true })
+      .click();
+    await inspector
+      .getByRole("button", { name: "Expand /sibling/keep", exact: true })
+      .click();
+    await inspector
+      .getByRole("button", { name: "Expand /payload", exact: true })
+      .click({ modifiers: ["Control"] });
+    await expect(
+      inspector.getByRole("button", {
+        name: "Collapse /payload/nested/list/0",
+        exact: true,
+      }),
+    ).toBeVisible();
+    await inspector
+      .getByRole("button", { name: "Collapse /payload/nested", exact: true })
+      .click();
+    await inspector
+      .getByRole("button", { name: "Collapse /payload", exact: true })
+      .click({ modifiers: ["Control"] });
+    await expect(
+      inspector.getByRole("button", {
+        name: "Collapse /payload/nested/list/0",
+        exact: true,
+      }),
+    ).toBeVisible();
+    await inspector
+      .getByRole("button", { name: "Collapse /payload", exact: true })
+      .click({ modifiers: ["Control"] });
+    await expect(
+      inspector.getByRole("button", { name: "Expand /payload", exact: true }),
+    ).toBeVisible();
+    await expect(
+      inspector.getByRole("button", {
+        name: "Collapse /sibling/keep",
+        exact: true,
+      }),
+    ).toBeVisible();
+    await inspector
+      .getByRole("button", { name: "Expand /payload", exact: true })
+      .click();
+    await expect(
+      inspector.getByRole("button", {
+        name: "Expand /payload/nested",
+        exact: true,
+      }),
+    ).toBeVisible();
+  });
+
 test("aggregate rows without a source stream disable surrounding context", async () => {
   await loadEvents([{ ...anchor, id: "aggregate-row", logStream: "" }]);
   await page

@@ -32,6 +32,7 @@ import { requestMatchesTab } from "../query-state";
 import { TimeRangePicker } from "./TimeRangePicker";
 import { EventStatus } from "./EventStatus";
 import { logTabLabel } from "../workspace-entries";
+import { contextEventIndex } from "../context-event";
 import { SourceBadges } from "./SourceBadges";
 import { ServerFilterInput } from "./ServerFilterInput";
 import "./sources.css";
@@ -47,6 +48,8 @@ interface Props {
   onSaveQuery(query: SavedQuery): void;
   onSavePreset(name: string): void;
   onContext(event: LogEvent, range: ContextRange): void;
+  revealEvent?: LogEvent;
+  onEventRevealed?(): void;
 }
 
 export function QueryPane({
@@ -60,6 +63,8 @@ export function QueryPane({
   onSaveQuery,
   onSavePreset,
   onContext,
+  revealEvent,
+  onEventRevealed,
 }: Props) {
   const connection = workspace.connections.find(
     (c) => c.id === tab.connectionId,
@@ -118,6 +123,23 @@ export function QueryPane({
     runtime.events.length < workspace.preferences.maxEvents,
   );
   const currentText = tab.kind === "events" ? tab.filterPattern : tab.query;
+  const contextPages = useRef(new Set<string>());
+  useEffect(() => {
+    if (
+      !revealEvent ||
+      runtime?.state !== "complete" ||
+      contextEventIndex(runtime?.events ?? [], revealEvent) >= 0
+    )
+      return;
+    if (!canPage) {
+      onEventRevealed?.();
+      return;
+    }
+    const cursor = runtime!.cursor!;
+    if (contextPages.current.has(cursor)) return;
+    contextPages.current.add(cursor);
+    onRun(false, true);
+  }, [revealEvent, canPage, runtime?.cursor, runtime?.events]);
   const patchView = (view: ViewConfig) => onPatch({ view });
   const presets = workspace.presets.filter(
     (p) => !p.logGroup || tab.sources.some((s) => s.logGroup === p.logGroup),
@@ -373,6 +395,8 @@ export function QueryPane({
       <div className="viewer-container">
         <LogViewer
           events={runtime?.events ?? []}
+          revealEvent={revealEvent}
+          onEventRevealed={onEventRevealed}
           serverFilter={
             runtime?.request?.kind === "events"
               ? runtime.request.filterPattern

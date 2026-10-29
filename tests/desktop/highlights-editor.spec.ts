@@ -9,7 +9,7 @@ import {
   type Page,
 } from "@playwright/test";
 import { execFileSync } from "node:child_process";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { join, resolve, sep } from "node:path";
 
 test.setTimeout(150000);
@@ -164,8 +164,14 @@ async function openHighlights() {
     .click();
 }
 async function savedProfiles() {
-  return JSON.parse(await readFile(join(directory, "workspace.json"), "utf8"))
-    .preferences.highlightProfiles;
+  await expect(page.getByText("Saved locally", { exact: true })).toBeVisible();
+  const { workspace } = await page.evaluate(() =>
+    window.explorer.loadWorkspace(),
+  );
+  return (
+    (workspace as ReturnType<typeof createWorkspace>).preferences
+      .highlightProfiles ?? []
+  );
 }
 async function capture(filename: string) {
   let png = "";
@@ -193,34 +199,52 @@ async function capture(filename: string) {
   await writeFile(test.info().outputPath(filename), Buffer.from(png, "base64"));
 }
 
-test("expanding settings preserves the selected profile and rule while enabling modal-only preview", async () => {
+const profileRows = () =>
+  settingsDialog().locator("tbody > tr[data-profile-id]");
+const ruleDetail = () =>
+  settingsDialog()
+    .getByRole("table", { name: "Highlight rules", exact: true })
+    .locator(".highlight-item-detail");
+async function expandRule(number: number) {
+  await settingsDialog()
+    .getByRole("button", { name: `Expand rule ${number}`, exact: true })
+    .click();
+}
+async function editRule() {
+  await settingsDialog()
+    .getByRole("table", { name: "Highlight rules", exact: true })
+    .locator("tbody")
+    .filter({
+      has: page.locator(".highlight-item-detail"),
+    })
+    .getByRole("button", { name: /^Edit rule / })
+    .click();
+}
+
+test("expanding settings preserves the selected profile and pending rule draft while enabling modal-only preview", async () => {
   await page.getByRole("button", { name: "Settings", exact: true }).click();
   const pane = page.getByRole("region", { name: "Settings", exact: true });
   await pane.getByRole("tab", { name: "Highlights", exact: true }).click();
+  await pane.locator('[data-profile-id="other"]').click();
   await pane
-    .getByRole("combobox", { name: "Highlight profile", exact: true })
+    .getByRole("button", { name: "Expand rule 2", exact: true })
     .click();
-  await page
-    .getByRole("option", { name: "Other (disabled)", exact: true })
-    .click();
-  await pane.locator('[data-rule-id="other-second"]').click();
+  await pane.getByRole("button", { name: "Edit rule 2", exact: true }).click();
+  await pane.getByLabel("Match regex", { exact: true }).fill("DOCKING_DRAFT");
   await expect(
-    pane.getByRole("button", { name: "Test and preview", exact: true }),
+    pane.getByRole("button", { name: "Preview", exact: true }),
   ).toHaveCount(0);
   await pane
     .getByRole("button", { name: "Open settings in window", exact: true })
     .click();
   await expect(
-    settingsDialog().getByRole("combobox", {
-      name: "Highlight profile",
-      exact: true,
-    }),
-  ).toHaveValue("Other (disabled)");
-  await expect(
-    settingsDialog().locator('[data-rule-id="other-second"]'),
+    settingsDialog().locator('[data-profile-id="other"]'),
   ).toHaveAttribute("aria-selected", "true");
+  await expect(
+    ruleDetail().getByLabel("Match regex", { exact: true }),
+  ).toHaveValue("DOCKING_DRAFT");
   const toggle = settingsDialog().getByRole("button", {
-    name: "Test and preview",
+    name: "Preview",
     exact: true,
   });
   await toggle.click();
@@ -228,51 +252,40 @@ test("expanding settings preserves the selected profile and rule while enabling 
   await expect(
     settingsDialog().getByLabel("Preview event", { exact: true }),
   ).toHaveCount(0);
+  await settingsDialog()
+    .getByRole("button", { name: "Cancel rule edit", exact: true })
+    .click();
+  expect((await savedProfiles())[1].rules[1].pattern).toBe("ERROR");
 });
 
 for (const theme of ["light", "dark"])
-  test(`${theme} master-detail edits one rule and drag order changes real profile priority`, async () => {
+  test(`${theme} saved rule edits and drag order change applied highlight priority`, async () => {
     await openHighlights();
-    await expect(
-      settingsDialog().getByLabel("Match regex", { exact: true }),
-    ).toHaveCount(1);
     const table = settingsDialog().getByRole("table", {
       name: "Highlight rules",
       exact: true,
     });
-    const detail = settingsDialog().getByRole("region", {
-      name: "Edit rule",
+    await expect(
+      settingsDialog().getByLabel("Match regex", { exact: true }),
+    ).toHaveCount(0);
+    await expandRule(2);
+    await editRule();
+    const detail = ruleDetail();
+    await detail.getByLabel("Match regex", { exact: true }).fill("FAIL|ERROR");
+    await expect(ruleRows().nth(1)).toContainText("ERROR");
+    expect((await savedProfiles())[0].rules[1].pattern).toBe("ERROR");
+    await settingsDialog()
+      .getByRole("button", { name: "Save rule", exact: true })
+      .click();
+    await expect(ruleRows().nth(1)).toContainText("FAIL|ERROR");
+    const enabled = table.getByRole("switch", {
+      name: "Rule 1 enabled",
       exact: true,
     });
-    const a = (await table.boundingBox())!,
-      b = (await detail.boundingBox())!;
-    expect(a.x + a.width).toBeLessThanOrEqual(b.x);
-    expect(Math.abs(a.y - b.y)).toBeLessThan(80);
-    expect(
-      await settingsDialog()
-        .getByRole("button", { name: "Test and preview", exact: true })
-        .evaluate(
-          (element) =>
-            element.getBoundingClientRect().bottom <= window.innerHeight,
-        ),
-    ).toBe(true);
-    await expect(table.getByRole("columnheader")).toHaveText([
-      "",
-      "#",
-      "Enabled",
-      "Search in",
-      "Highlight",
-      "Regex",
-      "Colors",
-    ]);
-    await ruleRows().nth(1).click();
-    await detail.getByLabel("Match regex", { exact: true }).fill("FAIL|ERROR");
-    await expect(ruleRows().nth(1)).toContainText("FAIL|ERROR");
-    await table.getByLabel("Rule 1 enabled", { exact: true }).uncheck();
-    await expect(
-      detail.getByLabel("Rule enabled", { exact: true }),
-    ).toBeChecked();
-    await table.getByLabel("Rule 1 enabled", { exact: true }).check();
+    await enabled.locator("..").click();
+    await expect(enabled).not.toBeChecked();
+    await enabled.locator("..").click();
+    await expect(enabled).toBeChecked();
     const source = table.getByRole("button", {
       name: "Reorder rule 2",
       exact: true,
@@ -284,7 +297,6 @@ for (const theme of ["light", "dark"])
     await page.mouse.move(from.x + from.width / 2, to.y + to.height / 2, {
       steps: 12,
     });
-
     await page.mouse.up();
     await expect
       .poll(() =>
@@ -296,39 +308,7 @@ for (const theme of ["light", "dark"])
     await expect(detail.getByLabel("Match regex", { exact: true })).toHaveValue(
       "FAIL|ERROR",
     );
-    await settingsDialog()
-      .getByRole("button", { name: "Test and preview", exact: true })
-      .click();
-    const previewRow = settingsDialog()
-      .getByRole("region", { name: "Light preview", exact: true })
-      .locator(".virtual-event")
-      .filter({ hasText: "Payment provider timed out" })
-      .first();
-    await expect(previewRow).toHaveCSS(
-      "background-color",
-      "rgb(254, 202, 202)",
-    );
-    await detail.getByLabel("Match regex", { exact: true }).fill("WARN");
-    await expect(previewRow).not.toHaveCSS(
-      "background-color",
-      "rgb(254, 202, 202)",
-    );
-    await detail.getByLabel("Match regex", { exact: true }).fill("ERROR");
-    await expect(previewRow).toHaveCSS(
-      "background-color",
-      "rgb(254, 202, 202)",
-    );
-    await capture(`master-detail-${theme}.png`);
-    await settingsDialog()
-      .getByRole("button", { name: "Test and preview", exact: true })
-      .click();
-    await expect(
-      settingsDialog().getByRole("region", {
-        name: "Light preview",
-        exact: true,
-      }),
-    ).toHaveCount(0);
-    await capture(`master-detail-collapsed-${theme}.png`);
+    await capture(`hybrid-tables-priority-${theme}.png`);
     await settingsDialog().locator(".mantine-Modal-close").click();
     await expect(
       page
@@ -344,28 +324,30 @@ for (const theme of ["light", "dark"])
       .toEqual(["second", "first", "third"]);
   });
 
-test("rule selection survives priority edits, keyboard reordering and cancellation; add/delete and profiles stay independent", async () => {
+test("keyboard reorder cancellation retains the expanded rule and its draft without committing priority", async () => {
   await openHighlights();
-  await ruleRows().nth(2).click();
-  const detail = settingsDialog().getByRole("region", {
-    name: "Edit rule",
-    exact: true,
-  });
+  await expandRule(3);
+  await editRule();
+  await ruleDetail()
+    .getByLabel("Match regex", { exact: true })
+    .fill("DRAFT_WARN");
+  await settingsDialog()
+    .getByRole("button", { name: "Move rule 3 up", exact: true })
+    .click();
+  await expect(ruleRows().nth(1)).toHaveAttribute("data-rule-id", "third");
   await expect(
-    detail.getByLabel("JSON Pointer path", { exact: true }),
-  ).toHaveValue("/level");
-  await expect(
-    detail.getByLabel("Light background", { exact: true }),
-  ).toHaveValue("#ffddaa");
-  await detail.getByLabel("Priority", { exact: true }).fill("1");
-  await expect(ruleRows().first()).toHaveAttribute("data-rule-id", "third");
+    ruleDetail().getByLabel("Match regex", { exact: true }),
+  ).toHaveValue("DRAFT_WARN");
   const handle = settingsDialog().getByRole("button", {
-    name: "Reorder rule 1",
+    name: "Reorder rule 2",
     exact: true,
   });
   await handle.focus();
   await page.keyboard.press("Space");
-  await expect(ruleRows().first()).toHaveAttribute("data-dragging", "true");
+  await expect(ruleRows().nth(1).locator("..")).toHaveAttribute(
+    "data-dragging",
+    "true",
+  );
   await page.evaluate(
     () =>
       new Promise<void>((done) =>
@@ -376,24 +358,10 @@ test("rule selection survives priority edits, keyboard reordering and cancellati
   await expect
     .poll(
       async () =>
-        (await ruleRows().first().boundingBox())!.y >
-        (await ruleRows().nth(1).boundingBox())!.y,
+        (await ruleRows().nth(1).locator("..").boundingBox())!.y >
+        (await ruleRows().nth(2).locator("..").boundingBox())!.y,
     )
     .toBe(true);
-  await page.keyboard.press("Space");
-  await expect
-    .poll(() =>
-      ruleRows().evaluateAll((rows) =>
-        rows.map((row) => row.getAttribute("data-rule-id")),
-      ),
-    )
-    .toEqual(["first", "third", "second"]);
-  await settingsDialog()
-    .getByRole("button", { name: "Reorder rule 2", exact: true })
-    .focus();
-  await page.keyboard.press("Space");
-  await expect(ruleRows().nth(1)).toHaveAttribute("data-dragging", "true");
-  await page.keyboard.press("ArrowDown");
   await page.keyboard.press("Escape");
   await expect(settingsDialog()).toBeVisible();
   await expect
@@ -403,99 +371,56 @@ test("rule selection survives priority edits, keyboard reordering and cancellati
       ),
     )
     .toEqual(["first", "third", "second"]);
-  await settingsDialog()
-    .getByRole("button", { name: "Add rule", exact: true })
-    .click();
-  await expect(ruleRows()).toHaveCount(4);
-  await detail.getByLabel("Match regex", { exact: true }).fill("NEW");
-  await expect(ruleRows().last()).toContainText("NEW");
-  await detail
-    .getByRole("button", { name: "Delete selected rule", exact: true })
-    .click();
-  await expect(ruleRows()).toHaveCount(3);
-  await expect(detail.getByLabel("Match regex", { exact: true })).toHaveValue(
-    "ERROR",
-  );
-  await settingsDialog()
-    .getByRole("combobox", { name: "Highlight profile", exact: true })
-    .click();
-  await page
-    .getByRole("option", { name: "Other (disabled)", exact: true })
-    .click();
-  await expect(ruleRows()).toHaveCount(0);
   await expect(
-    settingsDialog().getByText("No rules in this profile.", { exact: true }),
-  ).toBeVisible();
+    ruleDetail().getByLabel("Match regex", { exact: true }),
+  ).toHaveValue("DRAFT_WARN");
   await settingsDialog()
-    .getByRole("button", { name: "Add rule", exact: true })
+    .getByRole("button", { name: "Cancel rule edit", exact: true })
     .click();
-  await expect(ruleRows()).toHaveCount(1);
-  await detail.getByLabel("Match regex", { exact: true }).fill("OTHER");
-  await settingsDialog()
-    .getByRole("button", { name: "Delete profile", exact: true })
-    .click();
-  await expect(ruleRows()).toHaveCount(3);
   await expect(
-    settingsDialog().getByLabel("Profile name", { exact: true }),
-  ).toHaveValue("Default");
-  await settingsDialog()
-    .getByRole("button", { name: "Delete profile", exact: true })
-    .click();
-  await expect(ruleRows()).toHaveCount(0);
-  await settingsDialog()
-    .getByRole("button", { name: "Add profile", exact: true })
-    .click();
-  await expect(ruleRows()).toHaveCount(1);
-  await expect(detail.getByLabel("Match regex", { exact: true })).toHaveValue(
-    "",
-  );
+    ruleDetail().getByLabel("Match regex", { exact: true }),
+  ).toHaveValue("WARN");
+  await expect
+    .poll(async () => (await savedProfiles())[0].rules[1].pattern)
+    .toBe("WARN");
 });
 
-test("compact editor keeps both panels and the collapsed preview reachable in a smaller window", async () => {
+test("compact tables preserve each profile's pending rule colors while switching profiles", async () => {
   await app!.evaluate(({ BrowserWindow }) =>
     BrowserWindow.getAllWindows()[0].setSize(1120, 850, false),
   );
   await openHighlights();
-  const metrics = await settingsDialog().evaluate((element) => {
-    const master = element
-      .querySelector(".highlight-rule-list")!
-      .getBoundingClientRect();
-    const detail = element
-      .querySelector(".highlight-rule-detail")!
-      .getBoundingClientRect();
-    const preview = element
-      .querySelector(".highlight-preview-toggle")!
-      .getBoundingClientRect();
-    return {
-      sideBySide: master.right <= detail.left,
-      previewInWindow: preview.bottom <= window.innerHeight,
-      overflow: element.scrollWidth - element.clientWidth,
-    };
-  });
-  expect(metrics).toEqual({
-    sideBySide: true,
-    previewInWindow: true,
-    overflow: 0,
-  });
-  await ruleRows().nth(2).click();
-  await expect(
-    settingsDialog().getByLabel("Dark background", { exact: true }),
-  ).toHaveValue("#663300");
-  await settingsDialog()
+  await expandRule(3);
+  await editRule();
+  await ruleDetail()
     .getByLabel("Dark background", { exact: true })
     .fill("#775533");
-  await settingsDialog()
-    .getByLabel("Dark background", { exact: true })
-    .press("Tab");
-  await ruleRows().first().click();
+  await profileRows().filter({ hasText: "Other" }).click();
+  await expect(ruleRows()).toHaveCount(0);
+  await profileRows().filter({ hasText: "Default" }).click();
   await expect(
-    settingsDialog().getByLabel("Shared background", { exact: true }),
-  ).toHaveValue("#fef08a");
-  await ruleRows().nth(2).click();
-  await expect(
-    settingsDialog().getByLabel("Dark background", { exact: true }),
+    ruleDetail().getByLabel("Dark background", { exact: true }),
   ).toHaveValue("#775533");
-  await capture("master-detail-small-window.png");
+  expect((await savedProfiles())[0].rules[2].darkColors?.background).toBe(
+    "#663300",
+  );
+  await settingsDialog()
+    .getByRole("button", { name: "Save rule", exact: true })
+    .click();
+  await expect
+    .poll(
+      async () => (await savedProfiles())[0].rules[2].darkColors?.background,
+    )
+    .toBe("#775533");
+  const metrics = await settingsDialog().evaluate((element) => ({
+    overflow: element.scrollWidth - element.clientWidth,
+    previewInWindow:
+      element
+        .querySelector(".highlight-preview-toggle")!
+        .getBoundingClientRect().bottom <= window.innerHeight,
+  }));
+  expect(metrics).toEqual({ overflow: 0, previewInWindow: true });
+  await capture("hybrid-tables-small-window.png");
 });
 
 for (const theme of ["light", "dark"])

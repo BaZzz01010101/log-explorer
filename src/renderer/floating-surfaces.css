@@ -17,6 +17,6 @@
 .pane-drag-header.is-dragging,
 .resource-drag-preview,
 .column-dragging,
-.highlight-rules-table tr[data-dragging="true"] {
+.highlight-sortable-item[data-dragging="true"] {
   box-shadow: var(--app-floating-shadow) !important;
 }

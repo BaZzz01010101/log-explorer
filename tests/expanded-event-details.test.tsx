@@ -1,4 +1,5 @@
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
+import { useState } from "react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { ExpandedEventDetails } from "../src/renderer/components/ExpandedEventDetails";
 
@@ -144,4 +145,38 @@ it("clamps resizing, ignores other pointers and supports keyboard resizing and r
   );
   expect(commit).toHaveBeenLastCalledWith(undefined);
   expect(content().props.style.height).toBeUndefined();
+});
+
+it("coordinates externally controlled heights and resets across expanded views", async () => {
+  function Pair() {
+    const [height, setHeight] = useState<number | undefined>();
+    return ["light", "dark"].map((theme) => (
+      <ExpandedEventDetails
+        key={theme}
+        height={height ?? null}
+        onHeightChange={setHeight}
+        footer={null}
+      >
+        Contents
+      </ExpandedEventDetails>
+    ));
+  }
+  await act(async () => {
+    renderer = create(<Pair />, {
+      createNodeMock: () => ({
+        getBoundingClientRect: () => ({ height: 245 }),
+      }),
+    });
+  });
+  const dividers = () => renderer.root.findAllByProps({ role: "separator" });
+  const heights = () =>
+    renderer.root
+      .findAllByProps({ className: "expanded-event-content" })
+      .map((node) => node.props.style.height);
+  await act(async () => dividers()[0].props.onKeyDown(key("ArrowDown")));
+  expect(heights()).toEqual([265, 265]);
+  await act(async () => dividers()[1].props.onKeyDown(key("ArrowDown")));
+  expect(heights()).toEqual([285, 285]);
+  await act(async () => dividers()[0].props.onKeyDown(key("Home")));
+  expect(heights()).toEqual([undefined, undefined]);
 });

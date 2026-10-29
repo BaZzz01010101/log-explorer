@@ -1,11 +1,41 @@
 import { useEffect, useRef, useState } from "react";
 
-export function useEventSelection(ids: string[], initiallyOpened = true) {
+export function useEventSelectionState(initiallyOpened = true) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [opened, setOpened] = useState(initiallyOpened);
   const anchor = useRef<string | null>(null);
   const lastIndex = useRef(0);
+  return {
+    selectedId,
+    setSelectedId,
+    selected,
+    setSelected,
+    opened,
+    setOpened,
+    anchor,
+    lastIndex,
+  };
+}
+
+export type EventSelectionState = ReturnType<typeof useEventSelectionState>;
+
+export function useEventSelection(
+  ids: string[],
+  initiallyOpened = true,
+  sharedState?: EventSelectionState,
+) {
+  const privateState = useEventSelectionState(initiallyOpened);
+  const {
+    selectedId,
+    setSelectedId,
+    selected,
+    setSelected,
+    opened,
+    setOpened,
+    anchor,
+    lastIndex,
+  } = sharedState ?? privateState;
   const index = selectedId === null ? -1 : ids.indexOf(selectedId);
   if (index >= 0) lastIndex.current = index;
   useEffect(() => {

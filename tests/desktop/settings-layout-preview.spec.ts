@@ -348,33 +348,36 @@ for (const theme of ["light", "dark"]) {
     expect(overflow.vertical).toBeLessThanOrEqual(1);
   });
 
-  test(`${theme} Highlights grows the rule editor and keeps scrolling inside it across preview folds`, async () => {
+  test(`${theme} Highlights grows both table viewports and keeps scrolling inside the tables across preview folds`, async () => {
     await openWindow();
     await resizeSettings(1100, 700);
     const panel = await choose("Highlights");
-    const detail = panel.getByRole("region", {
-      name: "Edit rule",
-      exact: true,
-    });
-    const fields = detail.locator(".highlight-detail-fields");
-    const list = panel.locator(".highlight-rules-scroll");
-    const small = await bounds(detail);
-    await fields.evaluate((el) => {
+    const profiles = panel.locator(
+      ".highlight-profile-list .highlight-items-scroll",
+    );
+    const rules = panel.locator(".highlight-rule-list .highlight-items-scroll");
+    const small = await bounds(rules);
+    await rules.evaluate((el) => {
       el.scrollTop = el.scrollHeight;
     });
-    expect(await fields.evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
-    await list.evaluate((el) => {
-      el.scrollTop = el.scrollHeight;
-    });
-    expect(await list.evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
+    expect(await rules.evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
+    await panel
+      .getByRole("button", { name: "Expand rule 20", exact: true })
+      .click();
+    const detail = panel
+      .getByRole("table", { name: "Highlight rules", exact: true })
+      .locator(".highlight-item-detail");
+    await expect(
+      panel.getByRole("button", { name: "Edit rule 20", exact: true }),
+    ).toBeVisible();
     await resizeSettings(1100, 1300);
     await expect
-      .poll(async () => (await bounds(detail)).height)
+      .poll(async () => (await bounds(rules)).height)
       .toBeGreaterThan(small.height + 450);
-    expect((await bounds(detail)).height).toBeGreaterThan(600);
-    const collapsed = await bounds(detail);
+    expect((await bounds(rules)).height).toBeGreaterThan(600);
+    const collapsed = await bounds(rules);
     const toggle = panel.getByRole("button", {
-      name: "Test and preview",
+      name: "Preview",
       exact: true,
     });
     const scheme = await page
@@ -393,12 +396,14 @@ for (const theme of ["light", "dark"]) {
           await panel.evaluate((el) => el.scrollTop),
           "Highlights has no competing page scrollbar",
         ).toBe(0);
-        const metrics = await fields.evaluate((el) => ({
-          gutter: (el as HTMLElement).offsetWidth - el.clientWidth,
-          horizontal: el.scrollWidth - el.clientWidth,
-        }));
-        gutters.push(metrics.gutter);
-        expect(metrics.horizontal).toBeLessThanOrEqual(1);
+        for (const viewport of [profiles, rules]) {
+          const metrics = await viewport.evaluate((el) => ({
+            gutter: (el as HTMLElement).offsetWidth - el.clientWidth,
+            horizontal: el.scrollWidth - el.clientWidth,
+          }));
+          gutters.push(metrics.gutter);
+          expect(metrics.horizontal).toBeLessThanOrEqual(1);
+        }
         if (expanded) {
           const light = panel.getByRole("region", {
             name: "Light preview",
@@ -416,7 +421,7 @@ for (const theme of ["light", "dark"]) {
           expect(darkBox.left).toBeGreaterThanOrEqual(lightBox.right);
         } else {
           await expect
-            .poll(async () => Math.round((await bounds(detail)).height))
+            .poll(async () => Math.round((await bounds(rules)).height))
             .toBe(Math.round(collapsed.height));
         }
         await expect(page.locator("html")).toHaveAttribute(
@@ -427,7 +432,7 @@ for (const theme of ["light", "dark"]) {
     }
     expect(
       new Set(gutters).size,
-      "Rule fields reserve the same scrollbar gutter folded or expanded",
+      "Both tables reserve the same scrollbar gutter folded or expanded",
     ).toBe(1);
   });
 
@@ -436,7 +441,7 @@ for (const theme of ["light", "dark"]) {
     await page.getByRole("button", { name: "Settings", exact: true }).click();
     await choose("Highlights", pane());
     await expect(
-      pane().getByRole("button", { name: "Test and preview", exact: true }),
+      pane().getByRole("button", { name: "Preview", exact: true }),
     ).toHaveCount(0);
     await expect(
       pane().getByRole("region", { name: /^(Light|Dark) preview$/ }),
@@ -447,9 +452,7 @@ for (const theme of ["light", "dark"]) {
       .click();
     await resizeSettings(1100, 1000);
     const panel = await choose("Highlights");
-    await panel
-      .getByRole("button", { name: "Test and preview", exact: true })
-      .click();
+    await panel.getByRole("button", { name: "Preview", exact: true }).click();
     for (const side of ["Light", "Dark"]) {
       const preview = panel.getByRole("region", {
         name: `${side} preview`,
@@ -533,7 +536,7 @@ for (const theme of ["light", "dark"]) {
     await openWindow();
     const emptyPanel = await choose("Highlights");
     const toggle = emptyPanel.getByRole("button", {
-      name: "Test and preview",
+      name: "Preview",
       exact: true,
     });
     if ((await toggle.getAttribute("aria-expanded")) !== "true")

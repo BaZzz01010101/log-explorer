@@ -14,7 +14,7 @@ import type {
   VisualizationPreset,
   Workspace,
 } from "../shared/contracts";
-import { shortStreamId, sourceCount } from "../shared/source-labels";
+import { tabTitle, sourceCount } from "../shared/source-labels";
 import { historyRetentionDays, recentClosedTabs } from "./closed-tab-history";
 import { LOG_LEVELS } from "../shared/log-data";
 import { parseHighlightProfiles } from "../shared/highlights";
@@ -329,17 +329,6 @@ function parseSources(value: unknown): LogSource[] {
             JSON.stringify(source.logStreams),
       ) === index,
   );
-}
-function tabTitle(sources: LogSource[]): string {
-  const count = sourceCount(sources);
-  if (count > 1) return "Mixed Sources";
-  if (!sources.length) return "Log view";
-  const title =
-    sources[0].logGroup.split("/").filter(Boolean).at(-1) ||
-    sources[0].logGroup;
-  const streams = sources[0].logStreams;
-  if (streams?.length === 1) return `${title} Â· ${shortStreamId(streams[0])}`;
-  return streams?.length ? `${title} Â· ${streams.length} streams` : title;
 }
 function baseTab(
   id: string,
@@ -962,10 +951,7 @@ export function restoreWorkspace(value: unknown): Workspace {
         .filter(valid),
     )
       .filter((tab) => !tabs.some((open) => open.id === tab.id))
-      .map((tab) => {
-        const { customTitle: _closedAlias, ...rest } = tab;
-        return { ...rest, closedAt: rest.closedAt ?? Date.now() };
-      }),
+      .map((tab) => ({ ...tab, closedAt: tab.closedAt ?? Date.now() })),
     preferences.closedTabHistoryDays,
   );
   const shown = new Set<string>();
@@ -1793,10 +1779,7 @@ function closeViews(state: Workspace, ids: string[]): Workspace {
     );
   const closed = state.tabs
     .filter((tab) => closing.has(tab.id))
-    .map((tab) => {
-      const { customTitle: _alias, ...rest } = tab;
-      return { ...rest, closedAt: Date.now() };
-    });
+    .map((tab) => ({ ...tab, closedAt: Date.now() }));
   const order = (state.tabOrder ?? entries.map((entry) => entry.id)).flatMap(
     (id) => replacements.get(id) ?? (closing.has(id) ? [] : [id]),
   );

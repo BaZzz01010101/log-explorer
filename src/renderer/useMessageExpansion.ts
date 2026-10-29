@@ -3,7 +3,7 @@ import type { ViewConfig } from "../shared/contracts";
 
 type Expansion = { all: boolean; exceptions: Set<string> };
 
-export function useMessageExpansion(mode: ViewConfig["mode"]) {
+export function useMessageExpansionState() {
   const [modes, setModes] = useState<Record<ViewConfig["mode"], Expansion>>(
     () => ({
       json: { all: true, exceptions: new Set() },
@@ -11,6 +11,17 @@ export function useMessageExpansion(mode: ViewConfig["mode"]) {
       hybrid: { all: false, exceptions: new Set() },
     }),
   );
+  return { modes, setModes };
+}
+
+export type MessageExpansionState = ReturnType<typeof useMessageExpansionState>;
+
+export function useMessageExpansion(
+  mode: ViewConfig["mode"],
+  sharedState?: MessageExpansionState,
+) {
+  const privateState = useMessageExpansionState();
+  const { modes, setModes } = sharedState ?? privateState;
   const current = modes[mode];
   return useMemo(
     () => ({

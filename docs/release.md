@@ -1,6 +1,192 @@
 # Building and releasing
 
-## Latest local verification build (0.1.50)
+## Latest local verification build (0.1.56)
+
+Closed-history tooltips no longer lose their opening timer after rapid movement
+across unrelated controls. The delegated handler cancels both prior timers and
+scopes exit events to the current owner. Renamed and multisource views show a
+Sources section using the exact shortened names generated for individual tabs;
+ordinary automatic names show only their label. Full paths and endpoint details
+are omitted. Interactive text selection, copying and themed presentation remain.
+
+Surrounding-context tabs select and reveal the originating event, automatically
+loading continuation pages when necessary. Exact source/event identity takes
+precedence; an equivalent timestamp/message can match changed query IDs. The
+reveal is transient and consumed, so later keyboard navigation is preserved.
+Ctrl-click on an inspector JSON toggle opens the complete subtree if any part is
+folded, otherwise folds it recursively, preserving sibling state and existing
+inspection limits. See [behavior and evidence](closed-tab-tooltips-0.1.56.md).
+
+All 971 unit/integration tests and 23 targeted final packaged desktop checks pass
+with zero failures, skips or flaky cases. Native coverage includes the original
+timer failure, both themes, short source labels, selection/copying, history sizing
+and reopening, context origin reveal on first/later pages, recursive JSON toggles,
+menu dismissal and synchronized preview scrolling/selection/folds. Typecheck/build,
+formatting, whitespace, packaging and artifact hashes pass. Evidence:
+`.tmp/unit-0.1.56-final4.json`, `.tmp/desktop-verification-0.1.56.json`, and
+`release/0.1.56/artifact-manifest.json`.
+
+Tests used hidden isolated offline windows; real AWS and installer installation
+were not exercised. The gated handoff waits for natural app exit and preserves
+a backup. Four hidden standard-path postchecks are queued. Its state is recorded
+in `.tmp/standard-build-update-0.1.56.json`. Changes remain uncommitted.
+
+## Earlier local verification build (0.1.55)
+
+Closed-tab history keeps renamed labels and provides selectable custom tooltips
+with every full source group and stream, including profile/region details.
+Reopening still returns to the original source title. Highlights regex and JSON
+Pointer fields disable native writing assistance while retaining syntax checks.
+
+Both Highlights editors use the compact Preview title and omit the captured source
+and loaded-count caption. Redundant tree footer, breadcrumb and rule-priority
+hints are removed, with the freed space allocated to logs. Existing two-theme
+preview synchronization and pane resizing remain available. See
+[behavior and evidence](highlight-preview-and-history-0.1.55.md).
+
+All 966 unit/integration tests and 42 targeted final packaged desktop checks pass
+with zero failures, skips or flaky cases. Native checks cover both themes and
+editors, writing-assistance flags, actual preview area, fold/reopen cycles,
+source-aware history tooltips, intrinsic menu widths, reopening, synchronized
+scrolling/selection/folds, drag interactions and responsive Settings. Independent
+review, typecheck/build, formatting, whitespace, packaging and artifact hashes
+pass. Evidence: `.tmp/unit-0.1.55-final.json`,
+`.tmp/desktop-verification-0.1.55.json` and
+`release/0.1.55/artifact-manifest.json`.
+
+Tests used hidden isolated offline windows; real AWS and installer installation
+were not exercised. The standard-folder handoff waits for natural app exit,
+preserves a backup and queues three hidden postchecks. Its state is recorded in
+`.tmp/standard-build-update-0.1.55.json`. Changes remain uncommitted.
+
+## Earlier local verification build (0.1.54)
+
+The Highlights tree reuses Explorer's compact rows, typography, selection,
+expanders and muted icon treatment. Rules use the existing highlight-marker icon;
+profile counts use small badges. Disabled items remain gray.
+
+Drag whole rows to reorder profiles with their expanded rules, or rules within
+their profile. Keyboard reordering, scrolling beyond the visible viewport,
+Escape cancellation and invalid-drop rejection retain the selected editor and
+incomplete input. Order is committed only on a valid drop. Schema-normalized
+preference updates no longer discard unfinished fields. Context menus and
+immediate validated editing remain available.
+
+Closed-tab history now sizes to its content with only a 760px maximum, further
+limited by the window. Short histories shrink; long names retain ellipsis and
+interactive tooltips. Date sections, source badges, vertical scrolling and
+reopening behavior remain available. See
+[behavior and evidence](highlight-tree-drag-and-history-0.1.54.md).
+
+All 962 unit/integration tests and all 36 targeted final packaged desktop checks
+pass with no failures, skips or flaky cases. Native coverage includes both themes,
+short/medium/capped history, mouse and keyboard reordering, expanded profile
+scrolling, canceled and foreign-profile drops, retained input DOM identity,
+immediate edits, context menus, deletion, preview synchronization and all Settings
+pages at three widths in pane/modal presentations. Independent review,
+typecheck/build, formatting, whitespace, NSIS packaging and artifact hashes pass.
+Evidence: `.tmp/unit-0.1.54-final2.json` and
+`.tmp/desktop-verification-0.1.54.json`. Artifacts:
+`release/0.1.54/artifact-manifest.json`.
+
+Tests were hidden, isolated and offline; real AWS and installer installation were
+not exercised. The gated handoff waits for natural app exit, retains a backup and
+queues three hidden standard-path checks. State:
+`.tmp/standard-build-update-0.1.54.json`. Changes remain uncommitted.
+
+## Earlier local verification build (0.1.53)
+
+Highlights keeps the same fields and geometry between view and edit modes. The
+summary row contains the pencil/delete icons and animated Save or Delete / Cancel
+strips. Editing is green, new drafts are blue, and deletion is red. New items
+remain local until Save; Cancel discards their nested changes. Ordinary expansion
+folds siblings; Shift keeps them open. Priority remains in table ordering without
+an extra editor field.
+
+The additional **Highlights tree** tab keeps the existing design available. Its
+left tree contains profiles and rules, with disabled items gray; the right editor
+applies valid changes immediately. Context menus offer Edit, sibling ordering,
+Add profile/rule and red Delete. A modal confirms deletion with the item name and
+affected rule count. Both designs share saved configuration, resizable panels and
+the synchronized light/dark hybrid preview. Nested picker/dialog Escape closes
+only the current overlay. See [behavior and evidence](highlight-row-actions-0.1.53.md).
+
+All 960 unit/integration tests and 56 distinct final packaged desktop checks pass.
+Native coverage includes exact geometry and DOM retention in both themes,
+double-click deletion cancellation, reveal animation, provisional additions,
+default/Shift folding, tree edits and menus, narrow layouts, resizing, preview
+synchronization, text selection, persistence and regex timeout recovery. Six
+legacy checks were rerun after scoping selectors away from retained hidden
+panels; all raw reports remain available. The package was unchanged between runs.
+Typecheck/build, formatting, whitespace, NSIS packaging and artifact hashes pass.
+Evidence: `.tmp/unit-0.1.53-final3.json` and
+`.tmp/desktop-verification-0.1.53.json`. Artifacts:
+`release/0.1.53/artifact-manifest.json`.
+
+Tests were hidden, isolated and offline; real AWS and installer installation were
+not exercised. The gated handoff waits for natural app exit, retains a backup and
+queues three hidden standard-path checks. State:
+`.tmp/standard-build-update-0.1.53.json`. Changes remain uncommitted.
+
+## Earlier local verification build (0.1.52)
+
+Highlights has centered resize dividers between Profiles and Rules and above the
+expanded preview. Dragging resizes live; keyboard adjustment, limits, centering and
+Escape cancellation are supported. Width and stacked-height ratios stay separate
+in the Settings session and survive docking with editor drafts. Narrow Settings
+changes the list divider to horizontal, and short modals keep usable scrollports.
+Both theme previews retain equal space without a divider between them. See
+[implementation and evidence](highlights-pane-dividers-0.1.52.md).
+
+All 940 unit/integration tests and all 17 targeted final packaged desktop checks
+pass with no failures, skips or flaky cases. Native checks cover both themes,
+live pointer sizing, keyboard bounds, color text fit, cancellation after focus or
+category changes, Activity reconnection, docking, editor retention, expanded-row
+reveal, preview synchronization and all Settings pages at three widths per
+presentation. Independent review, typecheck/build, formatting, whitespace,
+NSIS packaging and artifact hashes pass. Evidence:
+`.tmp/unit-0.1.52-final2.json` and `.tmp/desktop-verification-0.1.52.json`.
+Artifacts: `release/0.1.52/artifact-manifest.json`.
+
+Tests were hidden, isolated and offline; real AWS and installer installation were
+not exercised. The gated handoff waits for natural app exit, retains a backup and
+queues three hidden standard-path checks. State:
+`.tmp/standard-build-update-0.1.52.json`. Changes remain uncommitted.
+
+## Earlier local verification build (0.1.51)
+
+Highlights now uses expandable Profiles and Rules tables above its modal preview.
+Rows show read-only details until Edit starts a draft; Save validates and commits,
+and Cancel discards. Header plus buttons add items, row switches enable them, and
+delete icons require confirmation. Drafts survive profile changes and docking.
+Expanded items reveal themselves inside their table and retain their identity
+through pointer/keyboard reordering. Short Settings windows scroll between usable
+table and preview areas instead of hiding controls behind sticky headers. See
+[implementation and evidence](highlight-tables-and-synced-preview-0.1.51.md).
+
+The two real-data hybrid previews synchronize both scrolling axes, selected rows,
+message and JSON folding, inner message scrolling and committed detail heights.
+View changes remain private to the captured preview. Both themes and narrow
+stacked previews retain their state and settle correctly at scroll limits.
+
+All 940 unit/integration tests and all 39 targeted final packaged desktop checks
+pass with no failures, skips or flaky cases. Native checks include every Settings
+page at three widths per presentation, actual text fit, Save/Cancel and validation,
+delete confirmation, enable switches, reordering across a scroll boundary,
+profile persistence after restart, regex timeout recovery and viewer text selection.
+Independent review, typecheck/build, formatting, whitespace, NSIS packaging and
+artifact hashes pass. Evidence: `.tmp/unit-0.1.51-final.json` and
+`.tmp/desktop-verification-0.1.51.json`; the final native report is
+`.tmp/test-results-0.1.51-final2/report.json`. Artifacts:
+`release/0.1.51/artifact-manifest.json`. The earlier candidate was superseded before
+promotion after the short-window check failed; its evidence is retained.
+
+Tests were hidden, isolated and offline; real AWS and installer installation were
+not exercised. The gated handoff waits for natural app exit, retains a backup and
+queues three hidden standard-path checks. State:
+`.tmp/standard-build-update-0.1.51.json`. Changes remain uncommitted.
+
+## Earlier local verification build (0.1.50)
 
 Connections, Preferences and Shortcuts are single-column forms with the entire
 page centered at a readable width. Time ranges center at their existing width

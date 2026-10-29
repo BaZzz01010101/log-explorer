@@ -78,6 +78,41 @@ test.beforeEach(async ({}, info) => {
     title: "Expired view",
     closedAt: Date.now() - 8 * 86400000,
   });
+  if (info.title.includes("intrinsic")) {
+    workspace.closedTabs = workspace.closedTabs
+      .slice(0, 3)
+      .map((tab, index) => ({
+        ...tab,
+        title: info.title.includes("short")
+          ? `View ${index}`
+          : `Payment reconciliation service with detailed source ${index}`,
+      }));
+  }
+  if (info.title.includes("source tooltips")) {
+    workspace.closedTabs = [
+      {
+        ...createTab("offline", [{ logGroup: "/aws/lambda/orders-api" }]),
+        id: "closed-alias",
+        customTitle: "Order investigation",
+        closedAt: Date.now(),
+      },
+      {
+        ...createTab("offline", [
+          {
+            logGroup: "/aws/lambda/orders-api",
+            logStreams: [
+              "2026/10/28/[$LATEST]abcdef123456",
+              "2026/10/28/[$LATEST]ghijkl789012",
+            ],
+          },
+          { logGroup: "/aws/lambda/payments-worker" },
+        ]),
+        id: "closed-multiple",
+        customTitle: "Checkout investigation",
+        closedAt: Date.now(),
+      },
+    ];
+  }
   if (info.title.includes("mixed"))
     workspace.tabs[0].sources.push({ logGroup: "/aws/lambda/payments-worker" });
   await writeFile(join(directory, "workspace.json"), JSON.stringify(workspace));
@@ -141,6 +176,113 @@ test.beforeEach(async ({}, info) => {
       );
   });
 });
+
+for (const theme of ["light", "dark"]) {
+  test(`${theme} closed history hover stability after crossing other UI`, async () => {
+    await activity("Workspace tab menu").click();
+    const entry = page.locator('[data-closed-tab-id="closed-2"]');
+    const tooltip = page
+      .getByRole("tooltip")
+      .filter({ hasText: "Closed service 2" });
+    await entry.hover();
+    await expect(tooltip).toBeVisible();
+    const controls = await page
+      .locator(".app-footer p")
+      .evaluateAll((elements) =>
+        elements.slice(0, 3).map((element) => {
+          const box = element.getBoundingClientRect();
+          return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+        }),
+      );
+    expect(controls).toHaveLength(3);
+    const destination = (await entry.boundingBox())!;
+    for (let cycle = 0; cycle < 3; cycle++) {
+      // Real pointer events cross unrelated controls before the close delay
+      // expires. Slow locator.hover actions conceal the leaked-timer race.
+      for (const point of controls) await page.mouse.move(point.x, point.y);
+      await page.mouse.move(
+        destination.x + destination.width / 2,
+        destination.y + destination.height / 2,
+      );
+      // Check after both the 350ms close and 450ms open deadlines: the old
+      // visible tooltip must not make the assertion pass before either fires.
+      await page.waitForTimeout(700);
+      await expect(tooltip, `rapid pointer entry ${cycle}`).toBeVisible({
+        timeout: 1500,
+      });
+    }
+    await page.mouse.move(controls[0].x, controls[0].y);
+    await expect(tooltip).toHaveCount(0);
+    await page.evaluate(() => {
+      const [first, second] = document.querySelectorAll(".app-footer p");
+      const next = document.querySelector('[data-closed-tab-id="closed-2"]')!;
+      // Keep these exits in one event-loop turn. Hidden native input is
+      // frame-paced, which otherwise lets the leaked close timers expire.
+      first.dispatchEvent(
+        new MouseEvent("mouseout", { bubbles: true, relatedTarget: second }),
+      );
+      second.dispatchEvent(
+        new MouseEvent("mouseout", { bubbles: true, relatedTarget: next }),
+      );
+      next.dispatchEvent(
+        new MouseEvent("mouseover", { bubbles: true, relatedTarget: second }),
+      );
+    });
+    await page.waitForTimeout(700);
+    await expect(
+      tooltip,
+      "queued exits must not cancel the next tooltip",
+    ).toBeVisible({ timeout: 1500 });
+  });
+
+  test(`${theme} closed history source tooltips use automatic source names only for renamed or multisource views`, async () => {
+    await activity("Workspace tab menu").click();
+    const menu = page.getByRole("menu");
+    await expect(
+      menu.locator('[data-closed-tab-id="closed-alias"]'),
+    ).toHaveAttribute(
+      "data-tooltip",
+      "Order investigation\n\nSources:\norders-api",
+    );
+    await menu.locator('[data-closed-tab-id="closed-alias"]').hover();
+    const tooltip = page.getByRole("tooltip");
+    await expect(tooltip).toContainText("Order investigation");
+    await expect(tooltip).toHaveText(
+      "Order investigation\n\nSources:\norders-api",
+    );
+    await menu.locator('[data-closed-tab-id="closed-multiple"]').hover();
+    const names = ["abcdef123456", "ghijkl789012"].map(
+      (id) =>
+        createTab("offline", [
+          {
+            logGroup: "/aws/lambda/orders-api",
+            logStreams: [`2026/10/28/[$LATEST]${id}`],
+          },
+        ]).title,
+    );
+    await expect(tooltip).toHaveText(
+      `Checkout investigation\n\nSources:\n${names.join("\n")}\npayments-worker`,
+    );
+    await expect(tooltip).not.toContainText("/aws/");
+    await expect(tooltip).not.toContainText("eu-west-1");
+    await tooltip.hover();
+    await expect(tooltip).toBeVisible();
+    expect(
+      await tooltip.evaluate((el) => getComputedStyle(el).userSelect),
+    ).toBe("text");
+    await captureInterface("history-source-tooltip.png");
+    await page.keyboard.press("Escape");
+    // An ordinary generated name must not gain a redundant Sources section.
+    const plainTab = tabNode("tab-orders");
+    await plainTab.click({ button: "right" });
+    await menuItem("Close tab").click();
+    await activity("Workspace tab menu").click();
+    const original = page.locator('[data-closed-tab-id="tab-orders"]');
+    await expect(original).toHaveAttribute("data-tooltip", "orders-api");
+    await original.hover();
+    await expect(page.getByRole("tooltip")).toHaveText("orders-api");
+  });
+}
 test.afterEach(async () => {
   if (child?.exitCode === null) {
     expect(
@@ -173,11 +315,28 @@ const menuItem = (name: string) =>
   page.getByRole("menuitem", { name, exact: true });
 
 for (const theme of ["light", "dark"]) {
+  for (const length of ["short", "medium"]) {
+    test(`${theme} intrinsic ${length} closed-tab menu sizes to its content instead of a fixed width`, async () => {
+      await activity("Workspace tab menu").click();
+      const menu = page.getByRole("menu"),
+        box = (await menu.boundingBox())!;
+      expect(box.width).toBeLessThan(length === "short" ? 300 : 650);
+      expect(box.width).toBeGreaterThan(length === "short" ? 150 : 320);
+      expect(
+        await menu
+          .locator(".closed-tab-history-list")
+          .evaluate((el) => el.scrollWidth <= el.clientWidth),
+      ).toBe(true);
+      await expect(menu.locator("[data-closed-tab-id]")).toHaveCount(3);
+      await captureInterface(`history-intrinsic-${length}.png`);
+    });
+  }
   test(`${theme} history expands to available height, truncates without horizontal scroll and shows source metadata`, async () => {
     await activity("Workspace tab menu").click();
     const menu = page.getByRole("menu");
     const box = (await menu.boundingBox())!;
     expect(box.width).toBeGreaterThanOrEqual(750);
+    expect(box.width).toBeLessThanOrEqual(760);
     expect(box.height).toBeGreaterThan(700);
     expect(box.y).toBeGreaterThanOrEqual(0);
     expect(box.y + box.height).toBeLessThanOrEqual(

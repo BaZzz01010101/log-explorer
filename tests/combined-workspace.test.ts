@@ -498,7 +498,7 @@ describe("combined split workspace entries", () => {
     expect(workspaceEntries(restored)).toHaveLength(3);
     valid(restored);
   });
-  it("clears a regular rename on close and reopen while retaining the original source title", () => {
+  it("keeps the rename in history but reopens with the original source title", () => {
     let state = views(2);
     const original = state.tabs[0];
     state = workspaceReducer(state, {
@@ -507,7 +507,9 @@ describe("combined split workspace entries", () => {
       title: "Temporary alias",
     });
     state = workspaceReducer(state, { type: "tab/close", tabId: original.id });
-    expect(state.closedTabs[0]).not.toHaveProperty("customTitle");
+    expect(state.closedTabs[0].customTitle).toBe("Temporary alias");
+    state = restoreWorkspace(state);
+    expect(state.closedTabs[0].customTitle).toBe("Temporary alias");
     state = workspaceReducer(state, { type: "tab/reopen" });
     expect(
       workspaceEntries(state).find((entry) => entry.id === original.id)?.title,

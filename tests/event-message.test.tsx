@@ -54,6 +54,40 @@ const openField = async (path: string) =>
       .props.onChange(true),
   );
 
+it("Ctrl-click recursively opens a partly folded branch and folds it only when all descendants are open", async () => {
+  await act(async () => {
+    renderer = create(
+      <JsonTree
+        value={{
+          branch: { nested: { list: [{ id: 1 }] } },
+          sibling: { keep: { value: 2 } },
+        }}
+        highlight=""
+      />,
+    );
+  });
+  await act(async () => button("Expand /sibling")!.props.onClick());
+  await act(async () => button("Expand /sibling/keep")!.props.onClick());
+  await act(async () =>
+    button("Expand /branch")!.props.onClick({ ctrlKey: true }),
+  );
+  expect(button("Collapse /branch/nested/list/0")).toBeDefined();
+  await act(async () =>
+    button("Collapse /branch/nested/list")!.props.onClick(),
+  );
+  await act(async () =>
+    button("Collapse /branch")!.props.onClick({ ctrlKey: true }),
+  );
+  expect(button("Collapse /branch/nested/list/0")).toBeDefined();
+  await act(async () =>
+    button("Collapse /branch")!.props.onClick({ ctrlKey: true }),
+  );
+  expect(button("Expand /branch")).toBeDefined();
+  expect(button("Collapse /sibling/keep")).toBeDefined();
+  await act(async () => button("Expand /branch")!.props.onClick());
+  expect(button("Expand /branch/nested")).toBeDefined();
+});
+
 it("copies full current scalar and object values from the field menu", async () => {
   const copy = vi.fn();
   const value = {

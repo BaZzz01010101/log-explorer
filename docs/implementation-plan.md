@@ -1,5 +1,55 @@
 # Implementation plan
 
+## Stable closed-tab tooltips and shortened source names (0.1.56)
+
+Cancel obsolete tooltip timers and ignore unrelated control exits. Reuse the
+automatic tab-naming function for source lists, shown for renamed or multisource
+views without full paths or endpoint details. Preserve selectable themed hints,
+menu behavior and intrinsic history sizing. Verify hidden/offline and stage after
+natural app exit; see [behavior and evidence](closed-tab-tooltips-0.1.56.md).
+
+Surrounding-context tabs also reveal and select the originating event across
+continuation pages. Ctrl-click recursively toggles an inspector JSON subtree,
+preserving sibling state and inspection limits. Keep reveal state transient and
+verify the first-page case, later pages, changed query IDs and both themes.
+
+## Highlight preview cleanup and history sources (0.1.55)
+
+Show the closed view label and every full source in the shared custom tooltip;
+retain renamed labels in history while preserving source-based names on reopen.
+Disable native writing assistance in code fields. Remove the specified preview
+caption and editor hints, rename Preview, and give the available area to logs.
+Preserve both editors, validation and synchronized previews. Verify both themes
+in hidden offline windows and stage a hash-checked update after natural app exit.
+See [behavior and evidence](highlight-preview-and-history-0.1.55.md).
+
+## Highlight tree drag and history sizing (0.1.54)
+
+Reuse Explorer tree styling and the established highlight marker, add full-row
+profile/rule reordering with cancellation and editor retention, and size closed-tab
+history from content with a window-limited maximum. See
+[implementation and evidence](highlight-tree-drag-and-history-0.1.54.md).
+
+## Highlights row actions (0.1.53)
+
+Keep view and edit fields in place, use compact animated row actions, retain new
+items as local drafts, and support ordinary/Shift expansion. Add a separate
+Highlights tree tab with immediate editing and context-menu actions. See
+[implementation and evidence](highlight-row-actions-0.1.53.md).
+
+## Highlights pane dividers (0.1.52)
+
+Add live, bounded resize dividers between Profiles, Rules and Preview, with
+responsive orientation, keyboard control, cancellation and retained session sizes.
+Keep the theme previews equal. See [the checklist](highlights-pane-dividers-0.1.52.md).
+
+## Highlight tables and synchronized preview (0.1.51)
+
+Use expandable profile/rule tables above the preview, explicit Edit/Save/Cancel,
+row enable switches and confirmed deletion. Synchronize preview scrolling,
+selection and folding across themes, preserving actual captured log data. See
+[the checklist](highlight-tables-and-synced-preview-0.1.51.md).
+
 ## Settings content sizing and captured log preview (0.1.50)
 
 Center single-column forms, stretch Workspace JSON and the Highlight rule editor,

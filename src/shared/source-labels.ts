@@ -13,6 +13,18 @@ export function shortStreamId(name: string): string {
   ).slice(0, 6);
 }
 
+export function tabTitle(sources: LogSource[]): string {
+  const count = sourceCount(sources);
+  if (count > 1) return "Mixed Sources";
+  if (!sources.length) return "Log view";
+  const title =
+    sources[0].logGroup.split("/").filter(Boolean).at(-1) ||
+    sources[0].logGroup;
+  const streams = sources[0].logStreams;
+  if (streams?.length === 1) return `${title} Â· ${shortStreamId(streams[0])}`;
+  return streams?.length ? `${title} Â· ${streams.length} streams` : title;
+}
+
 // Strip complete shared directory segments, never the shared start of a basename.
 export function sourceBadges(sources: LogSource[]) {
   const names = [...new Set(sources.map((source) => source.logGroup))];

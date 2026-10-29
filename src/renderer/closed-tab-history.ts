@@ -1,4 +1,23 @@
 import type { LogTab } from "../shared/contracts";
+import { sourceCount, tabTitle } from "../shared/source-labels";
+import { logTabLabel } from "./workspace-entries";
+
+export function closedTabTooltip(tab: LogTab): string {
+  const label = logTabLabel(tab);
+  if (
+    !tab.sources.length ||
+    (sourceCount(tab.sources) === 1 && label === tabTitle(tab.sources))
+  )
+    return label;
+  const names = tab.sources.flatMap((source) =>
+    source.logStreams?.length
+      ? source.logStreams.map((stream) =>
+          tabTitle([{ ...source, logStreams: [stream] }]),
+        )
+      : [tabTitle([source])],
+  );
+  return `${label}\n\nSources:\n${names.join("\n")}`;
+}
 
 export function historyRetentionDays(value: unknown): number {
   return typeof value === "number" && Number.isFinite(value)

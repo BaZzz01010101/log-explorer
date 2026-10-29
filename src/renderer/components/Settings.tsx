@@ -36,6 +36,10 @@ import {
 } from "./ProfileConnectionsEditor";
 import { Tooltip } from "./AppTooltip";
 import { RelativeTimeTemplatesEditor } from "./RelativeTimeTemplatesEditor";
+import {
+  HighlightTreeEditor,
+  createHighlightTreeEditorState,
+} from "./HighlightTreeEditor";
 import { normalizeRelativeTimeTemplates } from "../../shared/relative-time-templates";
 import "./settings.css";
 import { settingsResizeEdges, useSettingsWindow } from "./settings-window";
@@ -130,7 +134,50 @@ export function Settings({
   const [connectionsEditorState, setConnectionsEditorState] = useState(
     createProfileConnectionsEditorState,
   );
+  const [highlightTreeState, setHighlightTreeState] = useState(() =>
+    createHighlightTreeEditorState(
+      workspace.preferences.highlightProfiles?.[0]?.id,
+    ),
+  );
   const preferences = workspace.preferences;
+  // Let row editors and nested overlays consume Escape first. Mantine's modal
+  // listener runs during window capture, before a picker can handle the key.
+  useEffect(() => {
+    if (
+      !opened ||
+      presentation !== "modal" ||
+      typeof window === "undefined" ||
+      !window.addEventListener
+    )
+      return;
+    const escape = (event: KeyboardEvent) => {
+      if (
+        event.key !== "Escape" ||
+        event.defaultPrevented ||
+        event.isComposing ||
+        settingsWindow.interacting ||
+        previewPointer !== null
+      )
+        return;
+      if (event.target instanceof Element) {
+        const dialog = event.target.closest('[role="dialog"]');
+        if (
+          (dialog && !dialog.classList.contains("settings-window")) ||
+          event.target.closest('[data-mantine-stop-propagation="true"]')
+        )
+          return;
+      }
+      onClose();
+    };
+    window.addEventListener("keydown", escape);
+    return () => window.removeEventListener("keydown", escape);
+  }, [
+    opened,
+    presentation,
+    settingsWindow.interacting,
+    previewPointer,
+    onClose,
+  ]);
   useEffect(() => {
     if (!opened || presentation !== "modal") {
       setPreviewPointer(null);
@@ -195,6 +242,7 @@ export function Settings({
         <Tabs.Tab value="appearance">Preferences</Tabs.Tab>
         <Tabs.Tab value="time-ranges">Time ranges</Tabs.Tab>
         <Tabs.Tab value="highlights">Highlights</Tabs.Tab>
+        <Tabs.Tab value="highlights-tree">Highlights tree</Tabs.Tab>
         <Tabs.Tab value="shortcuts">Shortcuts</Tabs.Tab>
         <Tabs.Tab value="workspace">Workspace</Tabs.Tab>
       </Tabs.List>
@@ -409,6 +457,25 @@ export function Settings({
           }
         />
       </Tabs.Panel>
+      <Tabs.Panel
+        value="highlights-tree"
+        pt="md"
+        className="settings-highlights"
+      >
+        <HighlightTreeEditor
+          uiState={highlightTreeState}
+          onUiStateChange={setHighlightTreeState}
+          preferences={preferences}
+          previewEnabled={presentation === "modal"}
+          previewSnapshot={previewSnapshot}
+          onChange={(highlightProfiles) =>
+            dispatch({
+              type: "preferences/update",
+              patch: { highlightProfiles },
+            })
+          }
+        />
+      </Tabs.Panel>
       <Tabs.Panel value="shortcuts" pt="md" className="settings-form-page">
         <div className="settings-form-content">
           <Text size="sm" c="dimmed" mb="sm">
@@ -580,7 +647,7 @@ export function Settings({
     <Modal
       opened={opened}
       onClose={onClose}
-      closeOnEscape={!settingsWindow.interacting && previewPointer === null}
+      closeOnEscape={false}
       closeButtonProps={{ "aria-label": "Close Settings" }}
       classNames={{
         inner: "settings-window-layer",
@@ -596,7 +663,9 @@ export function Settings({
           onPointerDownCapture(event: React.PointerEvent<HTMLElement>) {
             if (
               event.button === 0 &&
-              (event.target as Element).closest(".highlight-events-theme")
+              (event.target as Element).closest(
+                ".highlight-events-theme, .highlight-pane-divider",
+              )
             )
               setPreviewPointer(event.pointerId);
           },

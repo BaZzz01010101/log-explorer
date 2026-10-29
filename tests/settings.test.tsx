@@ -3,6 +3,10 @@ import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { Settings } from "../src/renderer/components/Settings";
 import { createWorkspace } from "../src/renderer/workspace";
+vi.mock("../src/renderer/components/HighlightTreeEditor", () => ({
+  createHighlightTreeEditorState: () => ({}),
+  HighlightTreeEditor: () => null,
+}));
 
 vi.mock("@mantine/core", () => {
   const component = ({ children, ...props }: Record<string, unknown>) =>

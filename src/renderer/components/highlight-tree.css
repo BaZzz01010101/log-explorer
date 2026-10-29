@@ -1,0 +1,100 @@
+.highlight-tree-list {
+  --highlight-resize-min: 180px;
+}
+.highlight-tree-detail {
+  --highlight-resize-min: 300px;
+}
+.highlight-tree-scroll,
+.highlight-tree-editor-scroll {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  overflow: auto;
+  scrollbar-gutter: stable;
+}
+.highlight-tree-editor-scroll {
+  padding: 12px;
+}
+.highlight-tree-scroll {
+  padding-block: 4px;
+  scrollbar-gutter: auto;
+}
+.highlight-tree-row {
+  color: var(--mantine-color-text);
+  cursor: default;
+  outline: none;
+  user-select: none;
+  touch-action: none;
+}
+.highlight-tree-row[aria-level="2"] {
+  padding-left: 43px;
+}
+.highlight-tree-row[data-disabled="true"] {
+  color: var(--mantine-color-dimmed);
+}
+.highlight-tree-row[data-disabled="true"] .resource-label svg {
+  color: var(--mantine-color-dimmed);
+}
+.highlight-tree-row[aria-selected="true"] {
+  background: color-mix(in srgb, var(--mantine-color-blue-5) 12%, transparent);
+}
+.highlight-tree-row:focus-visible {
+  outline: 1px solid var(--mantine-color-blue-5);
+  outline-offset: -1px;
+}
+.highlight-tree-label {
+  font-size: inherit;
+}
+.highlight-tree-expander {
+  flex: none;
+}
+.highlight-tree-count {
+  flex: none;
+  min-width: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: var(--surface-alt);
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 17px;
+  text-align: center;
+}
+.highlight-tree-drag-item {
+  position: relative;
+}
+.highlight-tree-drag-item[data-dragging="true"] {
+  box-shadow: var(--app-floating-shadow);
+  background: var(--mantine-color-body);
+}
+.highlight-tree-drag-item[data-dragging="true"] > .highlight-tree-row,
+.highlight-tree-drag-item[data-dragging="true"]
+  > .highlight-tree-row
+  .resource-label {
+  cursor: grabbing;
+}
+.highlight-tree-empty {
+  padding: 12px;
+}
+.highlight-tree-detail .highlight-detail-fields {
+  max-width: none;
+}
+@container settings (max-width: 900px) {
+  .highlight-tree-list {
+    --highlight-resize-min: 120px;
+  }
+  .highlight-tree-detail {
+    --highlight-resize-min: 180px;
+  }
+}
+.highlight-tree-editor {
+  grid-template-rows: minmax(0, 1fr);
+}
+.highlight-tree-editor[data-preview-enabled="true"] {
+  grid-template-rows: minmax(0, 1fr) auto;
+}
+.highlight-tree-editor[data-preview-enabled="true"][data-preview-open="true"] {
+  grid-template-rows: minmax(0, var(--highlight-tables-share, 1fr)) 10px minmax(
+      0,
+      var(--highlight-preview-share, 0.85fr)
+    );
+}

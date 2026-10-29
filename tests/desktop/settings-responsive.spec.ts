@@ -157,6 +157,7 @@ const categoryNames = [
   "Preferences",
   "Time ranges",
   "Highlights",
+  "Highlights tree",
   "Shortcuts",
   "Workspace",
 ];
@@ -261,7 +262,6 @@ for (const theme of ["light", "dark"])
               ),
             ]
               .filter((control) => {
-                if (control.closest(".highlight-rules-scroll")) return false;
                 const rect = control.getBoundingClientRect();
                 return (
                   rect.width > 0 &&
@@ -280,20 +280,39 @@ for (const theme of ["light", "dark"])
             `${presentation} ${width}px ${category} clipped controls`,
           ).toEqual([]);
         }
-        await choose("Highlights");
-        const layout = await page
-          .locator(".highlight-master-detail")
-          .evaluate((el) => {
-            const children = [...el.children].map((child) =>
-              child.getBoundingClientRect(),
-            );
-            return {
-              columns: children[0].top === children[1].top,
-              height: children[0].height,
-            };
-          });
-        expect(layout.columns).toBe(width === 1100);
-        const colorFields = page.locator(
+        const highlightPanel = await choose("Highlights");
+        const profileSection = highlightPanel.locator(
+            ".highlight-profile-list",
+          ),
+          ruleSection = highlightPanel.locator(".highlight-rule-list");
+        const profileBox = (await profileSection.boundingBox())!,
+          ruleBox = (await ruleSection.boundingBox())!;
+        if (width === 1100) {
+          expect(Math.abs(profileBox.y - ruleBox.y)).toBeLessThanOrEqual(1);
+          expect(profileBox.x + profileBox.width).toBeLessThanOrEqual(
+            ruleBox.x,
+          );
+        } else if (width === widths[0]) {
+          expect(ruleBox.y).toBeGreaterThanOrEqual(
+            profileBox.y + profileBox.height,
+          );
+        }
+        const expand = page.getByRole("button", {
+          name: "Expand rule 1",
+          exact: true,
+        });
+        if (await expand.count()) await expand.click();
+        const edit = page.getByRole("button", {
+          name: "Edit rule 1",
+          exact: true,
+        });
+        if (
+          !(await page
+            .getByRole("button", { name: "Save rule", exact: true })
+            .count())
+        )
+          await edit.click();
+        const colorFields = highlightPanel.locator(
           ".highlight-detail-fields .mantine-ColorInput-input",
         );
         await expect(colorFields).toHaveCount(2);
@@ -319,11 +338,11 @@ for (const theme of ["light", "dark"])
           `${presentation} ${width}px color values`,
         ).toEqual([]);
         const previewToggle = page.getByRole("button", {
-          name: /Test and preview/,
+          name: /Preview/,
         });
         if (presentation === "modal") {
           await previewToggle.click();
-          const preview = page.locator(".highlight-preview-body");
+          const preview = highlightPanel.locator(".highlight-preview-body");
           await preview.scrollIntoViewIfNeeded();
           expect(
             await preview.evaluate(

@@ -1,11 +1,13 @@
 import {
   memo,
+  createContext,
   useContext,
   useEffect,
   useMemo,
   useRef,
   useState,
   type ReactNode,
+  type SetStateAction,
 } from "react";
 import {
   filterHighlightSpans,
@@ -43,6 +45,11 @@ export interface EventRow {
   parsed: ParsedMessage;
   level: LogLevel;
 }
+
+export const JsonTreeExpansionContext = createContext<{
+  expanded: ReadonlyMap<string, Set<string>>;
+  onChange(eventId: string, update: SetStateAction<Set<string>>): void;
+} | null>(null);
 
 export const HighlightText = memo(function HighlightText({
   text,
@@ -262,6 +269,19 @@ function MessageWrapControl({
   );
 }
 
+function objectExpansionPaths(value: JsonValue, maxDepth = 24) {
+  const paths = new Set([""]);
+  for (let depth = 0; depth < maxDepth; depth++) {
+    const before = paths.size;
+    for (const row of inspectionRows(value, paths, { maxNodes: 800, maxDepth })
+      .rows) {
+      if (row.childCount > 0 && !row.depthLimited) paths.add(row.path);
+    }
+    if (paths.size === before) break;
+  }
+  return paths;
+}
+
 export function JsonTree({
   value,
   highlight,
@@ -276,6 +296,7 @@ export function JsonTree({
   deserializedPaths,
   decodedLabels,
   autoExpandMatches = false,
+  expansionKey,
 }: {
   value: JsonValue;
   highlight: string;
@@ -290,6 +311,7 @@ export function JsonTree({
   deserializedPaths?: ReadonlySet<string>;
   decodedLabels?: ReadonlyMap<string, string>;
   autoExpandMatches?: boolean;
+  expansionKey?: string;
 }) {
   const match = useContext(EventHighlightContext);
   const matchPaths = match?.paths ?? {};
@@ -297,7 +319,17 @@ export function JsonTree({
   const processedMatch = useRef<{ paths: string; enabled: boolean } | null>(
     null,
   );
-  const [expanded, setExpanded] = useState(() => new Set([""]));
+  const [privateExpanded, setPrivateExpanded] = useState(() => new Set([""]));
+  const sharedExpansion = useContext(JsonTreeExpansionContext);
+  const expanded =
+    expansionKey === undefined
+      ? privateExpanded
+      : (sharedExpansion?.expanded.get(expansionKey) ?? privateExpanded);
+  const setExpanded =
+    sharedExpansion && expansionKey !== undefined
+      ? (update: SetStateAction<Set<string>>) =>
+          sharedExpansion.onChange(expansionKey, update)
+      : setPrivateExpanded;
   useEffect(() => {
     if (
       processedMatch.current?.paths === pathKey &&
@@ -329,8 +361,26 @@ export function JsonTree({
     () => inspectionRows(value, expanded, { maxNodes: compact ? 120 : 800 }),
     [value, expanded, compact],
   );
-  const toggle = (path: string) =>
+  const toggle = (
+    path: string,
+    recursive = false,
+    subtree?: JsonValue,
+    depth = 0,
+  ) =>
     setExpanded((previous) => {
+      if (recursive && subtree !== undefined) {
+        const paths = [...objectExpansionPaths(subtree, 24 - depth)].map(
+          (relative) => path + relative,
+        );
+        const open = paths.some((key) => !previous.has(key));
+        const next = new Set(
+          [...previous].filter(
+            (key) => path !== "" && key !== path && !key.startsWith(path + "/"),
+          ),
+        );
+        if (open) paths.forEach((key) => next.add(key));
+        return next;
+      }
       const next = new Set(previous);
       if (next.has(path)) next.delete(path);
       else next.add(path);
@@ -345,15 +395,7 @@ export function JsonTree({
     ? "Fold structured object"
     : "Unfold structured object";
   const unfoldAll = () => {
-    const paths = new Set([""]);
-    for (let depth = 0; depth < 24; depth++) {
-      const before = paths.size;
-      for (const row of inspectionRows(value, paths, { maxNodes: 800 }).rows) {
-        if (row.childCount > 0 && !row.depthLimited) paths.add(row.path);
-      }
-      if (paths.size === before) break;
-    }
-    setExpanded(paths);
+    setExpanded(objectExpansionPaths(value));
   };
   const actions = (controls || lineWrap) && (
     <div className="structured-actions">
@@ -422,7 +464,14 @@ export function JsonTree({
               <button
                 className="json-toggle"
                 aria-label={`${row.expanded ? "Collapse" : "Expand"} ${row.path || "root"}`}
-                onClick={() => toggle(row.path)}
+                onClick={(event) =>
+                  toggle(
+                    row.path,
+                    event?.ctrlKey || event?.metaKey,
+                    row.value,
+                    row.depth,
+                  )
+                }
               >
                 {row.expanded ? (
                   <IconChevronDown size={13} />
@@ -537,6 +586,7 @@ export function MessageContent({
   if (row.parsed.kind === "json")
     return (
       <JsonTree
+        expansionKey={row.event.id}
         value={row.parsed.value!}
         highlight={highlight}
         compact={compact}

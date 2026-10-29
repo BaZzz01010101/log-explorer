@@ -1,4 +1,5 @@
 import {
+  useCallback,
   useDeferredValue,
   useId,
   useLayoutEffect,
@@ -100,7 +101,10 @@ import {
 import { eventSourceDisplay, sourceCount } from "../../shared/source-labels";
 import { useColumnHeaderDrag } from "../useColumnHeaderDrag";
 import { useScrollPagination } from "../useScrollPagination";
-import { useMessageExpansion } from "../useMessageExpansion";
+import {
+  useMessageExpansion,
+  type MessageExpansionState,
+} from "../useMessageExpansion";
 import { HighlightText, MessageContent } from "./EventMessage";
 import { EventInspector } from "./EventInspector";
 import { InspectorMessage } from "./InspectorMessage";
@@ -109,9 +113,13 @@ import { EventOverview } from "./EventOverview";
 import { EventLoadingIndicator } from "./EventLoadingIndicator";
 import { SurroundingContextMenu } from "./SurroundingContextMenu";
 import type { ContextRange } from "../../shared/context-range";
+import { contextEventIndex } from "../context-event";
 import { LevelFilter } from "./LevelFilter";
 import { formatTimestamp } from "../timestamp-format";
-import { useEventSelection } from "../useEventSelection";
+import {
+  useEventSelection,
+  type EventSelectionState,
+} from "../useEventSelection";
 import { useDeserializedEvents } from "../useDeserializedEvents";
 import {
   EventHighlightContext,
@@ -123,8 +131,19 @@ interface EventRow {
   parsed: ParsedMessage;
   level: LogLevel;
 }
+export interface LogViewerInteractionState {
+  selection: EventSelectionState;
+  expansion: MessageExpansionState;
+  details: {
+    heights: ReadonlyMap<string, number>;
+    onHeightChange(eventId: string, height: number | undefined): void;
+  };
+}
+
 export interface LogViewerProps {
   events: LogEvent[];
+  revealEvent?: LogEvent;
+  onEventRevealed?(): void;
   serverFilter?: string;
   sourceContext?: {
     sources: LogSource[];
@@ -142,6 +161,9 @@ export interface LogViewerProps {
   onPauseLiveFollow?(): void;
   onResumeLiveFollow?(): void;
   renderStatus?: (eventsShown: number) => React.ReactNode;
+  interactionState?: LogViewerInteractionState;
+  onScrollElement?: (element: HTMLDivElement | null) => void;
+  onScrollPositionChange?: (element: HTMLDivElement) => void;
 }
 const levelColor: Record<LogLevel, string> = {
   trace: "gray",
@@ -221,6 +243,8 @@ interface ColumnResizeSession {
 
 export function LogViewer({
   events,
+  revealEvent,
+  onEventRevealed,
   serverFilter = "",
   sourceContext,
   view,
@@ -234,17 +258,27 @@ export function LogViewer({
   onPauseLiveFollow,
   onResumeLiveFollow,
   renderStatus,
+  interactionState,
+  onScrollElement,
+  onScrollPositionChange,
 }: LogViewerProps) {
   const highlightText = view.highlightText ?? preferences.highlightText;
   const [contextEventId, setContextEventId] = useState<string | undefined>();
   const scrollRef = useRef<HTMLDivElement>(null);
+  const setScrollElement = useCallback(
+    (element: HTMLDivElement | null) => {
+      scrollRef.current = element;
+      onScrollElement?.(element);
+    },
+    [onScrollElement],
+  );
   useScrollPagination(scrollRef, {
     scope: pagination?.scope ?? "no-query",
     targets: pagination?.pageKey
       ? [{ key: pagination.pageKey, load: pagination.onLoad }]
       : [],
   });
-  const expansion = useMessageExpansion(view.mode);
+  const expansion = useMessageExpansion(view.mode, interactionState?.expansion);
   const detailHeights = useRef(new WeakMap<LogEvent, number>());
   const [inspectorMode, setInspectorMode] = useState("structured");
   const [inspectorActionsTarget, setInspectorActionsTarget] =
@@ -533,7 +567,11 @@ export function LogViewer({
     () => rows.map((row) => row.original.event.id),
     [rows],
   );
-  const selection = useEventSelection(eventIds);
+  const selection = useEventSelection(
+    eventIds,
+    true,
+    interactionState?.selection,
+  );
   const selectedEventIds = new Set(selection.selectedIds);
   const viewerId = useId();
   const virtualizer = useVirtualizer({
@@ -569,6 +607,17 @@ export function LogViewer({
     virtualizer,
   ]);
   const inspectedIndex = selection.index;
+  useEffect(() => {
+    if (!revealEvent) return;
+    const index = contextEventIndex(
+      rows.map((row) => row.original.event),
+      revealEvent,
+    );
+    if (index < 0) return;
+    selection.select(rows[index]!.original.event.id);
+    virtualizer.scrollToIndex(index, { align: "center" });
+    onEventRevealed?.();
+  }, [rows, revealEvent, virtualizer]);
   useLayoutEffect(() => {
     if (!followLive || liveState !== "streaming" || !rows.length) return;
     let latest = 0;
@@ -955,7 +1004,8 @@ export function LogViewer({
         >
           <div
             className="viewer-scroll"
-            ref={scrollRef}
+            ref={setScrollElement}
+            onScroll={(event) => onScrollPositionChange?.(event.currentTarget)}
             role="grid"
             aria-label="Log events"
             aria-rowcount={rows.length}
@@ -1423,7 +1473,9 @@ export function LogViewer({
                                 additive: event.ctrlKey || event.metaKey,
                                 range: event.shiftKey,
                               });
-                              scrollRef.current?.focus({ preventScroll: true });
+                              scrollRef.current?.focus({
+                                preventScroll: true,
+                              });
                             }
                           }}
                           onDoubleClick={(event) => {
@@ -1595,10 +1647,25 @@ export function LogViewer({
                               </div>
                               {expanded && (
                                 <ExpandedEventDetails
+                                  eventId={row.event.id}
+                                  height={
+                                    interactionState
+                                      ? (interactionState.details.heights.get(
+                                          row.event.id,
+                                        ) ?? null)
+                                      : undefined
+                                  }
                                   initialHeight={detailHeights.current.get(
                                     row.event,
                                   )}
                                   onHeightChange={(height) => {
+                                    if (interactionState) {
+                                      interactionState.details.onHeightChange(
+                                        row.event.id,
+                                        height,
+                                      );
+                                      return;
+                                    }
                                     if (height === undefined)
                                       detailHeights.current.delete(row.event);
                                     else

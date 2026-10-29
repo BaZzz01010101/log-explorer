@@ -6,24 +6,6 @@
   min-height: 0;
   min-width: 0;
 }
-.highlight-events-preview-caption {
-  display: flex;
-  flex: none;
-  justify-content: space-between;
-  align-items: baseline;
-  gap: 12px;
-  margin: 0 0 8px;
-  color: var(--mantine-color-dimmed);
-  font-size: 11px;
-}
-.highlight-events-preview-caption > :first-child {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.highlight-events-preview-caption > :last-child {
-  flex: none;
-}
 .highlight-events-preview-grid {
   display: grid;
   flex: 1;
@@ -88,12 +70,6 @@
 }
 .highlight-events-theme .event-viewer-layout > .event-scroll-layout {
   margin-right: 0;
-}
-/* The viewer initially selects its first row for the hidden inspector. Keep
-   the profile visible on that row and on any later preview selections. */
-.highlight-events-theme .virtual-event.event-selected {
-  --event-row-bg: var(--event-highlight-bg, var(--mantine-color-body));
-  --event-row-fg: var(--event-highlight-fg, var(--mantine-color-text));
 }
 .highlight-events-preview-empty {
   display: flex;

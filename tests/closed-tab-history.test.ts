@@ -1,6 +1,7 @@
 import { expect, it, vi } from "vitest";
 import {
   closedTabHistory,
+  closedTabTooltip,
   recentClosedTabs,
 } from "../src/renderer/closed-tab-history";
 import {
@@ -9,6 +10,65 @@ import {
   workspaceReducer,
   restoreWorkspace,
 } from "../src/renderer/workspace";
+
+it("lists each source using its individual automatic tab name without connection details", () => {
+  const workspace = createWorkspace();
+  const connection = workspace.connections[0];
+  const other = {
+    ...connection,
+    id: "other",
+    profile: "production",
+    region: "us-east-1",
+  };
+  const tab = {
+    ...createTab(connection.id, [
+      {
+        logGroup: "/aws/lambda/orders",
+        logStreams: ["2026/10/28/one", "2026/10/28/two"],
+      },
+      { logGroup: "/aws/lambda/orders", connectionId: other.id },
+      { logGroup: "/aws/lambda/payments" },
+    ]),
+    customTitle: "Checkout investigation",
+  };
+  const tooltip = closedTabTooltip(tab);
+  expect(tooltip).toBe(
+    `Checkout investigation\n\nSources:\n${createTab(connection.id, [{ logGroup: "/aws/lambda/orders", logStreams: ["2026/10/28/one"] }]).title}\n${createTab(connection.id, [{ logGroup: "/aws/lambda/orders", logStreams: ["2026/10/28/two"] }]).title}\norders\npayments`,
+  );
+  expect(tooltip).not.toContain("/aws/lambda");
+  expect(tooltip).not.toContain("production");
+  expect(tooltip).not.toContain("us-east-1");
+});
+
+it("shows unnamed mixed views and remains useful for missing historical connections", () => {
+  const tab = createTab("retired", [
+    { logGroup: "/aws/lambda/one" },
+    { logGroup: "/aws/lambda/two" },
+  ]);
+  expect(closedTabTooltip(tab)).toBe("Mixed Sources\n\nSources:\none\ntwo");
+  expect(closedTabTooltip({ ...tab, sources: [], title: "Empty view" })).toBe(
+    "Empty view",
+  );
+});
+
+it("shows only the automatic name until the view is renamed, including streams and a rename back to the original", () => {
+  for (const source of [
+    { logGroup: "/aws/lambda/orders" },
+    {
+      logGroup: "/aws/lambda/orders",
+      logStreams: ["2026/10/28/[$LATEST]abcdef123456"],
+    },
+  ]) {
+    const tab = createTab("offline", [source]);
+    expect(closedTabTooltip(tab)).toBe(tab.title);
+    expect(closedTabTooltip({ ...tab, customTitle: tab.title })).toBe(
+      tab.title,
+    );
+    expect(closedTabTooltip({ ...tab, customTitle: "Investigation" })).toBe(
+      `Investigation\n\nSources:\n${tab.title}`,
+    );
+  }
+});
 
 it("expires closed tabs after the configured number of days without changing closing order", () => {
   const now = Date.now();

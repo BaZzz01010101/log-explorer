@@ -87,7 +87,11 @@ import {
   type ResourceDragMove,
 } from "../resource-drag";
 import { tabOverlapTarget } from "../tab-hover";
-import { closedTabHistory, recentClosedTabs } from "../closed-tab-history";
+import {
+  closedTabHistory,
+  closedTabTooltip,
+  recentClosedTabs,
+} from "../closed-tab-history";
 import {
   tabReorderPreview,
   tabSlotRect,
@@ -1485,11 +1489,7 @@ export function WorkspaceTabs({ workspace, dispatch, runtimes }: Props) {
               <IconPlus size={16} />
             </ActionIcon>
           </Tooltip>
-          <Menu
-            width={760}
-            position="bottom-end"
-            onOpen={() => setHistoryNow(Date.now())}
-          >
+          <Menu position="bottom-end" onOpen={() => setHistoryNow(Date.now())}>
             <Menu.Target>
               <ActionIcon variant="subtle" aria-label="Workspace tab menu">
                 <IconChevronDown size={15} />
@@ -1516,7 +1516,7 @@ export function WorkspaceTabs({ workspace, dispatch, runtimes }: Props) {
                         key={tab.id}
                         data-closed-tab-id={tab.id}
                         className="closed-tab-entry"
-                        data-tooltip={logTabLabel(tab)}
+                        data-tooltip={closedTabTooltip(tab)}
                         leftSection={
                           sourceCount(tab.sources) > 1 ? (
                             <IconStack2 size={15} className="tab-source-icon" />

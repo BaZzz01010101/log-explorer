@@ -118,6 +118,21 @@ async function settings() {
   await page.getByRole("tab", { name: "Highlights", exact: true }).click();
 }
 const dialog = () => page.getByRole("dialog", { name: "Settings" });
+async function editFirstHighlightRule() {
+  const expand = dialog().getByRole("button", {
+    name: "Expand rule 1",
+    exact: true,
+  });
+  if (await expand.count()) await expand.click();
+  await dialog()
+    .getByRole("button", { name: "Edit rule 1", exact: true })
+    .click();
+}
+async function saveHighlightRule() {
+  await dialog()
+    .getByRole("button", { name: "Save rule", exact: true })
+    .click();
+}
 async function capture(filename: string) {
   let image = "";
   for (let i = 0; i < 3; i++) {
@@ -180,11 +195,16 @@ test("highlight profiles edit, scope, color rows and structured text, and persis
   await dialog()
     .getByLabel("Log group regex", { exact: true })
     .fill("orders-api$");
+  await dialog()
+    .getByRole("button", { name: "Save profile", exact: true })
+    .click();
+  await editFirstHighlightRule();
   await dialog().getByLabel("Match regex", { exact: true }).fill("ERROR");
   await dialog()
     .getByLabel("Shared background", { exact: true })
     .fill("#552211");
   await dialog().getByLabel("Shared background", { exact: true }).press("Tab");
+  await saveHighlightRule();
   await dialog().locator(".mantine-Modal-close").click();
   const errorRow = page.locator(".virtual-event.level-error").first(),
     infoRow = page.locator(".virtual-event.level-info").first();
@@ -198,6 +218,7 @@ test("highlight profiles edit, scope, color rows and structured text, and persis
   await expect(errorRow).toHaveCSS("outline-style", "none");
   await expect(errorRow).toHaveAttribute("aria-selected", "true");
   await settings();
+  await editFirstHighlightRule();
   await dialog()
     .getByRole("combobox", { name: "Search in", exact: true })
     .click();
@@ -215,13 +236,18 @@ test("highlight profiles edit, scope, color rows and structured text, and persis
     .click();
   await dialog()
     .getByLabel("Separate light and dark colors", { exact: true })
-    .check();
+    .locator("..")
+    .click();
+  await expect(
+    dialog().getByLabel("Separate light and dark colors", { exact: true }),
+  ).toBeChecked();
   await dialog().getByLabel("Dark background", { exact: true }).fill("#772222");
   await dialog().getByLabel("Dark background", { exact: true }).press("Tab");
   await dialog()
     .getByLabel("Light background", { exact: true })
     .fill("#ffdddd");
   await dialog().getByLabel("Light background", { exact: true }).press("Tab");
+  await saveHighlightRule();
   await dialog().locator(".mantine-Modal-close").click();
   await page
     .locator("label")
@@ -249,13 +275,33 @@ test("highlight profiles edit, scope, color rows and structured text, and persis
   await close();
   await launch();
   await settings();
+  await expect(dialog().locator("[data-profile-id]")).toContainText(
+    "Payment investigation",
+  );
+  const expand = dialog().getByRole("button", {
+    name: "Expand rule 1",
+    exact: true,
+  });
+  if (await expand.count()) await expand.click();
   await expect(
-    dialog().getByLabel("Profile name", { exact: true }),
-  ).toHaveValue("Payment investigation");
-  await expect(
-    dialog().getByLabel("JSON Pointer path", { exact: true }),
+    dialog()
+      .getByRole("table", { name: "Highlight rules", exact: true })
+      .locator(".highlight-item-detail")
+      .getByLabel("JSON Pointer path", { exact: true }),
   ).toHaveValue("/level");
-  await dialog().getByLabel("Profile enabled", { exact: true }).uncheck();
+  await dialog()
+    .getByRole("switch", {
+      name: "Profile Payment investigation enabled",
+      exact: true,
+    })
+    .locator("..")
+    .click();
+  await expect(
+    dialog().getByRole("switch", {
+      name: "Profile Payment investigation enabled",
+      exact: true,
+    }),
+  ).not.toBeChecked();
   await dialog().locator(".mantine-Modal-close").click();
   await expect(page.locator(".profile-highlight-text")).toHaveCount(0);
 });
@@ -292,10 +338,13 @@ test("catastrophic captured-log regex times out in preview workers and recovers"
   await dialog()
     .getByRole("button", { name: "Add profile", exact: true })
     .click();
-  await dialog().getByLabel("Match regex", { exact: true }).fill("(a+)+$");
   await dialog()
-    .getByRole("button", { name: "Test and preview", exact: true })
+    .getByRole("button", { name: "Save profile", exact: true })
     .click();
+  await editFirstHighlightRule();
+  await dialog().getByLabel("Match regex", { exact: true }).fill("(a+)+$");
+  await saveHighlightRule();
+  await dialog().getByRole("button", { name: "Preview", exact: true }).click();
   const light = dialog().getByRole("region", {
     name: "Light preview",
     exact: true,
@@ -303,7 +352,9 @@ test("catastrophic captured-log regex times out in preview workers and recovers"
   await expect(
     light.getByText(/Highlighting paused: a regex exceeded/),
   ).toBeVisible({ timeout: 10000 });
+  await editFirstHighlightRule();
   await dialog().getByLabel("Match regex", { exact: true }).fill("ERROR");
+  await saveHighlightRule();
   await expect(light.locator(".virtual-event").first()).toHaveCSS(
     "background-color",
     "rgb(113, 63, 18)",

@@ -116,6 +116,19 @@ export default function App() {
   );
   const [windowControlsVisible, setWindowControlsVisible] = useState(false);
   const [saveState, setSaveState] = useState("Loading workspace");
+  const [contextOrigins, setContextOrigins] = useState<
+    Record<string, LogEvent>
+  >({});
+  useEffect(() => {
+    setContextOrigins((previous) => {
+      const ids = new Set(workspace.tabs.map((tab) => tab.id));
+      return Object.keys(previous).every((id) => ids.has(id))
+        ? previous
+        : Object.fromEntries(
+            Object.entries(previous).filter(([id]) => ids.has(id)),
+          );
+    });
+  }, [workspace.tabs]);
   const workspaceRef = useRef(workspace);
   const paneLayout =
     workspace.layout ??
@@ -347,21 +360,26 @@ export default function App() {
       return;
     }
     const connectionId = event.connectionId ?? tab.connectionId;
+    const contextTab = {
+      ...createTab(connectionId, [
+        {
+          connectionId,
+          logGroup: event.logGroup,
+          logStreams: [event.logStream],
+        },
+      ]),
+      title: `Context · ${contextRangeLabel(range)} · ${event.logStream.split("/").at(-1)}`,
+      timePreset: "custom",
+      customStart: new Date(bounds.startTime).toISOString(),
+      customEnd: new Date(bounds.endTime).toISOString(),
+    };
+    setContextOrigins((previous) => ({
+      ...previous,
+      [contextTab.id]: { ...event, connectionId },
+    }));
     dispatch({
       type: "tab/open",
-      tab: {
-        ...createTab(connectionId, [
-          {
-            connectionId,
-            logGroup: event.logGroup,
-            logStreams: [event.logStream],
-          },
-        ]),
-        title: `Context · ${contextRangeLabel(range)} · ${event.logStream.split("/").at(-1)}`,
-        timePreset: "custom",
-        customStart: new Date(bounds.startTime).toISOString(),
-        customEnd: new Date(bounds.endTime).toISOString(),
-      },
+      tab: contextTab,
     });
   };
   useEffect(() => {
@@ -748,6 +766,15 @@ export default function App() {
                         })
                       }
                       onContext={(event, range) => context(tab, event, range)}
+                      revealEvent={contextOrigins[tab.id]}
+                      onEventRevealed={() =>
+                        setContextOrigins((previous) => {
+                          if (!previous[tab.id]) return previous;
+                          const next = { ...previous };
+                          delete next[tab.id];
+                          return next;
+                        })
+                      }
                     />
                   );
                 }}

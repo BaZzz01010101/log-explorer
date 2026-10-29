@@ -6,11 +6,42 @@ import { LogViewer } from "../src/renderer/components/LogViewer";
 import type { SettingsPreviewSnapshot } from "../src/renderer/settings-preview";
 import { createWorkspace } from "../src/renderer/workspace";
 import type { HighlightProfile } from "../src/shared/highlights";
+import { useEventSelection } from "../src/renderer/useEventSelection";
+import { useMessageExpansion } from "../src/renderer/useMessageExpansion";
+import type { LogViewerProps } from "../src/renderer/components/LogViewer";
 
 // The preview owns view/theme isolation; LogViewer's DOM and virtualization
 // are covered by its renderer and packaged-app tests.
 vi.mock("../src/renderer/components/LogViewer", () => ({
-  LogViewer: () => null,
+  LogViewer: (props: LogViewerProps) => {
+    const selection = useEventSelection(
+      props.events.map((event) => event.id),
+      false,
+      props.interactionState?.selection,
+    );
+    const expansion = useMessageExpansion(
+      "hybrid",
+      props.interactionState?.expansion,
+    );
+    return (
+      <output data-preview-selection={selection.selectedIds.join(",")}>
+        {props.events.map((event) => (
+          <button
+            key={event.id}
+            aria-label={`Select ${event.id}`}
+            aria-expanded={expansion.isExpanded(event.id)}
+            onClick={(mouse) =>
+              selection.select(event.id, {
+                additive: mouse.ctrlKey,
+                range: mouse.shiftKey,
+              })
+            }
+            onDoubleClick={() => expansion.toggle(event.id)}
+          />
+        ))}
+      </output>
+    );
+  },
 }));
 
 const workspace = createWorkspace();
@@ -126,7 +157,7 @@ it("uses captured events and filters in two locally scoped hybrid themes without
   expect(preferences.theme).toBe(workspace.preferences.theme);
 });
 
-it("keeps per-theme view changes private and preserves them while the selected profile changes live", async () => {
+it("shares preview view changes across themes and preserves them while the selected profile changes live", async () => {
   const captured = snapshot();
   const original = structuredClone(captured);
   await act(async () => {
@@ -151,7 +182,7 @@ it("keeps per-theme view changes private and preserves them while the selected p
     localSearch: "preview only",
     columns: [{ path: "@message", width: 610 }],
   });
-  expect(viewers()[1].props.view.localSearch).toBe("captured");
+  expect(viewers()[1].props.view.localSearch).toBe("preview only");
   expect(captured).toEqual(original);
   const updated = { ...profile, name: "Edited profile" };
   await act(async () =>
@@ -164,10 +195,13 @@ it("keeps per-theme view changes private and preserves them while the selected p
     ),
   );
   expect(viewers()[0].props.view.localSearch).toBe("preview only");
-  expect(viewers()[1].props.view.localSearch).toBe("captured");
+  expect(viewers()[1].props.view.localSearch).toBe("preview only");
   for (const viewer of viewers()) {
     expect(viewer.props.preferences.highlightProfiles).toEqual([updated]);
     expect(viewer.props.preferences.fontSize).toBe(14);
+    expect(viewer.props.view.columns).toEqual([
+      { path: "@message", width: 610 },
+    ]);
   }
   const recaptured = {
     ...snapshot(),
@@ -186,6 +220,163 @@ it("keeps per-theme view changes private and preserves them while the selected p
     expect(viewer.props.view.localSearch).toBe("captured");
     expect(viewer.props.events[0].id).toBe("newly-captured-event");
   }
+});
+
+it("shares anchored selection and message folds between themes while profile edits retain preview state", async () => {
+  const captured = snapshot();
+  captured.events = ["a", "b", "c", "d"].map((id) => ({
+    ...captured.events[0],
+    id,
+  }));
+  await act(async () => {
+    renderer = create(
+      <HighlightEventsPreview
+        snapshot={captured}
+        preferences={preferences}
+        profile={profile}
+      />,
+    );
+  });
+  const select = (
+    theme: number,
+    id: string,
+    options: { additive?: boolean; range?: boolean } = {},
+  ) =>
+    viewers()
+      [theme].findByProps({ "aria-label": `Select ${id}` })
+      .props.onClick({ ctrlKey: options.additive, shiftKey: options.range });
+  const selected = () =>
+    renderer!.root
+      .findAllByType("output")
+      .map((node) => node.props["data-preview-selection"]);
+  await act(async () => select(0, "a"));
+  expect(selected()).toEqual(["a", "a"]);
+  await act(async () => select(1, "c", { additive: true }));
+  expect(selected()).toEqual(["a,c", "a,c"]);
+  await act(async () => select(0, "d", { range: true }));
+  expect(selected()).toEqual(["c,d", "c,d"]);
+  await act(async () =>
+    viewers()[1]
+      .findByProps({ "aria-label": "Select b" })
+      .props.onDoubleClick(),
+  );
+  for (const viewer of viewers())
+    expect(
+      viewer.findByProps({ "aria-label": "Select b" }).props["aria-expanded"],
+    ).toBe(true);
+  await act(async () =>
+    renderer!.update(
+      <HighlightEventsPreview
+        snapshot={captured}
+        preferences={preferences}
+        profile={{ ...profile, name: "Edited live" }}
+      />,
+    ),
+  );
+  expect(selected()).toEqual(["c,d", "c,d"]);
+  for (const viewer of viewers())
+    expect(
+      viewer.findByProps({ "aria-label": "Select b" }).props["aria-expanded"],
+    ).toBe(true);
+  await act(async () =>
+    renderer!.update(
+      <HighlightEventsPreview
+        snapshot={{ ...captured }}
+        preferences={preferences}
+        profile={profile}
+      />,
+    ),
+  );
+  expect(selected()).toEqual(["", ""]);
+  for (const viewer of viewers())
+    expect(
+      viewer.findByProps({ "aria-label": "Select b" }).props["aria-expanded"],
+    ).toBe(false);
+});
+
+it("synchronizes both scroll axes in either direction without replacing positions on profile edits", async () => {
+  const captured = snapshot();
+  await act(async () => {
+    renderer = create(
+      <HighlightEventsPreview
+        snapshot={captured}
+        preferences={preferences}
+        profile={profile}
+      />,
+    );
+  });
+  const light = { scrollTop: 0, scrollLeft: 0 };
+  const dark = { scrollTop: 0, scrollLeft: 0 };
+  viewers()[0].props.onScrollElement(light);
+  viewers()[1].props.onScrollElement(dark);
+  Object.assign(light, { scrollTop: 475, scrollLeft: 210 });
+  viewers()[0].props.onScrollPositionChange(light);
+  expect(dark).toEqual({ scrollTop: 475, scrollLeft: 210 });
+  Object.assign(dark, { scrollTop: 81, scrollLeft: 420 });
+  viewers()[1].props.onScrollPositionChange(dark);
+  expect(light).toEqual({ scrollTop: 81, scrollLeft: 420 });
+  await act(async () =>
+    renderer!.update(
+      <HighlightEventsPreview
+        snapshot={captured}
+        preferences={preferences}
+        profile={{ ...profile, enabled: false }}
+      />,
+    ),
+  );
+  expect(light).toEqual({ scrollTop: 81, scrollLeft: 420 });
+  expect(dark).toEqual(light);
+});
+
+it("mirrors inner expanded-message scroll only to the same event in the other theme", async () => {
+  await act(async () => {
+    renderer = create(
+      <HighlightEventsPreview
+        snapshot={snapshot()}
+        preferences={preferences}
+        profile={profile}
+      />,
+    );
+  });
+  const content = (id: string) => ({
+    dataset: { eventId: id },
+    classList: {
+      contains: (name: string) => name === "expanded-event-content",
+    },
+    scrollTop: 0,
+    scrollLeft: 0,
+  });
+  const source = content("loaded-event"),
+    target = content("loaded-event"),
+    unrelated = content("other-event");
+  const light = {
+    scrollTop: 0,
+    scrollLeft: 0,
+    querySelectorAll: () => [source],
+  };
+  const dark = {
+    scrollTop: 0,
+    scrollLeft: 0,
+    querySelectorAll: () => [target, unrelated],
+  };
+  viewers()[0].props.onScrollElement(light);
+  viewers()[1].props.onScrollElement(dark);
+  const preview = renderer!.root.findByProps({
+    "aria-label": "Highlight preview",
+  });
+  expect(preview.props.onScrollCapture).toBeTypeOf("function");
+  Object.assign(source, { scrollTop: 80, scrollLeft: 240 });
+  preview.props.onScrollCapture({ target: source });
+  expect(target.scrollTop).toBe(80);
+  expect(target.scrollLeft).toBe(240);
+  expect(unrelated.scrollTop).toBe(0);
+  expect(unrelated.scrollLeft).toBe(0);
+  expect(dark.scrollTop).toBe(0);
+  expect(dark.scrollLeft).toBe(0);
+  Object.assign(target, { scrollTop: 25, scrollLeft: 70 });
+  preview.props.onScrollCapture({ target });
+  expect(source.scrollTop).toBe(25);
+  expect(source.scrollLeft).toBe(70);
 });
 
 it("explains missing captured data without inventing sample events", async () => {

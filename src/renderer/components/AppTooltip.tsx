@@ -150,12 +150,14 @@ export function TextTooltips() {
     close?: ReturnType<typeof setTimeout>;
   }>({});
   useEffect(() => {
+    let activeTarget: HTMLElement | null = null;
     const clear = () => {
       clearTimeout(timers.current.open);
       clearTimeout(timers.current.close);
     };
     const hide = () => {
       clear();
+      activeTarget = null;
       setHint(null);
     };
     const inside = (element: EventTarget | null) =>
@@ -178,11 +180,13 @@ export function TextTooltips() {
           : null;
       if (!target?.dataset.tooltip) return;
       if (
+        activeTarget === target &&
         event.relatedTarget instanceof Node &&
         target.contains(event.relatedTarget)
       )
         return;
       clear();
+      activeTarget = target;
       timers.current.open = setTimeout(() => {
         window.dispatchEvent(
           new CustomEvent(TOOLTIP_OPEN_EVENT, { detail: id }),
@@ -200,8 +204,11 @@ export function TextTooltips() {
         event.target instanceof Element
           ? event.target.closest("[data-tooltip]")
           : null;
+      if ((!target || target !== activeTarget) && !inside(event.target)) return;
       if (target?.contains(event.relatedTarget as Node | null)) return;
-      clearTimeout(timers.current.open);
+      // Only the current owner can dismiss its hint. Cancel both timers so
+      // rapid exits cannot leave an untracked close that cancels the next open.
+      clear();
       timers.current.close = setTimeout(hide, 350);
     };
     const press = (event: Event) => {
@@ -250,7 +257,7 @@ export function TextTooltips() {
       interactive
       multiline
       position={
-        hint.target.closest(".activity-bar")
+        hint.target.closest(".activity-bar, .highlight-tree-row")
           ? "right"
           : hint.target.closest('[role="menu"], .mantine-Popover-dropdown')
             ? "right-start"

@@ -4,6 +4,10 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { Settings } from "../src/renderer/components/Settings";
 import { createWorkspace } from "../src/renderer/workspace";
 import type { HighlightProfile } from "../src/shared/highlights";
+vi.mock("../src/renderer/components/HighlightTreeEditor", () => ({
+  createHighlightTreeEditorState: () => ({}),
+  HighlightTreeEditor: () => null,
+}));
 
 vi.mock("@mantine/core", () => {
   const component = ({ children, ...props }: Record<string, unknown>) =>
@@ -158,16 +162,33 @@ it("keeps the selected highlight profile, rule and modal preview state across do
   await act(async () => {
     renderer = create(<Settings {...props} presentation="pane" />);
   });
-  await act(async () => control("Highlight profile").props.onChange("second"));
+  await act(async () =>
+    renderer.root.findByProps({ "data-profile-id": "second" }).props.onClick(),
+  );
   await act(async () =>
     renderer.root.findByProps({ "data-rule-id": "second-2" }).props.onClick(),
+  );
+  await act(async () =>
+    ariaControl("Expand rule 2").props.onClick({ shiftKey: false }),
+  );
+  await act(async () =>
+    ariaControl("Edit rule 2").props.onClick({ shiftKey: false }),
+  );
+  await act(async () =>
+    control("Match regex").props.onChange({
+      currentTarget: { value: "unsaved second rule" },
+    }),
   );
   expect(
     renderer.root.findAllByProps({ className: "highlight-preview-toggle" }),
   ).toHaveLength(0);
   await expand();
-  expect(control("Highlight profile").props.value).toBe("second");
-  expect(control("Match regex").props.value).toBe("second-2");
+  expect(
+    renderer.root.findByProps({ "data-profile-id": "second" }).props[
+      "aria-selected"
+    ],
+  ).toBe(true);
+  expect(control("Match regex").props.value).toBe("unsaved second rule");
   expect(
     renderer.root.findByProps({ "data-rule-id": "second-2" }).props[
       "aria-selected"
@@ -182,7 +203,7 @@ it("keeps the selected highlight profile, rule and modal preview state across do
   await act(async () =>
     renderer.update(<Settings {...props} presentation="pane" />),
   );
-  expect(control("Match regex").props.value).toBe("second-2");
+  expect(control("Match regex").props.value).toBe("unsaved second rule");
   expect(
     renderer.root.findAllByProps({ className: "highlight-preview-toggle" }),
   ).toHaveLength(0);
