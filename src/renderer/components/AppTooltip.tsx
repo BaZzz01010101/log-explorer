@@ -9,6 +9,7 @@ import {
   type ReactElement,
 } from "react";
 import { MENU_OPEN_EVENT } from "./AppMenu";
+import { tooltipIsRedundant } from "../tooltip-visibility";
 import "./app-tooltip.css";
 const TOOLTIP_OPEN_EVENT = "explorer:tooltip-open";
 
@@ -23,6 +24,10 @@ export function Tooltip({
 }: TooltipProps) {
   const id = useId();
   const [visible, setVisible] = useState(false);
+  const [suppressed, setSuppressed] = useState(false);
+  const owner = useRef<HTMLElement | null>(null);
+  const latest = useRef({ label: props.label, disabled });
+  latest.current = { label: props.label, disabled };
   const timers = useRef<{
     open?: ReturnType<typeof setTimeout>;
     close?: ReturnType<typeof setTimeout>;
@@ -31,13 +36,43 @@ export function Tooltip({
     clearTimeout(timers.current.open);
     clearTimeout(timers.current.close);
   };
-  const show = () => {
+  const show = (element: HTMLElement) => {
     clear();
+    owner.current = element;
     timers.current.open = setTimeout(() => {
       window.dispatchEvent(new CustomEvent(TOOLTIP_OPEN_EVENT, { detail: id }));
-      setVisible(true);
+      const hide =
+        owner.current !== element ||
+        !element.isConnected ||
+        latest.current.disabled ||
+        tooltipIsRedundant(element, latest.current.label);
+      setSuppressed(Boolean(hide));
+      setVisible(!hide);
     }, openDelay);
   };
+  useEffect(() => {
+    if (!(opened ?? visible) || !owner.current) return;
+    const recheck = () => {
+      const redundant =
+        !owner.current?.isConnected ||
+        Boolean(
+          owner.current &&
+          tooltipIsRedundant(owner.current, latest.current.label),
+        );
+      setSuppressed(redundant);
+      if (redundant) {
+        clear();
+        setVisible(false);
+      }
+    };
+    recheck();
+    window.addEventListener("resize", recheck);
+    document.addEventListener("scroll", recheck, true);
+    return () => {
+      window.removeEventListener("resize", recheck);
+      document.removeEventListener("scroll", recheck, true);
+    };
+  }, [visible, opened, props.label, children]);
   const leave = (buttons = 0) => {
     if (buttons) return;
     clear();
@@ -102,7 +137,7 @@ export function Tooltip({
       transitionProps={{ duration: 0 }}
       {...props}
       disabled={disabled}
-      opened={opened ?? visible}
+      opened={(opened ?? visible) && !suppressed}
       classNames={{
         tooltip: ["app-tooltip", className].filter(Boolean).join(" "),
       }}
@@ -115,7 +150,7 @@ export function Tooltip({
       {target
         ? cloneElement(target, {
             onMouseEnter: (event) => {
-              if (!event.buttons) show();
+              if (!event.buttons) show(event.currentTarget as HTMLElement);
               target.props.onMouseEnter?.(event);
             },
             onMouseLeave: (event) => {
@@ -124,7 +159,7 @@ export function Tooltip({
             },
             onFocus: (event) => {
               if (document.documentElement.dataset.inputModality === "keyboard")
-                show();
+                show(event.currentTarget as HTMLElement);
               target.props.onFocus?.(event);
             },
             onBlur: (event) => {
@@ -149,8 +184,10 @@ export function TextTooltips() {
     open?: ReturnType<typeof setTimeout>;
     close?: ReturnType<typeof setTimeout>;
   }>({});
+  const recheckCurrent = useRef<(() => void) | undefined>(undefined);
   useEffect(() => {
     let activeTarget: HTMLElement | null = null;
+    let shown: { target: HTMLElement; text: string } | null = null;
     const clear = () => {
       clearTimeout(timers.current.open);
       clearTimeout(timers.current.close);
@@ -158,8 +195,21 @@ export function TextTooltips() {
     const hide = () => {
       clear();
       activeTarget = null;
+      shown = null;
       setHint(null);
     };
+    const recheck = () => {
+      if (!shown) return;
+      const { target } = shown;
+      const text = target.dataset.tooltip;
+      if (!target.isConnected || !text || tooltipIsRedundant(target, text)) {
+        hide();
+      } else if (text !== shown.text) {
+        shown = { target, text };
+        setHint(shown);
+      }
+    };
+    recheckCurrent.current = recheck;
     const inside = (element: EventTarget | null) =>
       element instanceof Element &&
       Boolean(element.closest("[data-text-tooltip]"));
@@ -183,15 +233,21 @@ export function TextTooltips() {
         activeTarget === target &&
         event.relatedTarget instanceof Node &&
         target.contains(event.relatedTarget)
-      )
+      ) {
+        recheck();
         return;
+      }
       clear();
       activeTarget = target;
       timers.current.open = setTimeout(() => {
+        if (activeTarget !== target || !target.isConnected) return;
         window.dispatchEvent(
           new CustomEvent(TOOLTIP_OPEN_EVENT, { detail: id }),
         );
-        setHint({ target, text: target.dataset.tooltip! });
+        const text = target.dataset.tooltip;
+        shown =
+          text && !tooltipIsRedundant(target, text) ? { target, text } : null;
+        setHint(shown);
       }, 450);
     };
     const out = (event: MouseEvent | FocusEvent) => {
@@ -230,6 +286,8 @@ export function TextTooltips() {
     window.addEventListener(MENU_OPEN_EVENT, hide);
     window.addEventListener(TOOLTIP_OPEN_EVENT, otherTooltip);
     window.addEventListener("blur", hide);
+    window.addEventListener("resize", recheck);
+    document.addEventListener("scroll", recheck, true);
     return () => {
       clear();
       document.removeEventListener("mouseover", over);
@@ -242,8 +300,12 @@ export function TextTooltips() {
       window.removeEventListener(MENU_OPEN_EVENT, hide);
       window.removeEventListener(TOOLTIP_OPEN_EVENT, otherTooltip);
       window.removeEventListener("blur", hide);
+      window.removeEventListener("resize", recheck);
+      document.removeEventListener("scroll", recheck, true);
+      recheckCurrent.current = undefined;
     };
   }, [id]);
+  useEffect(() => recheckCurrent.current?.());
   if (!hint) return null;
   const overlay = hint.target.closest<HTMLElement>(
     '[role="menu"], .mantine-Popover-dropdown',

@@ -12,6 +12,7 @@ import {
   type InspectorMessageMatch,
   type InspectorMessageOrigin,
 } from "../inspector-message-overview";
+import { createOverviewColorResolver } from "../overview-colors";
 import "./inspector-message.css";
 
 const origins = ["server", "local", "manual", "profile"] as const;
@@ -83,6 +84,7 @@ export function InspectorMessage({
     const begin = () => {
       frame = 0;
       if (disposed) return;
+      const mapColor = createOverviewColorResolver(overviewRef.current);
       const elements = body.querySelectorAll<HTMLElement>(
         "mark[data-highlight-origins], .profile-highlight-text, .json-match-indicator i[data-match-origin]",
       );
@@ -132,17 +134,18 @@ export function InspectorMessage({
                     /\/\s*0(?:\.0+)?%?\s*\)$/.test(background);
                   colors.push({
                     origin,
-                    color: transparent ? computed.color : background,
+                    color: mapColor(transparent ? computed.color : background),
                   });
                 }
               } else if (markedOrigins.includes(origin))
                 colors.push({
                   origin,
-                  color:
+                  color: mapColor(
                     computed
                       .getPropertyValue(`--filter-match-${origin}`)
                       .trim() ||
-                    `var(--mantine-color-${origin === "server" ? "blue" : origin === "local" ? "green" : "yellow"}-6)`,
+                      `var(--mantine-color-${origin === "server" ? "blue" : origin === "local" ? "green" : "yellow"}-6)`,
+                  ),
                 });
             }
             fragment = {

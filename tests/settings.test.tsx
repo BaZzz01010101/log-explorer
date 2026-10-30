@@ -120,6 +120,45 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
+it("commits the recent-search count only after the preference edit is finished", async () => {
+  await act(async () => {
+    renderer = create(<Settings {...props} presentation="pane" />);
+  });
+  expect(control("Recent searches to keep")).toBeDefined();
+  expect(control("Recent searches to keep").props.min).toBe(1);
+  expect(control("Recent searches to keep").props.max).toBe(100);
+  await act(async () => control("Recent searches to keep").props.onChange(23));
+  expect(dispatch).not.toHaveBeenCalled();
+  await act(async () => control("Recent searches to keep").props.onBlur());
+  expect(dispatch).toHaveBeenCalledExactlyOnceWith({
+    type: "preferences/update",
+    patch: { recentSearchesLimit: 23 },
+  });
+});
+
+it("exposes independent configurable shortcuts for local filtering and highlighting", async () => {
+  await act(async () => {
+    renderer = create(<Settings {...props} presentation="pane" />);
+  });
+  for (const [action, label, initial] of [
+    ["localFilterRegex", "Local filter regex", "Alt+E"],
+    ["localFilterCaseSensitive", "Local filter match case", "Alt+C"],
+    ["highlightRegex", "Highlight regex", "Alt+E"],
+    ["highlightCaseSensitive", "Highlight match case", "Alt+C"],
+  ] as const) {
+    expect(control(label).props.value).toBe(initial);
+    await act(async () =>
+      control(label).props.onChange({ currentTarget: { value: "Alt+R" } }),
+    );
+    expect(dispatch).toHaveBeenLastCalledWith({
+      type: "preferences/update",
+      patch: {
+        shortcuts: { ...workspace.preferences.shortcuts, [action]: "Alt+R" },
+      },
+    });
+  }
+});
+
 it.each(["pane", "modal"] as const)(
   "edits the same preferences, connections and workspace in %s presentation",
   async (presentation) => {

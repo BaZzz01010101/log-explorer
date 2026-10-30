@@ -279,8 +279,14 @@ for (const theme of ["light", "dark"]) {
     await activity("Workspace tab menu").click();
     const original = page.locator('[data-closed-tab-id="tab-orders"]');
     await expect(original).toHaveAttribute("data-tooltip", "orders-api");
+    expect(
+      await original
+        .locator(".closed-tab-title")
+        .evaluate((element) => element.scrollWidth <= element.clientWidth),
+    ).toBe(true);
     await original.hover();
-    await expect(page.getByRole("tooltip")).toHaveText("orders-api");
+    await page.waitForTimeout(900);
+    await expect(page.getByRole("tooltip")).toHaveCount(0);
   });
 }
 test.afterEach(async () => {

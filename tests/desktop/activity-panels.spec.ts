@@ -275,6 +275,9 @@ test("legacy tab groups disappear without hiding tabs or split actions", async (
   await expect(page.getByRole("menuitem", { name: /group/i })).toHaveCount(0);
   await expect(
     page.getByRole("menuitem", { name: "Move to a new split", exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("menuitem", { name: "Show in split mode", exact: true }),
   ).toBeVisible();
   await page.keyboard.press("Escape");
   await expect.poll(async () => "groups" in (await stored())).toBe(false);

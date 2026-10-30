@@ -163,11 +163,17 @@ function CapturedPreview({
   const [detailHeights, setDetailHeights] = useState(
     () => new Map<string, number>(),
   );
+  const [recursive, setRecursive] = useState(() => new Set<string>());
   const interactionState: LogViewerInteractionState = {
     selection,
     expansion,
     details: {
       heights: detailHeights,
+      recursive,
+      onRecursiveExpand: (id) =>
+        setRecursive((previous) =>
+          previous.has(id) ? previous : new Set([...previous, id]),
+        ),
       onHeightChange: (id, height) =>
         setDetailHeights((previous) => {
           if (previous.get(id) === height) return previous;

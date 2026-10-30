@@ -442,7 +442,7 @@ it("previews resource clicks and Enter, while double click opens permanently", a
   );
 });
 
-it("opens and removes saved views while retaining preview behavior for recent sources", async () => {
+it("opens and removes saved views while replacing recent sources with current source details", async () => {
   const state = restoreWorkspace({
     ...createWorkspace(),
     favorites: [
@@ -470,31 +470,38 @@ it("opens and removes saved views while retaining preview behavior for recent so
   const saved = renderer!.root.findByProps({
     "data-favorite-id": state.favorites[0].id,
   });
-  await act(async () => saved.props.onClick());
+  await act(async () =>
+    saved
+      .findByProps({ "aria-label": state.favorites[0].title })
+      .props.onClick(),
+  );
   expect(onOpenFavorite).toHaveBeenCalledWith(state.favorites[0].id);
   expect(onOpen).not.toHaveBeenCalled();
   const remove = renderer!.root
     .findAll(
       (node) =>
-        node.props.children === "Remove favorite" &&
+        node.props.children === "Delete" &&
         typeof node.props.onClick === "function",
     )
     .at(-1)!;
   await act(async () => remove.props.onClick());
+  expect(onRemoveFavorite).not.toHaveBeenCalled();
+  const confirmation = saved.findByProps({
+    role: "group",
+    "aria-label": `Delete favorite ${state.favorites[0].title}`,
+  });
+  const confirmDelete = confirmation
+    .findAllByType("button")
+    .find((node) => node.props.children === "Delete")!;
+  await act(async () => confirmDelete.props.onClick({ stopPropagation() {} }));
   expect(onRemoveFavorite).toHaveBeenCalledWith(state.favorites[0].id);
-  const button = renderer!.root.findByProps({ className: "quick-resource" });
-  await act(async () => button.props.onClick());
-  expect(onOpen).toHaveBeenLastCalledWith(
-    "offline",
-    [{ logGroup: "/recent", logStreams: undefined }],
-    "preview",
-  );
-  await act(async () => button.props.onDoubleClick());
-  expect(onOpen).toHaveBeenLastCalledWith(
-    "offline",
-    [{ logGroup: "/recent", logStreams: undefined }],
-    "permanent",
-  );
+  expect(
+    renderer!.root.findAllByProps({ className: "quick-resource" }),
+  ).toHaveLength(0);
+  expect(
+    renderer!.root.findByProps({ "aria-label": "Current source details" }),
+  ).toBeDefined();
+  expect(onOpen).not.toHaveBeenCalled();
 });
 
 it("keeps favorites for legacy duplicate IDs while offering a single region and no extra tree levels", async () => {
@@ -527,7 +534,11 @@ it("keeps favorites for legacy duplicate IDs while offering a single region and 
   const favorite = renderer!.root.findByProps({
     "data-favorite-id": state.favorites[0].id,
   });
-  await act(async () => favorite.props.onClick());
+  await act(async () =>
+    favorite
+      .findByProps({ "aria-label": state.favorites[0].title })
+      .props.onClick(),
+  );
   expect(onOpenFavorite).toHaveBeenCalledWith(state.favorites[0].id);
   expect(state.favorites[0].connections[0].id).toBe(duplicate.id);
   expect(

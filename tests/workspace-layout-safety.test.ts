@@ -110,7 +110,7 @@ describe("persisted pane layout trust boundary", () => {
 });
 
 describe("pane and preview model safety", () => {
-  it("clones the current tab when the default split has no unshown tab available", () => {
+  it("clones the current tab when splitting", () => {
     const state = createWorkspace();
     const next = workspaceReducer(state, { type: "pane/split" });
     expect(next.panes).toHaveLength(2);
@@ -123,20 +123,20 @@ describe("pane and preview model safety", () => {
       expect(next.layout.axis).toBe("horizontal");
     valid(next);
   });
-  it("prefers an unshown existing tab over cloning when splitting", () => {
+  it("keeps an unshown existing tab independent when splitting", () => {
     let state = createWorkspace();
     const extra = createTab("offline", [{ logGroup: "/extra" }]);
     state = { ...state, tabs: [...state.tabs, extra] };
     const next = workspaceReducer(state, { type: "pane/split" });
-    expect(next.tabs).toHaveLength(2);
-    expect(next.panes[1].tabId).toBe(extra.id);
+    expect(next.tabs).toHaveLength(3);
+    expect(next.panes[1].tabId).not.toBe(extra.id);
+    expect(next.tabs.find((tab) => tab.id === extra.id)).toEqual(extra);
     valid(next);
   });
   it.each([
     { key: "filterPattern", value: "timeout" },
     { key: "query", value: "fields @message | limit 10" },
     { key: "sources", value: [{ logGroup: "/changed" }] },
-    { key: "kind", value: "insights" },
     { key: "connectionId", value: "secondary" },
   ])(
     "keeps edited preview $key configuration when another resource opens",

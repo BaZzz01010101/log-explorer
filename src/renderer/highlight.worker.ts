@@ -1,6 +1,11 @@
-import { highlightEvent, type EventHighlights } from "./highlight-engine";
+import {
+  highlightEvent,
+  type EventHighlights,
+  type HighlightFilters,
+} from "./highlight-engine";
 import type { HighlightProfile } from "../shared/highlights";
 import type { ColumnConfig, LogEvent, Preferences } from "../shared/contracts";
+import type { QuickHighlightOptions } from "../shared/quick-highlight";
 
 self.onmessage = (
   event: MessageEvent<{
@@ -11,7 +16,8 @@ self.onmessage = (
     timezone: Preferences["timezone"];
     overview?: boolean;
     needle?: string;
-    filters?: { server: string; local: string };
+    quick?: QuickHighlightOptions;
+    filters?: HighlightFilters;
   }>,
 ) => {
   const {
@@ -22,6 +28,7 @@ self.onmessage = (
     timezone,
     overview,
     needle = "",
+    quick,
     filters,
   } = event.data;
   self.postMessage({ ready: true });
@@ -38,6 +45,7 @@ self.onmessage = (
       needle,
       filters,
       item.messageComplete,
+      quick,
     );
     if (overview) {
       if (result.overview!.length) batch.push({ id: item.id, result });

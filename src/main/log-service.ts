@@ -56,6 +56,8 @@ function errorMessage(error: unknown): string {
 }
 
 function validateQuery(request: QueryRequest, live: boolean): void {
+  if (request.kind !== "events")
+    throw new Error("Only Events queries are supported");
   if (!request.requestId || request.requestId.length > 200)
     throw new Error("A bounded request ID is required");
   if (
@@ -94,12 +96,10 @@ function validateQuery(request: QueryRequest, live: boolean): void {
     throw new Error(
       "Choose a valid log group and at most 100 streams per group",
     );
-  if (request.kind === "insights" && !request.query.trim())
-    throw new Error("Enter a CloudWatch Logs Insights query");
   const scoped = scopedQueries(request);
-  if (scoped.length > 1 && (live || request.kind === "insights"))
+  if (scoped.length > 1 && live)
     throw new Error(
-      "Live Tail and Insights require sources from one connection and region. Use Events for a combined cross-region view.",
+      "Live Tail requires sources from one connection and region. Use Events for a combined cross-region view.",
     );
   if (live && request.cursor)
     throw new Error("Live monitoring cannot use a historical continuation");
@@ -110,7 +110,7 @@ export function createLogService(
 ) {
   const adapters = new Map<string, LogAdapter>();
   const jobs = new Map<string, Job>();
-  // A failed StopQuery remains relevant after its local job is removed.
+  // Cleanup failures remain relevant after their local jobs are removed.
   const cleanupFailures = new Map<string, Error>();
   let additionalCleanupFailures = 0;
   const cache = new Map<string, MetadataCache>();
@@ -212,7 +212,7 @@ export function createLogService(
           ...(job.cleanupError ? { error: job.cleanupError } : {}),
         });
         // The source/tab may already be gone, so its update is not sufficient
-        // to report a failed server-side stop to the cancellation caller.
+        // to report failed cleanup to the cancellation caller.
         if (job.cleanupError) {
           const failure = new Error(job.cleanupError);
           if (cleanupFailures.size < 32 || cleanupFailures.has(requestId))
@@ -283,8 +283,6 @@ export function createLogService(
             });
           if (live)
             await adapter.live(query, job.controller.signal, scopedUpdate);
-          else if (input.kind === "insights")
-            await adapter.insights(query, job.controller.signal, scopedUpdate);
           else scopedUpdate(await adapter.events(query, job.controller.signal));
         }
         if (!job.terminal)
@@ -364,13 +362,13 @@ export function createLogService(
         if (additionalCleanupFailures)
           failures.push(
             new Error(
-              `${additionalCleanupFailures} additional server query cleanup failures occurred in this session; their server queries may still be running.`,
+              `${additionalCleanupFailures} additional operation cleanup failures occurred in this session.`,
             ),
           );
         for (const result of cancellations)
           if (result.status === "rejected" && !failures.includes(result.reason))
             failures.push(result.reason);
-        // Release every connection even when an earlier stop/destruction failed.
+        // Release every connection even when earlier cleanup/destruction failed.
         for (const adapter of adapters.values()) {
           try {
             adapter.destroy();
@@ -384,7 +382,7 @@ export function createLogService(
         if (failures.length)
           throw new AggregateError(
             failures,
-            `Could not finish all log operation cleanup. Some server queries may still be running.\n${failures.map(errorMessage).join("\n")}`,
+            `Could not finish all log operation cleanup.\n${failures.map(errorMessage).join("\n")}`,
           );
       } finally {
         stopping = false;

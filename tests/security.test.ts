@@ -8,6 +8,21 @@ import {
 } from "../src/main/security";
 
 describe("desktop trust boundary", () => {
+  it("preserves quick highlight modes and bounded field widths through workspace validation", () => {
+    const workspace = createWorkspace();
+    const settings = {
+      highlightRegex: true,
+      highlightCaseSensitive: true,
+      localSearchWidth: 460,
+      highlightTextWidth: 380,
+    };
+    Object.assign(workspace.tabs[0].view, settings);
+    expect(workspaceSchema.parse(workspace).tabs[0].view).toMatchObject(
+      settings,
+    );
+    workspace.tabs[0].view.localSearchWidth = 3000;
+    expect(workspaceSchema.safeParse(workspace).success).toBe(false);
+  });
   it("preserves bounded highlight profiles while rejecting CSS-shaped colors", () => {
     const workspace = createWorkspace();
     workspace.preferences.highlightProfiles = [

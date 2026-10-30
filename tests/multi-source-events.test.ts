@@ -37,7 +37,6 @@ const adapter = (events: LogAdapter["events"]): LogAdapter => ({
   listGroups: vi.fn(),
   listStreams: vi.fn(),
   live: vi.fn(),
-  insights: vi.fn(),
   destroy: vi.fn(),
 });
 
@@ -265,7 +264,7 @@ it("bounds child page reads and continues a long one-event-per-page query withou
   expect(new Set(events.map((event) => event.id)).size).toBe(600);
 });
 
-it("rejects missing regions, cross-region aggregates and disabled AWS before constructing adapters", async () => {
+it("rejects missing connections, legacy queries, cross-region Live and disabled AWS before constructing adapters", async () => {
   const factory = vi.fn(() => adapter(vi.fn()));
   const service = createLogService(() => {}, {
     allowAws: () => false,
@@ -276,7 +275,7 @@ it("rejects missing regions, cross-region aggregates and disabled AWS before con
     /no longer exists/,
   );
   await expect(service.query(request({ kind: "insights" }))).rejects.toThrow(
-    /one connection and region/,
+    /only Events/i,
   );
   await expect(service.live(request())).rejects.toThrow(
     /one connection and region/,

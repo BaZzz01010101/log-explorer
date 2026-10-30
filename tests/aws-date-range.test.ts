@@ -3,11 +3,7 @@ import {
   createAwsAdapter,
   type CloudWatchCommand,
 } from "../src/main/aws-adapter";
-import type {
-  Connection,
-  QueryRequest,
-  QueryUpdate,
-} from "../src/shared/contracts";
+import type { Connection, QueryRequest } from "../src/shared/contracts";
 
 const connection: Connection = {
   id: "injected",
@@ -89,24 +85,4 @@ it("stops scanning empty pages promptly when cancelled", async () => {
     adapter.events(request, controller.signal),
   ).rejects.toMatchObject({ name: "AbortError" });
   expect(count).toBe(2);
-});
-it("maps a millisecond date range to epoch seconds only at the Insights SDK boundary", async () => {
-  const commands: CloudWatchCommand[] = [];
-  const updates: QueryUpdate[] = [];
-  const adapter = adapterFor(async (command) => {
-    commands.push(command);
-    return command.constructor.name === "StartQueryCommand"
-      ? { queryId: "injected" }
-      : { status: "Complete", results: [] };
-  });
-  await adapter.insights(
-    { ...request, kind: "insights" },
-    new AbortController().signal,
-    (update) => updates.push(update),
-  );
-  expect(commands[0].input).toMatchObject({
-    startTime: Math.floor(request.startTime / 1000),
-    endTime: Math.ceil(request.endTime / 1000),
-  });
-  expect(updates[0].state).toBe("complete");
 });

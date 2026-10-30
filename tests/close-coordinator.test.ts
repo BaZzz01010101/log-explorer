@@ -77,7 +77,7 @@ it("quits directly on Windows when the last native window is closed", async () =
 it("keeps the app open without an unhandled rejection if server cleanup fails", async () => {
   const hooks = callbacks({
     shutdown: async () => {
-      throw new Error("Insights server query may still be running");
+      throw new Error("Operation cleanup failed");
     },
   });
   await expect(
@@ -88,7 +88,7 @@ it("keeps the app open without an unhandled rejection if server cleanup fails", 
 });
 
 it("requires an explicit decision to close after failed server cleanup and can be retried", async () => {
-  const failure = new Error("Insights server query may still be running");
+  const failure = new Error("Operation cleanup failed");
   const confirmShutdownFailure = vi
     .fn()
     .mockResolvedValueOnce(false)

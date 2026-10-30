@@ -475,14 +475,14 @@ describe("legacy local grammar parity", () => {
     );
   });
 
-  it("marks metadata matches only in their metadata target", () => {
+  it("does not match hidden metadata for message text searches", () => {
     expect(
       evidence(
         "ordinary message",
         "production stream-one",
         "local",
       ).matches.map((match) => match.path),
-    ).toEqual(["@logGroup", "@logStream"]);
+    ).toEqual([]);
     expect(
       evidence("ordinary message", "production stream-one", "local").paths,
     ).toEqual([]);

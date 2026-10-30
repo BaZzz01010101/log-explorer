@@ -270,11 +270,6 @@ export function TimeRangePicker({
               type="button"
               aria-label="Time range"
               aria-pressed={customSelected}
-              data-tooltip={
-                tab.timePreset === "clear"
-                  ? "All available history through now"
-                  : label
-              }
               variant={customSelected ? "light" : "default"}
               size="xs"
               className="time-range-trigger"

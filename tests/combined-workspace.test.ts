@@ -251,16 +251,24 @@ describe("combined split workspace entries", () => {
     const split = workspaceEntries(state).find(
       (entry) => entry.kind === "split",
     )!;
+    state = workspaceReducer(state, {
+      type: "tab/rename",
+      tabId: split.id,
+      title: "Incident review",
+    });
     state = workspaceReducer(state, { type: "tab/duplicate", tabId: split.id });
     const entries = workspaceEntries(state);
     const originalIndex = entries.findIndex((entry) => entry.id === split.id);
     const duplicate = entries[originalIndex + 1];
     expect(duplicate.kind).toBe("split");
+    expect(duplicate.title).toBe("Incident review");
     expect(duplicate.tabIds.every((id) => !split.tabIds.includes(id))).toBe(
       true,
     );
     const original = state.tabs.find((tab) => tab.id === split.tabIds[0])!;
     const copied = state.tabs.find((tab) => tab.id === duplicate.tabIds[0])!;
+    expect(copied.title).toBe(original.title);
+    expect(copied.customTitle).toBe(original.customTitle);
     expect(copied.sources).toEqual(original.sources);
     expect(copied.sources).not.toBe(original.sources);
     copied.view.columns[0].width = 999;
@@ -286,7 +294,7 @@ describe("combined split workspace entries", () => {
     );
     state = workspaceReducer(state, { type: "tab/duplicate", tabId: id });
     expect(workspaceEntries(state)[1].id).toBe(state.activeTabId);
-    expect(workspaceEntries(state)[1].title).toContain("Payment investigation");
+    expect(workspaceEntries(state)[1].title).toBe("Payment investigation");
     valid(state);
   });
 

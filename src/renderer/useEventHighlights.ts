@@ -1,10 +1,12 @@
 import { createContext, useEffect, useMemo, useRef, useState } from "react";
 import type { ColumnConfig, LogEvent, Preferences } from "../shared/contracts";
-import type { EventHighlights } from "./highlight-engine";
+import type { EventHighlights, HighlightFilters } from "./highlight-engine";
+import type { QuickHighlightOptions } from "../shared/quick-highlight";
 
 export const EventHighlightContext = createContext<EventHighlights | undefined>(
   undefined,
 );
+export const QuickHighlightContext = createContext<QuickHighlightOptions>({});
 const sameHighlightEvent = (left?: LogEvent, right?: LogEvent) =>
   left === right ||
   Boolean(
@@ -25,17 +27,27 @@ export function useEventHighlights(
   options?: {
     overview?: boolean;
     needle?: string;
+    quick?: QuickHighlightOptions;
     priority?: string[];
-    filters?: { server: string; local: string };
+    filters?: HighlightFilters;
   },
 ) {
   const overview = options?.overview ?? false;
   const needle = options?.needle ?? "";
+  const quick: QuickHighlightOptions = {
+    regex: Boolean(options?.quick?.regex),
+    caseSensitive: Boolean(options?.quick?.caseSensitive),
+  };
   const filters = options?.filters;
   const profiles = preferences.highlightProfiles ?? [];
   const active =
     (needle.length > 0 && needle.length <= 200) ||
-    Boolean(filters?.server.trim() || filters?.local.trim()) ||
+    Boolean(
+      filters?.server.trim() ||
+      (filters?.localOptions?.regex
+        ? filters.local.length
+        : filters?.local.trim()),
+    ) ||
     profiles.some(
       (profile) =>
         profile.enabled &&
@@ -60,8 +72,12 @@ export function useEventHighlights(
     preferences.theme,
     overview,
     needle,
+    quick.regex,
+    quick.caseSensitive,
     filters?.server ?? "",
     filters?.local ?? "",
+    Boolean(filters?.localOptions?.regex),
+    Boolean(filters?.localOptions?.caseSensitive),
     preferences.timezone,
     columns.map(({ path, format, hidden }) => ({ path, format, hidden })),
   ]);
@@ -165,6 +181,7 @@ export function useEventHighlights(
         timezone: preferences.timezone,
         overview,
         needle,
+        quick,
         filters,
       });
     };
@@ -231,6 +248,10 @@ export function useEventHighlights(
           ) +
           Object.entries(result.text).reduce(
             (sum, [key, spans]) => sum + key.length * 2 + spans.length * 96,
+            0,
+          ) +
+          Object.entries(result.manual ?? {}).reduce(
+            (sum, [key, spans]) => sum + key.length * 2 + spans.length * 24,
             0,
           );
         cache.set(id, { event, result, bytes: cost });

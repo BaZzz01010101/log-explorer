@@ -132,7 +132,7 @@ export function requestMatchesTab(
   connections: Connection[] = connection ? [connection] : [],
 ): boolean {
   if (
-    request.kind !== tab.kind ||
+    request.kind !== "events" ||
     sourceIdentity(request.connection.id, request.sources, [
       request.connection,
       ...(request.connections ?? []),
@@ -140,10 +140,8 @@ export function requestMatchesTab(
   )
     return false;
   if (
-    tab.kind === "events"
-      ? request.filterPattern !==
-        compileServerFilter(tab.filterPattern, tab.filterMode)
-      : request.query !== tab.query
+    request.filterPattern !==
+    compileServerFilter(tab.filterPattern, tab.filterMode)
   )
     return false;
   try {

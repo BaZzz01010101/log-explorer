@@ -13,6 +13,8 @@ interface Props {
   initialHeight?: number;
   height?: number | null;
   eventId?: string;
+  autoFitRequest?: number;
+  onAutoFitApplied?(): void;
   onHeightChange(height: number | undefined): void;
   onResizeStart?(): void;
 }
@@ -35,11 +37,14 @@ export function ExpandedEventDetails({
   initialHeight,
   height: controlledHeight,
   eventId,
+  autoFitRequest,
+  onAutoFitApplied,
   onHeightChange,
   onResizeStart,
 }: Props) {
   const content = useRef<HTMLDivElement>(null);
   const session = useRef<ResizeSession | null>(null);
+  const manualRevision = useRef(0);
   const [height, setHeight] = useState(initialHeight);
   const [draft, setDraft] = useState<number | undefined>();
   const commit = useRef(onHeightChange);
@@ -65,6 +70,32 @@ export function ExpandedEventDetails({
     }
   }, []);
   useEffect(() => () => finish(false, false), [finish]);
+  useEffect(() => {
+    if (autoFitRequest === undefined || !content.current) return;
+    const win = content.current.ownerDocument?.defaultView;
+    if (!win?.requestAnimationFrame) return;
+    const revision = manualRevision.current;
+    let frame = win.requestAnimationFrame(() => {
+      frame = win.requestAnimationFrame(() => {
+        const element = content.current;
+        if (!element || manualRevision.current !== revision) return;
+        const row = element.closest<HTMLElement>(".virtual-event");
+        const viewport = element.closest<HTMLElement>(".viewer-scroll");
+        const otherHeight = row
+          ? row.getBoundingClientRect().height -
+            element.getBoundingClientRect().height
+          : 60;
+        const available = viewport
+          ? viewport.clientHeight - otherHeight - 12
+          : maximumHeight;
+        const next = clamp(Math.min(element.scrollHeight, available));
+        setHeight(next);
+        commit.current(next);
+        onAutoFitApplied?.();
+      });
+    });
+    return () => win.cancelAnimationFrame(frame);
+  }, [autoFitRequest]);
   const move = (event: PointerEvent<HTMLDivElement>) => {
     const active = session.current;
     if (!active || event.pointerId !== active.pointerId) return;
@@ -74,6 +105,7 @@ export function ExpandedEventDetails({
     setDraft(active.latest);
   };
   const reset = () => {
+    manualRevision.current++;
     finish(false);
     setHeight(undefined);
     commit.current(undefined);
@@ -105,6 +137,7 @@ export function ExpandedEventDetails({
         draggable={false}
         onPointerDown={(event) => {
           if (event.button !== 0 || session.current) return;
+          manualRevision.current++;
           onResizeStart?.();
           event.preventDefault();
           event.stopPropagation();
@@ -168,6 +201,7 @@ export function ExpandedEventDetails({
         onKeyDown={(event) => {
           if (!["ArrowUp", "ArrowDown", "Home", "End"].includes(event.key))
             return;
+          manualRevision.current++;
           onResizeStart?.();
           event.preventDefault();
           event.stopPropagation();

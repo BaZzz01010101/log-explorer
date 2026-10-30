@@ -1,6 +1,7 @@
 import { useId, useRef, useState } from "react";
 import { TextInput } from "@mantine/core";
 import { IconX } from "@tabler/icons-react";
+import { clearEditControl } from "../scoped-edit-history";
 import { Menu } from "./AppMenu";
 import {
   compileServerFilter,
@@ -16,6 +17,7 @@ const labels = { plain: "Plain Text", pattern: "AWS Patterns", auto: "Auto" };
 export function ServerFilterInput({
   value,
   mode = "pattern",
+  historyKey,
   onChange,
   onModeChange,
   onRun,
@@ -23,6 +25,7 @@ export function ServerFilterInput({
 }: {
   value: string;
   mode?: ServerFilterMode;
+  historyKey?: string;
   onChange(value: string): void;
   onModeChange(mode: ServerFilterMode): void;
   onRun(): void;
@@ -71,6 +74,7 @@ export function ServerFilterInput({
         <TextInput
           ref={input}
           aria-label="CloudWatch filter pattern"
+          data-edit-history-key={historyKey}
           role="combobox"
           aria-haspopup="listbox"
           aria-autocomplete="list"
@@ -114,7 +118,14 @@ export function ServerFilterInput({
                   suggestions.length) %
                   suggestions.length,
               );
-            } else if (suggestions.length && event.key === "Tab") {
+            } else if (
+              suggestions.length &&
+              event.key === "Tab" &&
+              !event.ctrlKey &&
+              !event.metaKey &&
+              !event.altKey &&
+              !event.shiftKey
+            ) {
               event.preventDefault();
               accept(choice);
             } else if (event.key === "Escape") {
@@ -171,6 +182,7 @@ export function ServerFilterInput({
                 data-tooltip="Clear server filter and run query"
                 onMouseDown={(event) => event.preventDefault()}
                 onClick={() => {
+                  clearEditControl(input.current);
                   setDismissed(true);
                   setCaret(0);
                   setSelected(0);

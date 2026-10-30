@@ -695,10 +695,7 @@ afterEach(async () => {
 });
 
 describe("query operation ownership", () => {
-  it.each([
-    { kind: "insights" as const, expected: [3, 2, 1] },
-    { kind: "events" as const, expected: [1, 2, 3] },
-  ])(
+  it.each([{ kind: "events" as const, expected: [1, 2, 3] }])(
     "preserves the appropriate ordering for $kind replacement snapshots",
     async ({ kind, expected }) => {
       workspace.tabs[0]!.kind = kind;
@@ -1077,7 +1074,7 @@ describe("source and connection ownership", () => {
 });
 
 describe("runtime event buffer preferences", () => {
-  it.each(["events", "insights"] as const)(
+  it.each(["events"] as const)(
     "immediately trims loaded %s rows when the buffer limit is lowered without querying again",
     async (kind) => {
       workspace = {
@@ -1171,123 +1168,6 @@ describe("retired request cleanup failures", () => {
       expect(requests).toHaveLength(action === "source change" ? 2 : 1);
     },
   );
-});
-
-describe("automatic query mode updates", () => {
-  it("runs the selected mode once with its fields, while text edits remain manual", async () => {
-    workspace.tabs[0]!.filterPattern = "events-only";
-    workspace.tabs[0]!.query = "fields @message | limit 7";
-    await mount();
-    const first = requests[0]!;
-    await replaceWorkspace({
-      ...workspace,
-      tabs: [{ ...workspace.tabs[0]!, kind: "insights" }],
-    });
-    expect(requests).toHaveLength(2);
-    expect(cancellations).toContain(first.requestId);
-    expect(requests[1]).toMatchObject({
-      kind: "insights",
-      query: "fields @message | limit 7",
-      filterPattern: "",
-    });
-    await emit({
-      requestId: first.requestId,
-      state: "complete",
-      events: [logEvent],
-    });
-    expect(jobs.runtimes[workspace.tabs[0]!.id]!.events).toEqual([]);
-    await replaceWorkspace({
-      ...workspace,
-      tabs: [{ ...workspace.tabs[0]!, query: "fields @message | limit 2" }],
-    });
-    expect(requests).toHaveLength(2);
-    await act(async () => {
-      await jobs.run(workspace.tabs[0]!);
-    });
-    expect(requests[2]!.query).toBe("fields @message | limit 2");
-    await replaceWorkspace({
-      ...workspace,
-      tabs: [{ ...workspace.tabs[0]!, kind: "events" }],
-    });
-    expect(requests).toHaveLength(4);
-    expect(requests[3]).toMatchObject({
-      kind: "events",
-      filterPattern: '"events-only"',
-      query: "",
-    });
-    await replaceWorkspace({ ...workspace, tabs: [...workspace.tabs] });
-    expect(requests).toHaveLength(4);
-  });
-
-  it("coalesces simultaneous mode, source and time changes into one request", async () => {
-    vi.useFakeTimers();
-    await mount();
-    await replaceWorkspace({
-      ...workspace,
-      tabs: [
-        {
-          ...workspace.tabs[0]!,
-          kind: "insights",
-          sources: [{ logGroup: "/new" }],
-          timePreset: "30m",
-        },
-      ],
-    });
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(500);
-    });
-    expect(requests).toHaveLength(2);
-    expect(requests[1]).toMatchObject({
-      kind: "insights",
-      sources: [{ logGroup: "/new" }],
-    });
-    expect(requests[1]!.endTime - requests[1]!.startTime).toBe(30 * 60000);
-  });
-
-  it("retires live updates and a delayed mode acknowledgement when a newer mode takes ownership", async () => {
-    await mount();
-    await act(async () => {
-      await jobs.run(workspace.tabs[0]!, true);
-    });
-    const live = liveRequests[0]!;
-    const pending = deferred();
-    const acknowledgement = deferred();
-    queryHandler = (request) =>
-      request.kind === "insights" ? acknowledgement.promise : Promise.resolve();
-    cancelHandler = (id) =>
-      id === live.requestId ? pending.promise : Promise.resolve();
-    await replaceWorkspace({
-      ...workspace,
-      tabs: [{ ...workspace.tabs[0]!, kind: "insights" }],
-    });
-    await emit({
-      requestId: live.requestId,
-      state: "running",
-      events: [logEvent],
-    });
-    expect(jobs.runtimes[workspace.tabs[0]!.id]!.events).toEqual([]);
-    await replaceWorkspace({
-      ...workspace,
-      tabs: [
-        { ...workspace.tabs[0]!, kind: "events", filterPattern: "latest" },
-      ],
-    });
-    await act(async () => {
-      pending.resolve();
-      acknowledgement.reject(new Error("Retired mode failed"));
-    });
-    expect(requests).toHaveLength(3);
-    expect(requests[2]).toMatchObject({
-      kind: "events",
-      filterPattern: '"latest"',
-    });
-    expect(cancellations).toContain(live.requestId);
-    expect(jobs.runtimes[workspace.tabs[0]!.id]!.live).toBe(false);
-    expect(jobs.runtimes[workspace.tabs[0]!.id]!.error).toBeUndefined();
-    expect(jobs.runtimes[workspace.tabs[0]!.id]!.request!.requestId).toBe(
-      requests[2]!.requestId,
-    );
-  });
 });
 
 describe("automatic date range updates", () => {

@@ -56,6 +56,7 @@ function Probe({
   theme = "dark",
   filters,
   needle,
+  quick,
 }: {
   enabled?: boolean;
   overview?: boolean;
@@ -64,8 +65,13 @@ function Probe({
   priority?: string[];
   message?: string;
   theme?: "light" | "dark";
-  filters?: { server: string; local: string };
+  filters?: {
+    server: string;
+    local: string;
+    localOptions?: { regex?: boolean; caseSensitive?: boolean };
+  };
   needle?: string;
+  quick?: { regex?: boolean; caseSensitive?: boolean };
 }) {
   result = useEventHighlights(
     Array.from({ length: count }, (_, index) => ({
@@ -79,7 +85,13 @@ function Probe({
       theme,
     },
     [],
-    { overview, needle: needle ?? (overview ? "aaa" : ""), priority, filters },
+    {
+      overview,
+      needle: needle ?? (overview ? "aaa" : ""),
+      priority,
+      filters,
+      quick,
+    },
   );
   return null;
 }
@@ -96,6 +108,108 @@ beforeEach(() => {
 });
 
 const emptyResult = () => ({ row: {}, text: {} });
+it("invalidates filter evidence when local regex or case options change", async () => {
+  const filters = { server: "", local: "aa" };
+  await act(async () => {
+    renderer = create(<Probe enabled={false} filters={filters} />);
+  });
+  const original = workers[0];
+  await finishBatch(original, 0);
+  await act(async () =>
+    renderer.update(
+      <Probe
+        enabled={false}
+        filters={{ ...filters, localOptions: { regex: true } }}
+      />,
+    ),
+  );
+  expect(original.terminate).toHaveBeenCalledOnce();
+  expect(result.results.size).toBe(0);
+  expect(workers[1].postMessage.mock.calls[0][0].filters.localOptions).toEqual({
+    regex: true,
+  });
+  await finishBatch(workers[1], 0);
+  await act(async () =>
+    renderer.update(
+      <Probe
+        enabled={false}
+        filters={{
+          ...filters,
+          localOptions: { regex: true, caseSensitive: true },
+        }}
+      />,
+    ),
+  );
+  expect(workers[1].terminate).toHaveBeenCalledOnce();
+  expect(result.results.size).toBe(0);
+  expect(workers[2].postMessage.mock.calls[0][0].filters.localOptions).toEqual({
+    regex: true,
+    caseSensitive: true,
+  });
+});
+it("passes quick options to the worker and invalidates cached matches when either option changes", async () => {
+  await act(async () => {
+    renderer = create(<Probe enabled={false} needle="a+" />);
+  });
+  const original = workers[0];
+  await finishBatch(original, 0);
+  expect(result.results.has("one")).toBe(true);
+  await act(async () =>
+    renderer.update(
+      <Probe enabled={false} needle="a+" quick={{ regex: true }} />,
+    ),
+  );
+  expect(original.terminate).toHaveBeenCalledOnce();
+  expect(result.results.size).toBe(0);
+  expect(workers[1].postMessage.mock.calls[0][0].quick).toEqual({
+    regex: true,
+    caseSensitive: false,
+  });
+  await finishBatch(workers[1], 0);
+  await act(async () =>
+    renderer.update(
+      <Probe
+        enabled={false}
+        needle="a+"
+        quick={{ regex: true, caseSensitive: true }}
+      />,
+    ),
+  );
+  expect(workers[1].terminate).toHaveBeenCalledOnce();
+  expect(result.results.size).toBe(0);
+  expect(workers[2].postMessage.mock.calls[0][0].quick).toEqual({
+    regex: true,
+    caseSensitive: true,
+  });
+});
+
+it("counts quick highlight spans toward the worker result cache limit", async () => {
+  await act(async () => {
+    renderer = create(
+      <Probe enabled={false} needle="a+" quick={{ regex: true }} />,
+    );
+  });
+  const worker = workers[0];
+  await act(async () =>
+    worker.send({
+      batch: [
+        {
+          id: "one",
+          result: {
+            row: {},
+            text: {},
+            manual: { ["x".repeat(17 * 1024 * 1024)]: [{ start: 0, end: 1 }] },
+          },
+        },
+      ],
+      done: true,
+    }),
+  );
+  expect(worker.terminate).toHaveBeenCalledOnce();
+  expect(result.error).toContain("cache limit");
+  expect(result.results.size).toBe(0);
+});
+
 it("runs filter-only sessions, sends executed queries and rejects stale configuration results", async () => {
   const filters = { server: '"aaa"', local: "aa" };
   await act(async () => {

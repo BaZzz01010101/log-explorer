@@ -4,6 +4,7 @@ import { Button, Group, Modal, Text, TextInput } from "@mantine/core";
 import { Menu } from "./AppMenu";
 import { IconLayoutColumns, IconStar, IconTrash } from "@tabler/icons-react";
 import type { ViewFavorite } from "../../shared/contracts";
+import { favoriteTooltip } from "../favorite-tooltip";
 import "./view-favorites.css";
 
 function FavoriteItem({
@@ -23,6 +24,11 @@ function FavoriteItem({
 }) {
   const [renaming, setRenaming] = useState(false);
   const [name, setName] = useState(favorite.title);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const requestDelete = () => {
+    setConfirmingDelete(true);
+    onMenuChange(false);
+  };
   return (
     <>
       <Menu
@@ -34,69 +40,111 @@ function FavoriteItem({
         withinPortal
       >
         <Menu.ContextMenu>
-          <button
-            className="quick-resource saved-view-favorite"
-            onClick={() => onOpen?.(favorite.id)}
-            onKeyDown={(event) => {
-              if (
-                event.key === "ContextMenu" ||
-                (event.shiftKey && event.key === "F10")
-              ) {
-                event.preventDefault();
-                event.stopPropagation();
-                const rect = event.currentTarget.getBoundingClientRect();
-                event.currentTarget.dispatchEvent(
-                  new MouseEvent("contextmenu", {
-                    bubbles: true,
-                    cancelable: true,
-                    // Keep the virtual anchor inside the scroll-clipped row.
-                    clientX: rect.left + 8,
-                    clientY: rect.top + rect.height / 2,
-                  }),
-                );
-              }
-            }}
-            aria-label={favorite.title}
-            aria-description={
-              favorite.split ? "Saved split view" : "Saved view"
-            }
+          <div
+            className={`saved-view-favorite-row${confirmingDelete ? " is-confirming-delete" : ""}`}
             data-favorite-id={favorite.id}
-            data-tooltip={
-              opened
-                ? undefined
-                : favorite.tabs
-                    .flatMap((tab) =>
-                      tab.sources.map((source) => source.logGroup),
-                    )
-                    .join("\n")
-            }
+            data-confirming-delete={confirmingDelete || undefined}
           >
-            {favorite.split ? (
-              <IconLayoutColumns size={14} />
+            <button
+              type="button"
+              className="quick-resource saved-view-favorite"
+              onClick={() => onOpen?.(favorite.id)}
+              onKeyDown={(event) => {
+                if (
+                  event.key === "ContextMenu" ||
+                  (event.shiftKey && event.key === "F10")
+                ) {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  const rect = event.currentTarget.getBoundingClientRect();
+                  event.currentTarget.dispatchEvent(
+                    new MouseEvent("contextmenu", {
+                      bubbles: true,
+                      cancelable: true,
+                      // Keep the virtual anchor inside the scroll-clipped row.
+                      clientX: rect.left + 8,
+                      clientY: rect.top + rect.height / 2,
+                    }),
+                  );
+                }
+              }}
+              aria-label={favorite.title}
+              aria-description={
+                favorite.split ? "Saved split view" : "Saved view"
+              }
+              data-tooltip={
+                opened || confirmingDelete
+                  ? undefined
+                  : favoriteTooltip(favorite)
+              }
+            >
+              {favorite.split ? (
+                <IconLayoutColumns size={14} />
+              ) : (
+                <IconStar size={14} />
+              )}
+              <span>{favorite.title}</span>
+            </button>
+            {confirmingDelete ? (
+              <div
+                className="favorite-delete-confirmation"
+                role="group"
+                aria-label={`Delete favorite ${favorite.title}`}
+                onPointerDown={(event) => event.stopPropagation()}
+              >
+                <button
+                  type="button"
+                  className="favorite-confirm-delete"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    setConfirmingDelete(false);
+                    onRemove?.(favorite.id);
+                  }}
+                >
+                  Delete
+                </button>
+                <button
+                  type="button"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    setConfirmingDelete(false);
+                  }}
+                >
+                  Cancel
+                </button>
+              </div>
             ) : (
-              <IconStar size={14} />
+              <button
+                type="button"
+                className="favorite-delete-trigger"
+                aria-label={`Delete favorite ${favorite.title}`}
+                onPointerDown={(event) => event.stopPropagation()}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  requestDelete();
+                }}
+              >
+                <IconTrash size={14} />
+              </button>
             )}
-            <span>{favorite.title}</span>
-          </button>
+          </div>
         </Menu.ContextMenu>
         <Menu.Dropdown>
-          <Menu.Item onClick={() => onOpen?.(favorite.id)}>
-            Open saved view
-          </Menu.Item>
+          <Menu.Item onClick={() => onOpen?.(favorite.id)}>Open</Menu.Item>
           <Menu.Item
             onClick={() => {
               setName(favorite.title);
               setRenaming(true);
             }}
           >
-            Rename favorite
+            Rename
           </Menu.Item>
           <Menu.Item
             color="red"
             leftSection={<IconTrash size={14} />}
-            onClick={() => onRemove?.(favorite.id)}
+            onClick={requestDelete}
           >
-            Remove favorite
+            Delete
           </Menu.Item>
         </Menu.Dropdown>
       </Menu>

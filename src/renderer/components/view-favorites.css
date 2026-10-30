@@ -18,17 +18,38 @@
 .favorite-views-empty {
   padding: 3px 0;
 }
-.saved-view-favorite {
-  width: 100%;
+.saved-view-favorite-row {
+  --favorite-hover-bg: #dbe4ff;
+  --favorite-confirm-bg: #ffe3e3;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: inherit;
+  border-radius: 4px;
+  min-height: 30px;
+  padding: 1px 4px;
+}
+[data-mantine-color-scheme="dark"] .saved-view-favorite-row {
+  --favorite-hover-bg: #253b57;
+  --favorite-confirm-bg: #472d38;
+}
+.saved-view-favorite-row:hover,
+.saved-view-favorite-row:focus-within,
+.saved-view-favorite-row[data-expanded] {
+  background: var(--favorite-hover-bg);
+  color: var(--mantine-color-text);
+}
+.saved-view-favorite-row.is-confirming-delete {
+  background: var(--favorite-confirm-bg);
+  color: var(--mantine-color-text);
+}
+.saved-view-favorite-row .saved-view-favorite {
+  flex: 1;
+  width: auto;
+  min-width: 0;
   text-align: left;
   color: inherit;
-}
-.saved-view-favorite:hover,
-.saved-view-favorite:focus-visible,
-.saved-view-favorite[data-expanded] {
-  background: var(--mantine-color-default-hover);
-  color: var(--mantine-color-text);
-  border-radius: 4px;
+  background: transparent;
 }
 .saved-view-favorite svg {
   flex-shrink: 0;
@@ -38,4 +59,62 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+.favorite-delete-trigger {
+  flex-shrink: 0;
+  border: 0;
+  border-radius: 3px;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  font-size: 11px;
+  padding: 3px;
+}
+.favorite-delete-confirmation button {
+  flex-shrink: 0;
+  min-height: 24px;
+  min-width: 48px;
+  padding: 2px 7px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--surface-alt);
+  color: var(--mantine-color-text);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+.favorite-delete-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  pointer-events: none;
+}
+.saved-view-favorite-row:hover .favorite-delete-trigger,
+.saved-view-favorite-row:focus-within .favorite-delete-trigger {
+  opacity: 1;
+  pointer-events: auto;
+}
+.favorite-delete-trigger:hover,
+.favorite-delete-confirmation button:hover {
+  background: var(--favorite-hover-bg);
+}
+.favorite-delete-trigger {
+  color: var(--mantine-color-red-text);
+}
+.favorite-delete-confirmation .favorite-confirm-delete {
+  background: var(--mantine-color-red-9);
+  border-color: var(--mantine-color-red-9);
+  color: #fff;
+}
+.favorite-delete-confirmation .favorite-confirm-delete:hover {
+  background: var(--mantine-color-red-8);
+}
+.favorite-delete-confirmation {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  padding-right: 2px;
 }

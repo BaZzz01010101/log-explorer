@@ -3,6 +3,7 @@ import {
   createContext,
   useContext,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -14,7 +15,10 @@ import {
   matchColors,
   type MatchOrigin,
 } from "../filter-highlight-spans";
-import { EventHighlightContext } from "../useEventHighlights";
+import {
+  EventHighlightContext,
+  QuickHighlightContext,
+} from "../useEventHighlights";
 import { textHighlightKey } from "../highlight-engine";
 import {
   IconChevronDown,
@@ -50,6 +54,10 @@ export const JsonTreeExpansionContext = createContext<{
   expanded: ReadonlyMap<string, Set<string>>;
   onChange(eventId: string, update: SetStateAction<Set<string>>): void;
 } | null>(null);
+export interface JsonExpansionState {
+  expanded: Set<string>;
+  onChange(update: SetStateAction<Set<string>>): void;
+}
 
 export const HighlightText = memo(function HighlightText({
   text,
@@ -61,12 +69,14 @@ export const HighlightText = memo(function HighlightText({
   path?: string;
 }) {
   const profile = useContext(EventHighlightContext);
+  const quick = useContext(QuickHighlightContext);
   const spans = profile?.text[textHighlightKey(path, text)] ?? [];
   const filters = filterHighlightSpans(profile?.filters, path, text);
-  const manual: { start: number; end: number }[] = [];
-  if (needle && needle.length <= 200) {
-    const lower = text.toLowerCase(),
-      query = needle.toLowerCase();
+  const fromWorker = profile?.manual?.[textHighlightKey(path, text)];
+  const manual: { start: number; end: number }[] = fromWorker ?? [];
+  if (!fromWorker && !quick.regex && needle && needle.length <= 200) {
+    const lower = quick.caseSensitive ? text : text.toLowerCase(),
+      query = quick.caseSensitive ? needle : needle.toLowerCase();
     let cursor = 0;
     for (let count = 0; count < 30; count++) {
       const start = lower.indexOf(query, cursor);
@@ -184,19 +194,28 @@ function JsonFieldMenu({
         }}
       >
         {onCopyValue && (
-          <Menu.Item
-            aria-label={`Copy ${path || "root"} value`}
-            leftSection={<IconCopy size={14} />}
-            onClick={() =>
-              onCopyValue(
-                typeof value === "string"
-                  ? value
-                  : JSON.stringify(value, null, 2),
-              )
-            }
-          >
-            Copy value
-          </Menu.Item>
+          <>
+            <Menu.Item
+              aria-label={`Copy ${path || "root"} value`}
+              leftSection={<IconCopy size={14} />}
+              onClick={() =>
+                onCopyValue(
+                  typeof value === "string"
+                    ? value
+                    : JSON.stringify(value, null, 2),
+                )
+              }
+            >
+              Copy value
+            </Menu.Item>
+            <Menu.Item
+              aria-label={`Copy ${path || "root"} path`}
+              leftSection={<IconCopy size={14} />}
+              onClick={() => onCopyValue(path)}
+            >
+              Copy path
+            </Menu.Item>
+          </>
         )}
         {onAddColumn && (
           <Menu.Item
@@ -297,6 +316,9 @@ export function JsonTree({
   decodedLabels,
   autoExpandMatches = false,
   expansionKey,
+  expandRequest,
+  expansionState,
+  onExpansionApplied,
 }: {
   value: JsonValue;
   highlight: string;
@@ -312,6 +334,9 @@ export function JsonTree({
   decodedLabels?: ReadonlyMap<string, string>;
   autoExpandMatches?: boolean;
   expansionKey?: string;
+  expandRequest?: number;
+  expansionState?: JsonExpansionState;
+  onExpansionApplied?(): void;
 }) {
   const match = useContext(EventHighlightContext);
   const matchPaths = match?.paths ?? {};
@@ -322,14 +347,27 @@ export function JsonTree({
   const [privateExpanded, setPrivateExpanded] = useState(() => new Set([""]));
   const sharedExpansion = useContext(JsonTreeExpansionContext);
   const expanded =
-    expansionKey === undefined
-      ? privateExpanded
-      : (sharedExpansion?.expanded.get(expansionKey) ?? privateExpanded);
+    (expansionKey === undefined
+      ? undefined
+      : sharedExpansion?.expanded.get(expansionKey)) ??
+    expansionState?.expanded ??
+    privateExpanded;
   const setExpanded =
     sharedExpansion && expansionKey !== undefined
       ? (update: SetStateAction<Set<string>>) =>
           sharedExpansion.onChange(expansionKey, update)
-      : setPrivateExpanded;
+      : (expansionState?.onChange ?? setPrivateExpanded);
+  const appliedExpansion = useRef<number | undefined>(undefined);
+  useLayoutEffect(() => {
+    if (
+      expandRequest === undefined ||
+      appliedExpansion.current === expandRequest
+    )
+      return;
+    appliedExpansion.current = expandRequest;
+    setExpanded(objectExpansionPaths(value));
+    onExpansionApplied?.();
+  }, [expandRequest]);
   useEffect(() => {
     if (
       processedMatch.current?.paths === pathKey &&
@@ -500,7 +538,7 @@ export function JsonTree({
                 }
               />
             )}
-            <span className="json-key" data-tooltip={row.path || "Root"}>
+            <span className="json-key">
               <HighlightText
                 text={row.label === "$" ? "$" : JSON.stringify(row.label)}
                 needle={highlight}
@@ -568,6 +606,9 @@ export function MessageContent({
   deserializedPaths,
   decodedLabels,
   autoExpandMatches = false,
+  expandRequest,
+  expansionState,
+  onExpansionApplied,
 }: {
   row: EventRow;
   highlight: string;
@@ -582,6 +623,9 @@ export function MessageContent({
   deserializedPaths?: ReadonlySet<string>;
   decodedLabels?: ReadonlyMap<string, string>;
   autoExpandMatches?: boolean;
+  expandRequest?: number;
+  expansionState?: JsonExpansionState;
+  onExpansionApplied?(): void;
 }) {
   if (row.parsed.kind === "json")
     return (
@@ -600,6 +644,9 @@ export function MessageContent({
         deserializedPaths={deserializedPaths}
         decodedLabels={decodedLabels}
         autoExpandMatches={autoExpandMatches}
+        expandRequest={expandRequest}
+        expansionState={expansionState}
+        onExpansionApplied={onExpansionApplied}
       />
     );
   const displayLimit = compact ? 6000 : 200_000;

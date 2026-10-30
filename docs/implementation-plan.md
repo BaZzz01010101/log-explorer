@@ -1,5 +1,46 @@
 # Implementation plan
 
+## Manual query mode switches and column visibility (0.1.60)
+
+Events/Insights selection must leave the new mode idle until explicit execution,
+while preserving drafts, undo and cancellation/ownership protections. Drop old
+sleeping Live intent and pending timers; retain source/date refreshes and manual
+Run ownership. Verify both themes and stage after natural app exit. See
+[behavior](manual-mode-switch-0.1.60.md).
+
+Replace column visibility checkboxes and duplicate right-side hide actions with
+one reversible eye toggle per row. Dim hidden names, preserve protected column
+definitions and custom deletion, and keep last-column feedback inside the editor.
+
+## Query cancellation race and Events undo (0.1.59)
+
+Confirm ended Insights queries after unsuccessful stopping without concealing
+genuine cleanup failures. Reuse the existing bounded cleanup client/deadline and
+stable edit-history mechanism for Events, preserving independent SQL history.
+Verify deterministic cancellation races, mode/tab switching and clear undo in
+hidden offline windows, then stage after natural exit. See
+[plan](superpowers/plans/2026-10-29-query-cancel-and-events-undo.md) and
+[behavior](query-cancel-and-undo-0.1.59.md).
+
+## Explorer details and search controls (0.1.58)
+
+Replace Recent sources and source hover popups with one collapsible current-source
+pane. Remove event-content tooltips; protect built-in columns in every editor;
+support directional row folding. Keep saved/recent searches beside Run, with
+deletion, editable suggested names and bounded configurable history. Preserve SQL
+undo across tab/mode remounts. Reuse existing mechanisms and verify hidden/offline;
+see [plan](superpowers/plans/2026-10-29-source-details-and-searches.md) and
+[behavior](source-details-and-searches-0.1.58.md).
+
+## Log view controls and map readability (0.1.57)
+
+Implement the row, JSON menu, field resizing, quick-highlight modes, map colors
+and clear/undo refinements using [the plan](superpowers/plans/2026-10-29-log-view-controls.md).
+Reuse bounded workers and existing expansion, resize and edit-history mechanisms.
+Preserve row paint while adapting map colors. Verify both themes in hidden offline
+windows and stage a checked package after natural app exit. See
+[behavior and evidence](log-view-controls-0.1.57.md).
+
 ## Stable closed-tab tooltips and shortened source names (0.1.56)
 
 Cancel obsolete tooltip timers and ignore unrelated control exits. Reuse the
@@ -346,3 +387,7 @@ Implement [the behavior and verification checklist](filter-highlights-0.1.33.md)
 - [x] Add a compact, clickable inspector message map based on rendered match positions, including folded markers and quick highlights; recalculate after folding, wrapping, decoding, resizing and theme changes.
 - [x] Make message content the only vertical scroll owner in the inspector. Keep navigation and controls fixed, with a collapsible metadata section whose state is validated and persisted per view.
 - [x] Reproduce on the prior build, run focused and full unit checks, validate hidden/offline native regressions, inspect captures, and package a hash-checked update without disturbing the normal app.
+
+## Events and tab navigation (0.1.61)
+
+Follow [the current behavior and verification checklist](events-and-tab-navigation-0.1.61.md): remove Insights, preserve legacy view configuration, fix local literal matching, align filter resize handles, simplify saved/recent searches, duplicate the active pane when splitting, and separate recent-tab navigation from visual-order navigation. Validate the final package hidden and offline, then use the existing natural-exit handoff.

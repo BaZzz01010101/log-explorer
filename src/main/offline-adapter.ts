@@ -125,122 +125,6 @@ function fixtureFilter(pattern: string): (event: LogEvent) => boolean {
   return (event) => words.every((word) => event.message.includes(word));
 }
 
-function field(event: LogEvent, name: string): unknown {
-  if (name === "@timestamp") return new Date(event.timestamp).toISOString();
-  if (name === "@message") return event.message;
-  if (name === "@logStream") return event.logStream;
-  if (name === "@log") return `000000000000:${event.logGroup}`;
-  if (name === "@ingestionTime")
-    return new Date(event.ingestionTime ?? event.timestamp).toISOString();
-  let value: unknown;
-  try {
-    value = JSON.parse(event.message);
-  } catch {
-    return undefined;
-  }
-  for (const part of name.split(".")) {
-    if (!value || typeof value !== "object" || !Object.hasOwn(value, part))
-      return undefined;
-    value = (value as Record<string, unknown>)[part];
-  }
-  return value;
-}
-
-function interpretInsights(
-  events: LogEvent[],
-  query: string,
-  limit: number,
-): LogEvent[] {
-  let rows = events;
-  let selected: string[] | undefined;
-  let aggregate: { alias: string; group?: string } | undefined;
-  const unsupported = () =>
-    new Error(
-      "Offline Insights supports fields, sort @timestamp asc/desc, limit, simple equality/literal message filters, and stats count(*) as name [by field]. Other CWLI commands require AWS.",
-    );
-  const stages = query.split("|").map((value) => value.trim());
-  if (stages.some((value) => !value)) throw unsupported();
-  for (const stage of stages) {
-    let match: RegExpMatchArray | null;
-    if (
-      (match = stage.match(
-        /^fields\s+([@A-Za-z_][@\w.]*(?:\s*,\s*[@A-Za-z_][@\w.]*)*)$/i,
-      ))
-    ) {
-      if (aggregate) throw unsupported();
-      selected = match[1].split(",").map((value) => value.trim());
-    } else if ((match = stage.match(/^sort\s+@timestamp\s+(asc|desc)$/i))) {
-      if (aggregate) throw unsupported();
-      rows = [...rows].sort((a, b) =>
-        match![1].toLowerCase() === "asc"
-          ? a.timestamp - b.timestamp
-          : b.timestamp - a.timestamp,
-      );
-    } else if ((match = stage.match(/^limit\s+(\d+)$/i))) {
-      const amount = Number(match[1]);
-      if (amount < 1 || amount > 10000 || aggregate) throw unsupported();
-      rows = rows.slice(0, amount);
-    } else if (
-      (match = stage.match(
-        /^filter\s+([@A-Za-z_][@\w.]*)\s*=\s*("(?:[^"\\]|\\.)*"|-?\d+(?:\.\d+)?|true|false|null)$/i,
-      ))
-    ) {
-      if (aggregate) throw unsupported();
-      const expected: unknown = JSON.parse(match[2]);
-      rows = rows.filter((event) => field(event, match![1]) === expected);
-    } else if (
-      (match = stage.match(
-        /^filter\s+@message\s+like\s+\/([^/\\^$.*+?()[\]{}|]+)\/$/i,
-      ))
-    ) {
-      if (aggregate) throw unsupported();
-      rows = rows.filter((event) => event.message.includes(match![1]));
-    } else if (
-      (match = stage.match(
-        /^stats\s+count\(\*\)\s+as\s+([A-Za-z_]\w*)(?:\s+by\s+([A-Za-z_][\w.]*))?$/i,
-      ))
-    ) {
-      if (aggregate) throw unsupported();
-      aggregate = { alias: match[1], group: match[2] };
-    } else throw unsupported();
-  }
-  if (aggregate) {
-    const buckets = new Map<string, { value: unknown; count: number }>();
-    for (const event of rows) {
-      const value = aggregate.group ? field(event, aggregate.group) : undefined;
-      const key = JSON.stringify(value) ?? "undefined";
-      const bucket = buckets.get(key) ?? { value, count: 0 };
-      bucket.count++;
-      buckets.set(key, bucket);
-    }
-    if (!aggregate.group && rows.length === 0)
-      buckets.set("all", { value: undefined, count: 0 });
-    return [...buckets.values()].slice(0, limit).map((bucket, index) => ({
-      id: `fixture:aggregate:${index}`,
-      timestamp: rows.at(-1)?.timestamp ?? 0,
-      logGroup: "[offline Insights]",
-      logStream: "",
-      message: JSON.stringify({
-        ...(aggregate!.group
-          ? { [aggregate!.group]: bucket.value ?? null }
-          : {}),
-        [aggregate!.alias]: bucket.count,
-      }),
-    }));
-  }
-  return rows.slice(0, limit).map((event) =>
-    selected
-      ? {
-          ...event,
-          message: JSON.stringify(
-            Object.fromEntries(
-              selected.map((name) => [name, field(event, name)]),
-            ),
-          ),
-        }
-      : event,
-  );
-}
 export function createOfflineAdapter(): LogAdapter {
   const anchor = Math.floor(Date.now() / 60000) * 60000;
   const fixtures = new Map<string, LogEvent[]>();
@@ -333,39 +217,9 @@ export function createOfflineAdapter(): LogAdapter {
         },
       };
     },
-    async insights(request, signal, emit) {
-      throwIfAborted(signal);
-      const started = Date.now();
-      const items = select(request);
-      const events = interpretInsights(
-        items,
-        request.query.trim(),
-        request.limit,
-      );
-      await delay(40, signal);
-      throwIfAborted(signal);
-      emit({
-        requestId: request.requestId,
-        state: "complete",
-        events,
-        replace: true,
-        stats: {
-          recordsMatched: items.length,
-          recordsScanned: request.sources.length * 540,
-          bytesScanned: items.reduce(
-            (sum, event) => sum + Buffer.byteLength(event.message),
-            0,
-          ),
-          elapsedMs: Date.now() - started,
-        },
-        truncated: events.length >= request.limit,
-      });
-    },
     async live(request, signal, emit) {
       if (request.kind !== "events")
-        throw new Error(
-          "Live monitoring supports event filters; Insights queries are finite operations",
-        );
+        throw new Error("Only Events queries are supported");
       const predicate = fixtureFilter(request.filterPattern);
       for (const source of request.sources) groupEvents(source.logGroup);
       emit({

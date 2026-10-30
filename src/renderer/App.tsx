@@ -68,6 +68,13 @@ import "./app.css";
 import "./floating-surfaces.css";
 import { TextTooltips } from "./components/AppTooltip";
 import { shortcutMatches } from "./shortcuts";
+import {
+  cycleRecentTabs,
+  finishRecentTabCycle,
+  observeTabFocus,
+  visualTabId,
+  type TabNavigationState,
+} from "./tab-navigation";
 import awsExplorerIcon from "../../build/aws-explorer.svg";
 import {
   contextRangeLabel,
@@ -167,6 +174,14 @@ export default function App() {
     workspace.activeConnectionId ?? workspace.connections[0].id;
   const entries = workspaceEntries(workspace);
   const activeWorkspaceTabId = activeEntryId(workspace);
+  const tabNavigation = useRef<TabNavigationState>({ recentIds: [] });
+  useEffect(() => {
+    tabNavigation.current = observeTabFocus(
+      tabNavigation.current,
+      entries.map((entry) => entry.id),
+      activeWorkspaceTabId,
+    );
+  }, [workspace]);
   const openSettings = () => {
     if (!settingsVisible)
       setSettingsPreview(
@@ -328,14 +343,14 @@ export default function App() {
   };
   const execute = (tab: LogTab, live = false, more = false) => {
     if (!more) {
-      const text = tab.kind === "events" ? tab.filterPattern : tab.query;
+      const text = tab.filterPattern;
       if (text.trim())
         dispatch({
           type: "history/add",
           query: {
             id: crypto.randomUUID(),
             name: text.slice(0, 60),
-            kind: tab.kind,
+            kind: "events",
             text,
             filterMode: tab.filterMode,
           },
@@ -411,7 +426,9 @@ export default function App() {
         !!event.target.closest('input,textarea,[contenteditable="true"]');
       const entry = Object.entries(workspace.preferences.shortcuts).find(
         ([action, shortcut]) =>
-          !action.startsWith("explorer") && shortcutMatches(event, shortcut),
+          !["explorer", "highlight", "localFilter"].some((prefix) =>
+            action.startsWith(prefix),
+          ) && shortcutMatches(event, shortcut),
       );
       if (!entry) return;
       if (
@@ -423,9 +440,16 @@ export default function App() {
         return;
       if (
         isInput &&
-        !["runQuery", "openSettings", "toggleSidebar", "toggleTheme"].includes(
-          entry[0],
-        )
+        ![
+          "runQuery",
+          "openSettings",
+          "toggleSidebar",
+          "toggleTheme",
+          "nextTab",
+          "previousTab",
+          "recentTab",
+          "previousRecentTab",
+        ].includes(entry[0])
       )
         return;
       event.preventDefault();
@@ -468,21 +492,50 @@ export default function App() {
           break;
         case "nextTab":
         case "previousTab": {
-          const index = entries.findIndex(
-            (entry) => entry.id === activeWorkspaceTabId,
+          tabNavigation.current = finishRecentTabCycle(tabNavigation.current);
+          const nextId = visualTabId(
+            entries.map((entry) => entry.id),
+            activeWorkspaceTabId,
+            entry[0] === "nextTab" ? 1 : -1,
           );
-          const next =
-            entries[
-              (index + (entry[0] === "nextTab" ? 1 : entries.length - 1)) %
-                entries.length
-            ];
-          if (next) dispatch({ type: "tab/select", tabId: next.id });
+          if (nextId) dispatch({ type: "tab/select", tabId: nextId });
+          break;
+        }
+        case "recentTab":
+        case "previousRecentTab": {
+          const next = cycleRecentTabs(
+            tabNavigation.current,
+            entries.map((entry) => entry.id),
+            activeWorkspaceTabId,
+            entry[0] === "recentTab" ? 1 : -1,
+          );
+          tabNavigation.current =
+            event.ctrlKey || event.metaKey || event.altKey
+              ? next.state
+              : finishRecentTabCycle(next.state);
+          if (next.tabId) dispatch({ type: "tab/select", tabId: next.tabId });
           break;
         }
       }
     };
+    const finishCycle = () => {
+      tabNavigation.current = finishRecentTabCycle(tabNavigation.current);
+    };
+    const keyup = (event: KeyboardEvent) => {
+      if (
+        ["Control", "Meta", "Alt"].includes(event.key) ||
+        (!event.ctrlKey && !event.metaKey && !event.altKey)
+      )
+        finishCycle();
+    };
     window.addEventListener("keydown", keydown);
-    return () => window.removeEventListener("keydown", keydown);
+    window.addEventListener("keyup", keyup);
+    window.addEventListener("blur", finishCycle);
+    return () => {
+      window.removeEventListener("keydown", keydown);
+      window.removeEventListener("keyup", keyup);
+      window.removeEventListener("blur", finishCycle);
+    };
   }, [workspace, activeTab, settingsOpen]);
 
   useEffect(() => {
@@ -750,6 +803,9 @@ export default function App() {
                       onCancel={() => void cancel(tab.id)}
                       onSaveQuery={(query) =>
                         dispatch({ type: "query/save", query })
+                      }
+                      onDeleteQuery={(queryId) =>
+                        dispatch({ type: "query/remove", queryId })
                       }
                       onSavePreset={(name) =>
                         dispatch({

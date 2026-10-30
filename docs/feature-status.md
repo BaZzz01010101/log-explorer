@@ -1,5 +1,33 @@
 # Feature status
 
+## Favorite visibility and useful tooltips (0.1.64)
+
+Favorite rows have distinct hover colors in both themes. Pending deletion keeps the whole row highlighted until Delete or Cancel is chosen, with compact bordered buttons and a filled destructive action.
+
+Both tooltip paths compare their content with the actual visible label at open time. Identical fully visible text is suppressed, including wrapped inspector metadata; clipped text keeps its full tooltip. Icon hints, shortcut descriptions, renamed views, multiple sources and split-member lists remain available and selectable. Ordinary favorite and tab hints use the automatic short source name instead of duplicating it with a raw path.
+
+Verified 1,097 unit tests and 24 targeted hidden/offline packaged desktop checks, with no failures, skips or flaky results. Type checking, production build, formatting, whitespace checks and NSIS packaging pass. Native checks cover both themes, persistent confirmation, actual hover contrast, wrapped versus clipped metadata, tooltip selection/copying, menu exclusivity and rapid closed-tab hovering. Evidence: `.tmp/desktop-verification-0.1.64.json`; artifact hashes: `release/0.1.64/artifact-manifest.json`. No real AWS requests or installer installation were performed.
+
+## Favorite confirmation and filter controls (0.1.63)
+
+Favorites offer Open/Rename/Delete, plus a hover/focus trash button and persistent inline Delete/Cancel confirmation. Live and custom-range hover tooltips are removed. Local filtering and quick highlighting have independent per-view case/regex controls, contextual configurable Alt+C/Alt+E defaults and current shortcut hints.
+
+Local matching/evidence use messages and the full stream identifier only; stream date/version prefixes and other event metadata are excluded. Regex runs in a cancellable worker with cached Live results, stable row references and explicit syntax/timeout/oversize errors. Property actions switch regex searches to plain property mode; exports cannot silently use partially evaluated results. Regex bounds are 8,192 pattern characters, 524,288 message characters and bounded worker execution time. Unicode zero-width matches and empty-data validation have regressions.
+
+Verified 1,081 unit tests, type checking, production build, formatting and 41 targeted hidden/offline packaged desktop checks, including both themes, menu exclusivity, source metadata exclusions, scoped shortcuts, clear/undo, Live and native text selection. No real AWS requests or installer installation were performed. Evidence: `.tmp/desktop-verification-0.1.63.json`.
+
+## Tab context menu (0.1.62)
+
+Removed **Move to a new split** from tab context menus. The duplicate action is named **Duplicate tab** and preserves the original label for normal tabs, renamed tabs, split tabs and their member views. New IDs and independent configurations are retained, and duplicates remain adjacent to their originals.
+
+Verified 1,047 unit tests, type checking, production build and four targeted hidden/offline packaged desktop checks. The checks cover the menu removal, duplicate name/order/independence and pane-header splitting in both themes. No real AWS requests or installer installation were performed. Evidence is in `.tmp/desktop-verification-0.1.62.json`.
+
+## Events and tab navigation (0.1.61)
+
+Removed Insights execution and controls, safely restored older view configurations as Events, fixed hidden-source local matching, centered filter handles and removed the redundant help button. Saved/recent search menus hide empty sections and allow more visible entries. Pane splitting duplicates the current view; recent-focus shortcuts and visual-order shortcuts are separate.
+
+Verified 1,047 unit tests and 43 targeted hidden/offline packaged desktop checks, with zero failures, skips or flaky results. Type checking, production build, formatting, whitespace and Windows packaging passed. No real AWS calls or installer installation were performed. See [behavior and evidence](events-and-tab-navigation-0.1.61.md).
+
 ## Final verification record (0.1.28)
 
 Tab reorder painting uses the existing drop reducer order. All visible tabs slide into their proposed slots at their own widths. Stable logical slots preserve insertion and delayed hover activation. Direction reversals, wrapped rows and separate pin-row crossings keep accurate, unclipped previews. Wrapped height includes borders and existing empty-row content, avoiding unnecessary scrollbars. Floating split-placement previews remain available. Live sessions pause when their view is hidden and reconnect for new events on return, preserving loaded events and received counts. All visible split panes stay live, manual Stop stays stopped even if tabs change before cancellation finishes, and historical automatic refresh skips hidden tabs. Inspector field menus add Copy value using the full current decoded/deserialized value, with JSON formatting for objects and arrays.
@@ -10,7 +38,7 @@ The standard-folder build was updated after the previous app exited naturally; i
 
 ## Offline interpreter
 
-Event patterns accept positive words and quoted phrases. Insights accepts `fields`, `sort @timestamp asc/desc`, `limit`, simple field equality, a literal `@message like /text/` filter, and terminal `stats count(*) as name [by field]`. Unsupported syntax errors explicitly; fixtures do not approximate the full CloudWatch language. See [README examples](../README.md#offline-query-examples).
+Event patterns accept positive words and quoted phrases. Unsupported syntax errors explicitly; fixtures do not approximate the full CloudWatch language. Insights execution has been removed. See [README examples](../README.md#offline-query-examples).
 
 ## Earlier verification record (0.1.27)
 

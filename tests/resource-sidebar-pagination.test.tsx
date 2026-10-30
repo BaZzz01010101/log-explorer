@@ -177,7 +177,10 @@ it("reloads an expanded group's streams after refreshing its region", async () =
   );
   expect(listStreams).toHaveBeenCalledTimes(2);
   expect(
-    renderer!.root.findAllByProps({ title: "after-refresh" }),
+    renderer!.root.findAllByProps({
+      role: "treeitem",
+      "aria-label": "after-refresh",
+    }),
   ).not.toHaveLength(0);
 });
 
@@ -237,7 +240,9 @@ it("preserves loaded streams and retries a failed continuation without restartin
     renderer!.root.findByProps({ "aria-label": "Expand /one" }).props.onClick(),
   );
   expect(listStreams).toHaveBeenCalledTimes(2);
-  expect(renderer!.root.findAllByProps({ title: "first" })).not.toHaveLength(0);
+  expect(
+    renderer!.root.findAllByProps({ role: "treeitem", "aria-label": "first" }),
+  ).not.toHaveLength(0);
   const retry = renderer!.root.findAll(
     (node) =>
       node.type === "button" &&
@@ -246,10 +251,12 @@ it("preserves loaded streams and retries a failed continuation without restartin
   await act(async () => retry.props.onClick());
   expect(listStreams).toHaveBeenCalledTimes(3);
   expect(listStreams.mock.calls[2][3]).toBe("next");
-  expect(renderer!.root.findAllByProps({ title: "first" })).not.toHaveLength(0);
-  expect(renderer!.root.findAllByProps({ title: "second" })).not.toHaveLength(
-    0,
-  );
+  expect(
+    renderer!.root.findAllByProps({ role: "treeitem", "aria-label": "first" }),
+  ).not.toHaveLength(0);
+  expect(
+    renderer!.root.findAllByProps({ role: "treeitem", "aria-label": "second" }),
+  ).not.toHaveLength(0);
 });
 
 it("discards an old connection's pending page and never feeds its cursor to the new connection", async () => {

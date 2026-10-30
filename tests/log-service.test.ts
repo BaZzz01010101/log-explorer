@@ -89,13 +89,6 @@ describe("offline log service", () => {
         new AbortController().signal,
       ),
     ).rejects.toThrow(/offline.*supports/i);
-    await expect(
-      adapter.insights(
-        request({ kind: "insights", query: "parse @message /(?<name>.*)/" }),
-        new AbortController().signal,
-        () => {},
-      ),
-    ).rejects.toThrow(/offline.*supports/i);
   });
 
   it("emits a complete result through the actual scheduled service path", async () => {
@@ -195,74 +188,71 @@ describe("offline log service", () => {
     await service.shutdown();
   });
 
-  it("rejects failed server cancellation even when no renderer owns the cancelled update", async () => {
+  it("rejects failed operation cleanup even when no renderer owns the cancelled update", async () => {
     const updates: QueryUpdate[] = [];
-    let polled!: () => void;
-    const reading = new Promise<void>((resolve) => {
-      polled = resolve;
+    let started!: () => void;
+    const running = new Promise<void>((resolve) => {
+      started = resolve;
     });
     const service = createLogService((update) => updates.push(update), {
-      allowAws: () => true,
-      awsAdapterFactory: (connection) =>
-        createAwsAdapter(connection, {
-          allowAws: () => true,
-          transportFactory: async () =>
-            transport(async (command) => {
-              if (command.constructor.name === "StartQueryCommand")
-                return { queryId: "server-query" };
-              if (command.constructor.name === "StopQueryCommand")
-                return { success: false };
-              polled();
-              return { status: "Running", results: [] };
-            }),
-        }),
+      allowAws: () => false,
+      offlineAdapterFactory: () => ({
+        ...createOfflineAdapter(),
+        events: (_input, signal) =>
+          new Promise<never>((_resolve, reject) => {
+            signal.addEventListener(
+              "abort",
+              () => reject(new Error("Operation cleanup failed")),
+              { once: true },
+            );
+            started();
+          }),
+      }),
     });
-    await service.query(request({ connection: aws, kind: "insights" }));
-    await reading;
+    await service.query(request());
+    await running;
     await expect(service.cancel("query-1")).rejects.toThrow(
-      /server query may still be running/i,
+      /Operation cleanup failed/,
     );
-    expect(updates.at(-1)?.state).toBe("cancelled");
-    expect(updates.at(-1)?.error).toMatch(/server query may still be running/i);
+    expect(updates.at(-1)).toMatchObject({
+      state: "cancelled",
+      error: "Operation cleanup failed",
+    });
     await expect(service.shutdown()).rejects.toThrow(
-      /server query may still be running/i,
+      /Operation cleanup failed/,
     );
   });
 
-  it("finishes shutdown but reports every server query that could not be stopped on later close attempts", async () => {
-    let starts = 0;
-    let polls = 0;
-    let destroyed = 0;
-    let reading!: () => void;
+  it("finishes shutdown but reports every failed cleanup on later close attempts", async () => {
+    let starts = 0,
+      destroyed = 0;
+    let started!: () => void;
     const running = new Promise<void>((resolve) => {
-      reading = resolve;
+      started = resolve;
     });
     const service = createLogService(() => {}, {
       allowAws: () => true,
-      awsAdapterFactory: (connection) =>
-        createAwsAdapter(connection, {
-          allowAws: () => true,
-          transportFactory: async () => ({
-            ...transport(async (command) => {
-              if (command.constructor.name === "StartQueryCommand")
-                return { queryId: `server-query-${++starts}` };
-              if (command.constructor.name === "StopQueryCommand")
-                return { success: false };
-              if (++polls === 2) reading();
-              return { status: "Running", results: [] };
-            }),
-            destroy: () => {
-              destroyed++;
-            },
+      awsAdapterFactory: () => ({
+        ...createOfflineAdapter(),
+        events: (input, signal) =>
+          new Promise<never>((_resolve, reject) => {
+            signal.addEventListener(
+              "abort",
+              () =>
+                reject(
+                  new Error(`Could not clean up operation ${input.requestId}`),
+                ),
+              { once: true },
+            );
+            if (++starts === 2) started();
           }),
-        }),
+        destroy: () => {
+          destroyed++;
+        },
+      }),
     });
-    await service.query(
-      request({ connection: aws, kind: "insights", requestId: "one" }),
-    );
-    await service.query(
-      request({ connection: aws, kind: "insights", requestId: "two" }),
-    );
+    await service.query(request({ connection: aws, requestId: "one" }));
+    await service.query(request({ connection: aws, requestId: "two" }));
     await running;
     let failure: unknown;
     try {
@@ -272,11 +262,11 @@ describe("offline log service", () => {
     }
     expect(failure).toBeInstanceOf(AggregateError);
     expect((failure as AggregateError).errors).toHaveLength(2);
-    expect((failure as Error).message).toMatch(/server-query-1/);
-    expect((failure as Error).message).toMatch(/server-query-2/);
+    expect((failure as Error).message).toContain("operation one");
+    expect((failure as Error).message).toContain("operation two");
     expect(destroyed).toBe(1);
     await expect(service.listGroups(offline, "")).resolves.toBeDefined();
-    await expect(service.shutdown()).rejects.toThrow(/server-query-1/);
+    await expect(service.shutdown()).rejects.toThrow(/operation one/);
   });
 
   it("bounds retained cleanup details while warning about all outstanding failures", async () => {
@@ -285,15 +275,13 @@ describe("offline log service", () => {
       allowAws: () => false,
       offlineAdapterFactory: () => ({
         ...createOfflineAdapter(),
-        insights: (input: QueryRequest, signal: AbortSignal) =>
+        events: (input: QueryRequest, signal: AbortSignal) =>
           new Promise<never>((_resolve, reject) => {
             signal.addEventListener(
               "abort",
               () =>
                 reject(
-                  new Error(
-                    `Could not stop Insights query ${input.requestId}. The server query may still be running.`,
-                  ),
+                  new Error(`Could not clean up operation ${input.requestId}.`),
                 ),
               { once: true },
             );
@@ -305,8 +293,8 @@ describe("offline log service", () => {
       const reading = new Promise<void>((resolve) => {
         ready = resolve;
       });
-      const requestId = `server-query-${index}`;
-      await service.query(request({ requestId, kind: "insights" }));
+      const requestId = `operation-${index}`;
+      await service.query(request({ requestId }));
       await reading;
       await expect(service.cancel(requestId)).rejects.toThrow(requestId);
     }
@@ -318,20 +306,21 @@ describe("offline log service", () => {
     }
     expect(failure).toBeInstanceOf(AggregateError);
     expect((failure as AggregateError).errors).toHaveLength(33);
-    expect((failure as Error).message).toMatch(/3 additional server query/);
-    expect((failure as Error).message).toContain("server-query-0");
-    expect((failure as Error).message).not.toContain("server-query-34");
+    expect((failure as Error).message).toMatch(/3 additional operation/);
+    expect((failure as Error).message).toContain("operation-0");
+    expect((failure as Error).message).not.toContain("operation-34");
   });
 });
 
 describe("AWS adapter with isolated command transport", () => {
-  it("stops an already authorized Insights query after access is revoked without authorizing new requests", async () => {
+  it("cancels an authorized Events request after access is revoked and blocks new requests", async () => {
     let enabled = true,
       constructions = 0;
     const operations: string[] = [];
-    let polled!: () => void;
-    const polling = new Promise<void>((resolve) => {
-      polled = resolve;
+    let dispatched!: () => void;
+    let activeSignal: AbortSignal | undefined;
+    const running = new Promise<void>((resolve) => {
+      dispatched = resolve;
     });
     const service = createLogService(() => {}, {
       allowAws: () => enabled,
@@ -340,20 +329,17 @@ describe("AWS adapter with isolated command transport", () => {
           allowAws: () => enabled,
           transportFactory: async () => {
             constructions++;
-            return transport(async (command) => {
+            return transport(async (command, signal) => {
               operations.push(command.constructor.name);
-              if (command.constructor.name === "StartQueryCommand")
-                return { queryId: "authorized-query" };
-              if (command.constructor.name === "StopQueryCommand")
-                return { success: true };
-              polled();
-              return { status: "Running", results: [] };
+              activeSignal = signal;
+              dispatched();
+              return new Promise(() => {});
             });
           },
         }),
     });
-    await service.query(request({ connection: aws, kind: "insights" }));
-    await polling;
+    await service.query(request({ connection: aws }));
+    await running;
     await expect(
       setAwsAccess(
         {
@@ -365,11 +351,11 @@ describe("AWS adapter with isolated command transport", () => {
         () => service.shutdown(),
       ),
     ).resolves.toBeUndefined();
-    expect(operations).toContain("StopQueryCommand");
+    expect(activeSignal?.aborted).toBe(true);
+    expect(operations).toEqual(["FilterLogEventsCommand"]);
     expect(constructions).toBe(1);
-    const count = operations.length;
     await expect(service.listGroups(aws, "")).rejects.toThrow(/disabled/i);
-    expect(operations).toHaveLength(count);
+    expect(operations).toHaveLength(1);
     expect(constructions).toBe(1);
   });
 
@@ -478,73 +464,6 @@ describe("AWS adapter with isolated command transport", () => {
     expect(second.events).toHaveLength(2);
     expect(visited).toEqual(["a:first", "b:first", "a:next-a", "b:next-b"]);
     expect(second.cursor).toBeUndefined();
-  });
-
-  it("stops a cancelled Insights query and suppresses later snapshots", async () => {
-    const controller = new AbortController();
-    const operations: string[] = [];
-    const adapter = createAwsAdapter(aws, {
-      allowAws: () => true,
-      pollIntervalMs: 1,
-      transportFactory: async () =>
-        transport(async (command) => {
-          operations.push(command.constructor.name);
-          if (command.constructor.name === "StartQueryCommand")
-            return { queryId: "server-query" };
-          if (command.constructor.name === "GetQueryResultsCommand") {
-            controller.abort();
-            return { status: "Running", results: [] };
-          }
-          return { success: true };
-        }),
-    });
-    const updates: QueryUpdate[] = [];
-    await expect(
-      adapter.insights(
-        request({ connection: aws, kind: "insights" }),
-        controller.signal,
-        (update) => updates.push(update),
-      ),
-    ).rejects.toThrow(/cancel/i);
-    expect(operations).toContain("StopQueryCommand");
-    expect(updates).toHaveLength(0);
-  });
-
-  it("preserves aggregated Insights rows and scan statistics", async () => {
-    const adapter = createAwsAdapter(aws, {
-      allowAws: () => true,
-      pollIntervalMs: 1,
-      transportFactory: async () =>
-        transport(async (command) =>
-          command.constructor.name === "StartQueryCommand"
-            ? { queryId: "aggregate" }
-            : {
-                status: "Complete",
-                results: [
-                  [
-                    { field: "level", value: "ERROR" },
-                    { field: "total", value: "12" },
-                  ],
-                ],
-                statistics: { recordsScanned: 70, bytesScanned: 1000 },
-              },
-        ),
-    });
-    const updates: QueryUpdate[] = [];
-    await adapter.insights(
-      request({
-        connection: aws,
-        kind: "insights",
-        query: "stats count(*) as total by level",
-      }),
-      new AbortController().signal,
-      (update) => updates.push(update),
-    );
-    expect(JSON.parse(updates.at(-1)!.events![0].message)).toEqual({
-      level: "ERROR",
-      total: "12",
-    });
-    expect(updates.at(-1)!.stats?.recordsScanned).toBe(70);
   });
 
   it("uses the actual Live Tail event stream and reports sampling", async () => {
@@ -810,30 +729,5 @@ describe("AWS adapter with isolated command transport", () => {
     ]);
     expect(result).toBe("cancelled");
     expect(closed).toBe(true);
-  });
-
-  it("surfaces a StopQuery cleanup failure when cancellation cannot stop the server job", async () => {
-    const controller = new AbortController();
-    const adapter = createAwsAdapter(aws, {
-      allowAws: () => true,
-      transportFactory: async () =>
-        transport(async (command) => {
-          if (command.constructor.name === "StartQueryCommand")
-            return { queryId: "server-query" };
-          if (command.constructor.name === "StopQueryCommand")
-            throw Object.assign(new Error("Denied"), {
-              name: "AccessDeniedException",
-            });
-          controller.abort();
-          return { status: "Running", results: [] };
-        }),
-    });
-    await expect(
-      adapter.insights(
-        request({ connection: aws, kind: "insights" }),
-        controller.signal,
-        () => {},
-      ),
-    ).rejects.toThrow(/could not stop.*server-query/i);
   });
 });

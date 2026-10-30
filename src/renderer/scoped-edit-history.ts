@@ -14,6 +14,7 @@ interface History {
 
 const MAX_ENTRIES = 100;
 const MAX_CHARACTERS = 1_000_000;
+const MAX_KEYED_HISTORIES = 100;
 
 function editControl(target: EventTarget | null): EditControl | null {
   const element = target as EditControl | null;
@@ -44,19 +45,78 @@ function snapshot(control: EditControl): Snapshot {
   };
 }
 
-/** Chromium shares native undo between fields. Keep history attached to each DOM control instead. */
+/** Treat a clear button as an edit so it participates in the control's undo history. */
+export function clearEditControl(control: EditControl | null): boolean {
+  if (!control || control.readOnly || control.disabled || !control.value)
+    return false;
+  control.focus();
+  const InputEventClass =
+    control.ownerDocument.defaultView?.InputEvent ?? InputEvent;
+  if (
+    !control.dispatchEvent(
+      new InputEventClass("beforeinput", {
+        bubbles: true,
+        cancelable: true,
+        inputType: "deleteByCut",
+      }),
+    )
+  )
+    return false;
+  // Bypass React's value tracker so the input event updates controlled state.
+  const setter = Object.getOwnPropertyDescriptor(
+    Object.getPrototypeOf(control),
+    "value",
+  )?.set;
+  if (setter) setter.call(control, "");
+  else control.value = "";
+  if (control.selectionStart !== null) control.setSelectionRange(0, 0);
+  control.dispatchEvent(
+    new InputEventClass("input", {
+      bubbles: true,
+      inputType: "deleteByCut",
+    }),
+  );
+  return true;
+}
+
+/** Keep undo scoped to each control, or an opt-in data-edit-history-key across remounts. */
 export function installScopedEditHistory(doc: Document): () => void {
-  const histories = new WeakMap<EditControl, History>();
+  const histories = new WeakMap<
+    EditControl,
+    { key: string | null; state: History }
+  >();
+  const keyedHistories = new Map<string, History>();
   let replaying = false;
+  const historyKey = (control: EditControl) =>
+    control.getAttribute("data-edit-history-key") || null;
+  const currentHistory = (control: EditControl) => {
+    const key = historyKey(control);
+    if (key) return keyedHistories.get(key);
+    const binding = histories.get(control);
+    return binding?.key === null ? binding.state : undefined;
+  };
   const history = (control: EditControl) => {
-    let state = histories.get(control);
+    const key = historyKey(control);
+    let state = currentHistory(control);
+    // A remounted control cannot continue the old DOM control's composition.
+    if (state && histories.get(control)?.state !== state) {
+      state.composing = false;
+      state.group = undefined;
+    }
     // A controlled value replaced by navigation, presets, or validation starts a fresh history.
     if (
       !state ||
       (!state.composing && state.entries[state.index]!.value !== control.value)
     ) {
       state = { entries: [snapshot(control)], index: 0, composing: false };
-      histories.set(control, state);
+    }
+    histories.set(control, { key, state });
+    if (key) {
+      // Refresh recency and retain only a bounded number of remountable histories.
+      keyedHistories.delete(key);
+      keyedHistories.set(key, state);
+      if (keyedHistories.size > MAX_KEYED_HISTORIES)
+        keyedHistories.delete(keyedHistories.keys().next().value!);
     }
     return state;
   };
@@ -152,7 +212,7 @@ export function installScopedEditHistory(doc: Document): () => void {
     if (replaying) return;
     const control = editControl(event.target);
     if (!control) return;
-    const state = histories.get(control);
+    const state = currentHistory(control);
     if (state && !state.composing)
       record(control, state, (event as InputEvent).inputType);
     else if (!state) history(control);
@@ -166,7 +226,7 @@ export function installScopedEditHistory(doc: Document): () => void {
     )
       return;
     const control = editControl(doc.activeElement);
-    if (!control || key.isComposing || histories.get(control)?.composing)
+    if (!control || key.isComposing || currentHistory(control)?.composing)
       return;
     event.preventDefault();
     event.stopPropagation();
@@ -183,7 +243,7 @@ export function installScopedEditHistory(doc: Document): () => void {
   const compositionEnd: EventListener = (event) => {
     const control = editControl(event.target);
     if (!control) return;
-    const state = histories.get(control);
+    const state = currentHistory(control);
     if (!state) return;
     state.composing = false;
     record(control, state, "insertCompositionText");
@@ -202,5 +262,6 @@ export function installScopedEditHistory(doc: Document): () => void {
   return () => {
     for (const [type, listener] of listeners)
       doc.removeEventListener(type, listener, true);
+    keyedHistories.clear();
   };
 }

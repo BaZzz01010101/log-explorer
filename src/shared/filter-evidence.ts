@@ -2,11 +2,13 @@ import type { LogEvent } from "./contracts";
 import {
   getPointer,
   matchesLocalFilter,
+  localFilterStream,
   MESSAGE_LIMIT,
   parseLocalFilter,
   summarizeValue,
   type JsonValue,
   type ParsedMessage,
+  type LocalFilterOptions,
 } from "./log-data";
 
 export type FilterOrigin = "server" | "local";
@@ -393,7 +395,11 @@ function regexRanges(
         start: result.index,
         end: result.index + result[0].length,
       });
-    else regex.lastIndex++;
+    else
+      regex.lastIndex +=
+        regex.unicode && (text.codePointAt(regex.lastIndex) ?? 0) > 0xffff
+          ? 2
+          : 1;
     if (ranges.length > MAX_MATCHES) throw new Unsupported();
   }
   return { matched, ranges };
@@ -739,20 +745,45 @@ export function evaluateFilterEvidence(
   parsed: ParsedMessage,
   query: string,
   origin: FilterOrigin,
+  localOptions: LocalFilterOptions = {},
 ): FilterEvidence {
   try {
     if (event.message.length > MESSAGE_LIMIT || query.length > MAX_QUERY)
       throw new Unsupported();
-    if (!query.trim()) return empty(true, true);
+    if (
+      origin === "local" && localOptions.regex ? !query.length : !query.trim()
+    )
+      return empty(true, true);
     const sources =
       parsed.kind === "json"
         ? sourceValues(event.message)
         : new Map<string, SourceValue>();
     const builder = new EvidenceBuilder(event, sources);
     if (origin === "local") {
+      const stream = localFilterStream(event.logStream);
+      const streamSpan = (range: Range) =>
+        builder.span(
+          "@logStream",
+          event.logStream,
+          range.start + stream.start,
+          range.end + stream.start,
+        );
+      if (localOptions.regex) {
+        const regex = new RegExp(
+          query,
+          localOptions.caseSensitive ? "gu" : "giu",
+        );
+        const messageMatches = regexRanges(event.message, regex);
+        const streamMatches = regexRanges(stream.text, regex);
+        if (!messageMatches.matched && !streamMatches.matched) return empty();
+        for (const range of messageMatches.ranges) builder.raw(range);
+        for (const range of streamMatches.ranges) streamSpan(range);
+        return builder.evidence;
+      }
       const terms = parseLocalFilter(query);
       if (!terms || terms.length > 128) return empty(false);
-      if (!matchesLocalFilter(event, parsed, query, "all")) return empty();
+      if (!matchesLocalFilter(event, parsed, query, "all", localOptions))
+        return empty();
       for (const term of terms) {
         if (term.kind === "property") {
           builder.property(
@@ -760,14 +791,18 @@ export function evaluateFilterEvidence(
             summarizeValue(getPointer(parsed.value, term.path), MESSAGE_LIMIT),
           );
         } else {
-          for (const range of literalRanges(event.message, term.text, true))
+          for (const range of literalRanges(
+            event.message,
+            term.text,
+            !localOptions.caseSensitive,
+          ))
             builder.raw(range);
-          for (const [path, text] of [
-            ["@logGroup", event.logGroup],
-            ["@logStream", event.logStream],
-          ] as const)
-            for (const range of literalRanges(text, term.text, true))
-              builder.span(path, text, range.start, range.end);
+          for (const range of literalRanges(
+            stream.text,
+            term.text,
+            !localOptions.caseSensitive,
+          ))
+            streamSpan(range);
         }
       }
       return builder.evidence;

@@ -196,25 +196,22 @@ function SortableTab({
       !runtime.live &&
       (runtime.state === "queued" || runtime.state === "running"),
   );
-  const tooltip = (
-    <Stack gap={3} className="split-tab-tooltip">
-      <Text size="xs" fw={600}>
-        {split ? "Split workspace" : tab.title}
-      </Text>
-      {split &&
-        members.map((member) => (
-          <Text size="xs" key={member.id}>
-            {logTabLabel(member)}
-          </Text>
-        ))}
-      {!split &&
-        members[0]?.sources.map((source) => (
-          <Text size="xs" key={source.logGroup}>
-            {source.logGroup}
-          </Text>
-        ))}
-    </Stack>
-  );
+  const tooltip =
+    !split && members[0] ? (
+      closedTabTooltip(members[0])
+    ) : (
+      <Stack gap={3} className="split-tab-tooltip">
+        <Text size="xs" fw={600}>
+          {split ? "Split workspace" : tab.title}
+        </Text>
+        {split &&
+          members.map((member) => (
+            <Text size="xs" key={member.id}>
+              {logTabLabel(member)}
+            </Text>
+          ))}
+      </Stack>
+    );
   return (
     <>
       <Menu
@@ -427,7 +424,7 @@ function SortableTab({
               setSelected([]);
             }}
           >
-            Duplicate independent view
+            Duplicate tab
           </Menu.Item>
           <Menu.Item
             leftSection={<IconLayoutColumns size={14} />}
@@ -439,18 +436,11 @@ function SortableTab({
           >
             Show in split mode
           </Menu.Item>
-          {split ? (
+          {split && (
             <Menu.Item
               onClick={() => dispatch({ type: "split/exit", tabId: tab.id })}
             >
               Exit split screen
-            </Menu.Item>
-          ) : (
-            <Menu.Item
-              disabled={workspace.panes.length >= MAX_SPLIT_PANES}
-              onClick={() => dispatch({ type: "pane/split", tabId: tab.id })}
-            >
-              Move to a new split
             </Menu.Item>
           )}
           <Menu.Divider />

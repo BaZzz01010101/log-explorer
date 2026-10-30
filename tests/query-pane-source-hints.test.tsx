@@ -197,7 +197,12 @@ it("describes Live and interpreter scope using selected sources rather than an u
   const hints = renderer.root
     .findAll((node) => String(node.type) === "mock-Tooltip")
     .map((node) => String(node.props.label));
-  expect(hints.some((hint) => hint.includes("AWS charges apply"))).toBe(true);
+  expect(hints.some((hint) => hint.includes("AWS charges apply"))).toBe(false);
+  const liveButton = renderer.root.findAll(
+    (node) =>
+      String(node.type) === "mock-Button" && node.props.children === "Live",
+  )[0];
+  expect(liveButton.props["aria-description"]).toContain("AWS charges apply");
   expect(
     renderer.root
       .findAll((node) => String(node.type) === "mock-Text")

@@ -1,4 +1,6 @@
 import type { ColumnConfig, LogEvent, Preferences } from "../shared/contracts";
+import type { QuickHighlightOptions } from "../shared/quick-highlight";
+import type { LocalFilterOptions } from "../shared/log-data";
 import {
   evaluateFilterEvidence,
   type FilterOrigin,
@@ -32,9 +34,15 @@ export interface EventHighlights {
   row: HighlightColors;
   overview?: string[];
   text: Record<string, HighlightSpan[]>;
+  manual?: Record<string, { start: number; end: number }[]>;
   filters?: Partial<Record<FilterOrigin, PackedFilterEvidence>>;
   paths?: Record<string, MatchOrigin[]>;
   matchKey?: string;
+}
+export interface HighlightFilters {
+  server: string;
+  local: string;
+  localOptions?: LocalFilterOptions;
 }
 export const textHighlightKey = (path: string, text: string) =>
   JSON.stringify([path, text]);
@@ -66,17 +74,37 @@ export function highlightEvent(
   timezone: Preferences["timezone"],
   overviewOnly = false,
   needle = "",
-  filters?: { server: string; local: string },
+  filters?: HighlightFilters,
   messageComplete = true,
+  quick: QuickHighlightOptions = {},
 ): EventHighlights {
   const result: EventHighlights = { row: {}, text: Object.create(null) };
   if (overviewOnly) result.overview = [];
   const raw = event.message.slice(0, 200_000);
-  const quickNeedle =
-    needle.length > 0 && needle.length <= 200 ? needle.toLowerCase() : "";
-  let quickMatch = Boolean(
-    quickNeedle && raw.toLowerCase().includes(quickNeedle),
-  );
+  const quickRegex =
+    needle.length > 0 && needle.length <= 200
+      ? compile(
+          quick.regex ? needle : needle.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
+          !quick.caseSensitive,
+        )
+      : undefined;
+  const quickSpans = (text: string, limit = 100) => {
+    const spans: { start: number; end: number }[] = [];
+    if (!quickRegex) return spans;
+    quickRegex.lastIndex = 0;
+    while (spans.length < Math.min(100, limit)) {
+      const match = quickRegex.exec(text);
+      if (!match) break;
+      if (!match[0].length) {
+        quickRegex.lastIndex +=
+          (text.codePointAt(quickRegex.lastIndex) ?? 0) > 0xffff ? 2 : 1;
+        continue;
+      }
+      spans.push({ start: match.index, end: match.index + match[0].length });
+    }
+    return spans;
+  };
+  let quickMatch = quickSpans(raw, 1).length > 0;
   const parsed = parseLogMessage(raw);
   const pathMatches: Record<string, MatchOrigin[]> = Object.create(null);
   const matchPath = (path: string, origin: MatchOrigin) => {
@@ -88,12 +116,23 @@ export function highlightEvent(
   if (!overviewOnly && (filters?.server || filters?.local)) {
     result.filters = {};
     for (const origin of ["server", "local"] as const) {
-      if (!filters[origin].trim()) continue;
+      if (
+        origin === "local" && filters.localOptions?.regex
+          ? !filters.local.length
+          : !filters[origin].trim()
+      )
+        continue;
       // A bounded preview cannot prove a whole-query match (anchors and
       // negative predicates can change meaning beyond its boundary).
       const evidence =
         messageComplete && event.message.length <= 200_000
-          ? evaluateFilterEvidence(event, parsed, filters[origin], origin)
+          ? evaluateFilterEvidence(
+              event,
+              parsed,
+              filters[origin],
+              origin,
+              filters.localOptions,
+            )
           : { supported: false, matched: false, matches: [], paths: [] };
       const packed = packFilterEvidence(evidence);
       result.filters[origin] = packed;
@@ -108,7 +147,7 @@ export function highlightEvent(
     if (!text || (!required && (budget -= text.length) < 0)) return;
     fields.set(textHighlightKey(path, text), { path, text });
   };
-  if (!overviewOnly || (quickNeedle && !quickMatch)) {
+  if (!overviewOnly || (quickRegex && !quickMatch)) {
     add("@message", raw, true);
     add("@message", raw.slice(0, 600).replace(/\s+/g, " "), true);
     add("@message", raw.slice(0, 6000), true);
@@ -152,14 +191,21 @@ export function highlightEvent(
       add(path, text);
     }
   }
-  if (quickNeedle) {
-    for (const { path, text } of fields.values())
-      if (text.toLowerCase().includes(quickNeedle)) matchPath(path, "manual");
+  if (quickRegex) {
+    let manualCount = 0;
+    for (const [key, { path, text }] of fields) {
+      const remaining = 512 - manualCount;
+      const spans = quickSpans(text, overviewOnly ? 1 : Math.max(1, remaining));
+      if (!spans.length) continue;
+      quickMatch = true;
+      if (overviewOnly) break;
+      matchPath(path, "manual");
+      if (remaining > 0) {
+        (result.manual ??= Object.create(null))[key] = spans;
+        manualCount += spans.length;
+      }
+    }
   }
-  if (overviewOnly && quickNeedle && !quickMatch)
-    quickMatch = [...fields.values()].some(({ text }) =>
-      text.toLowerCase().includes(quickNeedle),
-    );
   let spanCount = 0;
   for (const profile of profiles) {
     if (!profile.enabled) continue;
@@ -276,7 +322,11 @@ export function highlightEvent(
     result.matchKey = JSON.stringify([
       filters?.server,
       filters?.local,
+      Boolean(filters?.localOptions?.regex),
+      Boolean(filters?.localOptions?.caseSensitive),
       needle,
+      Boolean(quick.regex),
+      Boolean(quick.caseSensitive),
       profiles,
     ]);
   }

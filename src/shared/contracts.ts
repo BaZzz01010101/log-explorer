@@ -79,10 +79,16 @@ export interface ColumnConfig {
 export interface ViewConfig {
   inspectorWrap?: boolean;
   highlightText?: string;
+  highlightRegex?: boolean;
+  highlightCaseSensitive?: boolean;
+  localSearchWidth?: number;
+  highlightTextWidth?: number;
   inspectorInfoCollapsed?: boolean;
   mode: ViewMode;
   columns: ColumnConfig[];
   localSearch: string;
+  localSearchRegex?: boolean;
+  localSearchCaseSensitive?: boolean;
   level: string;
   levels?: string[];
   wrap: boolean;
@@ -177,6 +183,7 @@ export interface Preferences {
   tabBarLayout: "scroll" | "wrap";
   pinnedTabsSeparateRow?: boolean;
   closedTabHistoryDays?: number;
+  recentSearchesLimit?: number;
   fontSize: number;
   maxEvents: number;
   refreshSeconds: number;

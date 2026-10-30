@@ -34,7 +34,7 @@ export const querySchema = z
     sources: z.array(sourceSchema).min(1).max(50),
     startTime: z.number().int().nonnegative(),
     endTime: z.number().int().nonnegative(),
-    kind: z.enum(["events", "insights"]),
+    kind: z.literal("events"),
     filterPattern: text,
     query: text,
     limit: z.number().int().min(1).max(10000),
@@ -44,6 +44,10 @@ export const querySchema = z
 const viewSchema = z.object({
   inspectorWrap: z.boolean().optional(),
   highlightText: z.string().max(200).optional(),
+  highlightRegex: z.boolean().optional(),
+  highlightCaseSensitive: z.boolean().optional(),
+  localSearchWidth: z.number().min(140).max(2400).optional(),
+  highlightTextWidth: z.number().min(140).max(2400).optional(),
   inspectorInfoCollapsed: z.boolean().optional(),
   mode: z.enum(["hybrid", "table", "json"]),
   columns: z
@@ -60,6 +64,8 @@ const viewSchema = z.object({
     )
     .max(100),
   localSearch: text,
+  localSearchRegex: z.boolean().optional(),
+  localSearchCaseSensitive: z.boolean().optional(),
   level: z.string().max(40),
   levels: z
     .array(
@@ -225,6 +231,7 @@ export const workspaceSchema = z
     preferences: z.object({
       settingsDetached: z.boolean().optional(),
       closedTabHistoryDays: z.number().int().min(1).max(365).optional(),
+      recentSearchesLimit: z.number().int().min(1).max(100).optional(),
       relativeTimeTemplates: z
         .object({
           quick: z

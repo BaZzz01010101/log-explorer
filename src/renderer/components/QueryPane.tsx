@@ -5,9 +5,7 @@ import {
   Button,
   Group,
   Modal,
-  SegmentedControl,
   Text,
-  Textarea,
   TextInput,
 } from "@mantine/core";
 import { Tooltip } from "./AppTooltip";
@@ -17,6 +15,7 @@ import {
   IconPlayerPlay,
   IconPlayerStop,
   IconRadio,
+  IconTrash,
 } from "@tabler/icons-react";
 import type {
   LogEvent,
@@ -35,6 +34,7 @@ import { logTabLabel } from "../workspace-entries";
 import { contextEventIndex } from "../context-event";
 import { SourceBadges } from "./SourceBadges";
 import { ServerFilterInput } from "./ServerFilterInput";
+import { DEFAULT_RECENT_SEARCHES_LIMIT } from "../../shared/query-history";
 import "./sources.css";
 
 interface Props {
@@ -46,6 +46,7 @@ interface Props {
   onRun(live?: boolean, more?: boolean, filterPattern?: string): void;
   onCancel(): void;
   onSaveQuery(query: SavedQuery): void;
+  onDeleteQuery?(queryId: string): void;
   onSavePreset(name: string): void;
   onContext(event: LogEvent, range: ContextRange): void;
   revealEvent?: LogEvent;
@@ -61,7 +62,7 @@ export function QueryPane({
   onRun,
   onCancel,
   onSaveQuery,
-  onSavePreset,
+  onDeleteQuery,
   onContext,
   revealEvent,
   onEventRevealed,
@@ -77,7 +78,7 @@ export function QueryPane({
   const offlineSources =
     sourceConnections.length > 0 &&
     sourceConnections.every((connection) => connection.mode === "offline");
-  const [saveKind, setSaveKind] = useState<"query" | "preset" | null>(null);
+  const [saveOpened, setSaveOpened] = useState(false);
   const [saveName, setSaveName] = useState("");
   const [followLive, setFollowLive] = useState(false);
   const sourceContext = useMemo(
@@ -94,16 +95,14 @@ export function QueryPane({
     if (!runtime?.live) setFollowLive(false);
   }, [runtime?.live]);
   const liveUnavailable =
-    tab.kind === "insights"
-      ? "Live Tail is available for Events, not Insights queries."
-      : sourceConnections.length !== 1
-        ? "Live Tail requires sources from one connection and region."
-        : tab.sources.length > 10
-          ? "Live Tail supports at most 10 log groups."
-          : tab.sources.length > 1 &&
-              tab.sources.some((source) => source.logStreams?.length)
-            ? "Live Tail supports selected streams only with one log group."
-            : undefined;
+    sourceConnections.length !== 1
+      ? "Live Tail requires sources from one connection and region."
+      : tab.sources.length > 10
+        ? "Live Tail supports at most 10 log groups."
+        : tab.sources.length > 1 &&
+            tab.sources.some((source) => source.logStreams?.length)
+          ? "Live Tail supports selected streams only with one log group."
+          : undefined;
   const running = runtime?.state === "queued" || runtime?.state === "running";
   const stale =
     runtime?.request &&
@@ -122,7 +121,17 @@ export function QueryPane({
     !stale &&
     runtime.events.length < workspace.preferences.maxEvents,
   );
-  const currentText = tab.kind === "events" ? tab.filterPattern : tab.query;
+  const currentText = tab.filterPattern;
+  const savedSearches = workspace.savedQueries.filter(
+    (query) => query.kind === "events",
+  );
+  const recentSearches = workspace.history
+    .filter((query) => query.kind === "events")
+    .slice(
+      0,
+      workspace.preferences.recentSearchesLimit ??
+        DEFAULT_RECENT_SEARCHES_LIMIT,
+    );
   const contextPages = useRef(new Set<string>());
   useEffect(() => {
     if (
@@ -141,9 +150,6 @@ export function QueryPane({
     onRun(false, true);
   }, [revealEvent, canPage, runtime?.cursor, runtime?.events]);
   const patchView = (view: ViewConfig) => onPatch({ view });
-  const presets = workspace.presets.filter(
-    (p) => !p.logGroup || tab.sources.some((s) => s.logGroup === p.logGroup),
-  );
   return (
     <div
       className="query-pane"
@@ -158,16 +164,6 @@ export function QueryPane({
             wrap="nowrap"
             style={{ flex: "1 1 260px", minWidth: 0 }}
           >
-            <SegmentedControl
-              aria-label="Server query type"
-              size="xs"
-              value={tab.kind}
-              onChange={(value) => onPatch({ kind: value as LogTab["kind"] })}
-              data={[
-                { label: "Events", value: "events" },
-                { label: "Insights", value: "insights" },
-              ]}
-            />
             <SourceBadges
               sources={tab.sources}
               connectionId={tab.connectionId}
@@ -185,120 +181,105 @@ export function QueryPane({
               onPatch={onPatch}
               onTimezoneChange={onTimezoneChange}
             />
-            <Menu>
-              <Menu.Target>
-                <ActionIcon
-                  variant="subtle"
-                  aria-label="Saved queries and presets"
-                >
-                  <IconBookmark size={17} />
-                </ActionIcon>
-              </Menu.Target>
-              <Menu.Dropdown>
-                <Menu.Label>Queries</Menu.Label>
-                {workspace.savedQueries.map((query) => (
-                  <Menu.Item
-                    key={query.id}
-                    onClick={() =>
-                      onPatch({
-                        kind: query.kind,
-                        ...(query.kind === "events"
-                          ? {
-                              filterPattern: query.text,
-                              filterMode: query.filterMode ?? "pattern",
-                            }
-                          : { query: query.text }),
-                      })
-                    }
-                  >
-                    {query.name}
-                  </Menu.Item>
-                ))}
-                <Menu.Item
-                  disabled={!currentText.trim()}
-                  onClick={() => {
-                    setSaveName("");
-                    setSaveKind("query");
-                  }}
-                >
-                  Save current query…
-                </Menu.Item>
-                <Menu.Divider />
-                <Menu.Label>Visualization presets</Menu.Label>
-                {presets.map((preset) => (
-                  <Menu.Item
-                    key={preset.id}
-                    onClick={() => patchView(structuredClone(preset.view))}
-                  >
-                    {preset.name}
-                  </Menu.Item>
-                ))}
-                <Menu.Item
-                  onClick={() => {
-                    setSaveName("");
-                    setSaveKind("preset");
-                  }}
-                >
-                  Save view for this log group…
-                </Menu.Item>
-                {workspace.history.length > 0 && (
-                  <>
-                    <Menu.Divider />
-                    <Menu.Label>Recent searches</Menu.Label>
-                    {workspace.history.slice(0, 8).map((query) => (
+          </Group>
+        </Group>
+        <div className="query-editor">
+          <div className="query-input">
+            <ServerFilterInput
+              historyKey={`events-filter:${tab.id}`}
+              value={tab.filterPattern}
+              mode={tab.filterMode}
+              onChange={(filterPattern) => onPatch({ filterPattern })}
+              onModeChange={(filterMode) => onPatch({ filterMode })}
+              onRun={() => onRun()}
+              onClear={() => {
+                onPatch({ filterPattern: "" });
+                onRun(false, false, "");
+              }}
+            />
+          </div>
+          <Menu position="bottom-end">
+            <Menu.Target>
+              <ActionIcon
+                className="query-searches-button"
+                variant="subtle"
+                aria-label="Saved and recent searches"
+                data-tooltip="Saved and recent searches"
+              >
+                <IconBookmark size={17} />
+              </ActionIcon>
+            </Menu.Target>
+            <Menu.Dropdown className="query-searches-menu">
+              <Menu.Item
+                disabled={!currentText.trim()}
+                onClick={() => {
+                  setSaveName(
+                    currentText.replace(/\s+/g, " ").trim().slice(0, 120),
+                  );
+                  setSaveOpened(true);
+                }}
+              >
+                Save search…
+              </Menu.Item>
+              {savedSearches.length > 0 && (
+                <>
+                  <Menu.Divider />
+                  <Menu.Label>Saved searches</Menu.Label>
+                  {savedSearches.map((query) => (
+                    <div key={query.id} className="saved-search-menu-row">
                       <Menu.Item
-                        key={query.id}
+                        className="saved-search-menu-item"
                         data-tooltip={query.text}
                         onClick={() =>
                           onPatch({
-                            kind: query.kind,
-                            ...(query.kind === "events"
-                              ? {
-                                  filterPattern: query.text,
-                                  filterMode: query.filterMode ?? "pattern",
-                                }
-                              : { query: query.text }),
+                            kind: "events",
+                            filterPattern: query.text,
+                            filterMode: query.filterMode ?? "pattern",
                           })
                         }
                       >
-                        {query.text.slice(0, 70)}
+                        {query.name}
                       </Menu.Item>
-                    ))}
-                  </>
-                )}
-              </Menu.Dropdown>
-            </Menu>
-          </Group>
-        </Group>
-        <div
-          className={`query-editor ${tab.kind === "insights" ? "insights-editor" : ""}`}
-        >
-          <div className="query-input">
-            {tab.kind === "events" ? (
-              <ServerFilterInput
-                value={tab.filterPattern}
-                mode={tab.filterMode}
-                onChange={(filterPattern) => onPatch({ filterPattern })}
-                onModeChange={(filterMode) => onPatch({ filterMode })}
-                onRun={() => onRun()}
-                onClear={() => {
-                  onPatch({ filterPattern: "" });
-                  onRun(false, false, "");
-                }}
-              />
-            ) : (
-              <Textarea
-                aria-label="CloudWatch Logs Insights query"
-                classNames={{ input: "code-input" }}
-                autosize
-                minRows={3}
-                maxRows={7}
-                value={tab.query}
-                onChange={(e) => onPatch({ query: e.currentTarget.value })}
-                placeholder="fields @timestamp, @message | sort @timestamp desc | limit 100"
-              />
-            )}
-          </div>
+                      {onDeleteQuery && (
+                        <Menu.Item
+                          className="saved-search-menu-delete"
+                          aria-label={`Delete saved search ${query.name}`}
+                          color="red"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            onDeleteQuery(query.id);
+                          }}
+                        >
+                          <IconTrash size={14} />
+                        </Menu.Item>
+                      )}
+                    </div>
+                  ))}
+                </>
+              )}
+              {recentSearches.length > 0 && (
+                <>
+                  <Menu.Divider />
+                  <Menu.Label>Recent searches</Menu.Label>
+                  {recentSearches.map((query) => (
+                    <Menu.Item
+                      key={query.id}
+                      data-tooltip={query.text}
+                      onClick={() =>
+                        onPatch({
+                          kind: "events",
+                          filterPattern: query.text,
+                          filterMode: query.filterMode ?? "pattern",
+                        })
+                      }
+                    >
+                      {query.text.replace(/\s+/g, " ").trim().slice(0, 70)}
+                    </Menu.Item>
+                  ))}
+                </>
+              )}
+            </Menu.Dropdown>
+          </Menu>
           <Group gap={6} align="flex-start">
             <Button
               size="xs"
@@ -310,7 +291,7 @@ export function QueryPane({
               Run
             </Button>
             {running ? (
-              <Tooltip label="Cancel this request">
+              <Tooltip label="Cancel this request" disabled={runtime?.live}>
                 <Button
                   size="xs"
                   color="red"
@@ -323,29 +304,38 @@ export function QueryPane({
                 </Button>
               </Tooltip>
             ) : (
-              <Tooltip
-                label={
-                  liveUnavailable
-                    ? liveUnavailable
-                    : offlineSources
-                      ? "Start an explicitly simulated fixture stream"
-                      : "Start CloudWatch Live Tail (AWS charges apply; results may be sampled)"
+              <Button
+                size="xs"
+                color="teal"
+                variant="light"
+                disabled={Boolean(liveUnavailable)}
+                aria-describedby={
+                  liveUnavailable ? `live-unavailable-${tab.id}` : undefined
                 }
+                aria-description={
+                  offlineSources
+                    ? "Start an explicitly simulated fixture stream"
+                    : "Start CloudWatch Live Tail (AWS charges apply; results may be sampled)"
+                }
+                leftSection={<IconRadio size={14} />}
+                onClick={() => onRun(true)}
               >
-                <Button
-                  size="xs"
-                  color="teal"
-                  variant="light"
-                  disabled={Boolean(liveUnavailable)}
-                  leftSection={<IconRadio size={14} />}
-                  onClick={() => onRun(true)}
-                >
-                  Live
-                </Button>
-              </Tooltip>
+                Live
+              </Button>
             )}
           </Group>
         </div>
+        {!running && liveUnavailable && (
+          <Text
+            id={`live-unavailable-${tab.id}`}
+            role="status"
+            size="xs"
+            c="dimmed"
+            mt={5}
+          >
+            {liveUnavailable}
+          </Text>
+        )}
       </div>
       {stale && (
         <Alert color="yellow" p="xs" mx="xs">
@@ -435,11 +425,9 @@ export function QueryPane({
         />
       </div>
       <Modal
-        opened={saveKind !== null}
-        onClose={() => setSaveKind(null)}
-        title={
-          saveKind === "query" ? "Save query" : "Save visualization preset"
-        }
+        opened={saveOpened}
+        onClose={() => setSaveOpened(false)}
+        title="Save search"
         centered
       >
         <TextInput
@@ -447,22 +435,22 @@ export function QueryPane({
           value={saveName}
           onChange={(e) => setSaveName(e.currentTarget.value)}
           autoFocus
+          data-autofocus
+          onFocus={(event) => event.currentTarget.select()}
           maxLength={120}
         />
         <Button
           mt="md"
           disabled={!saveName.trim()}
           onClick={() => {
-            if (saveKind === "query")
-              onSaveQuery({
-                id: crypto.randomUUID(),
-                name: saveName.trim(),
-                kind: tab.kind,
-                text: currentText,
-                filterMode: tab.filterMode,
-              });
-            else onSavePreset(saveName.trim());
-            setSaveKind(null);
+            onSaveQuery({
+              id: crypto.randomUUID(),
+              name: saveName.trim(),
+              kind: "events",
+              text: currentText,
+              filterMode: tab.filterMode,
+            });
+            setSaveOpened(false);
           }}
         >
           Save

@@ -158,7 +158,7 @@ test("duplicating a middle tab inserts its independent copy immediately after th
   const sourceId = await original.locator("..").getAttribute("data-tab-id");
   await original.click({ button: "right" });
   await page
-    .getByRole("menuitem", { name: "Duplicate independent view", exact: true })
+    .getByRole("menuitem", { name: "Duplicate tab", exact: true })
     .click();
   await expect(page.locator(".workspace-tab")).toHaveCount(5);
   const after = await page
@@ -168,6 +168,9 @@ test("duplicating a middle tab inserts its independent copy immediately after th
     );
   const copiedId = after.find((id) => !before.includes(id))!;
   expect(after.indexOf(copiedId)).toBe(after.indexOf(sourceId!) + 1);
+  await expect(
+    page.locator(`[data-tab-id="${copiedId}"]`).getByRole("tab"),
+  ).toHaveAccessibleName("payments-worker");
   await page.locator(`[data-tab-id="${copiedId}"]`).getByRole("tab").click();
   await page.getByLabel("Local filter loaded events").fill("Payment");
   await page.locator(`[data-tab-id="${sourceId}"]`).getByRole("tab").click();

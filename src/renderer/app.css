@@ -379,15 +379,35 @@ input:focus-visible {
   flex: 1;
   min-width: 150px;
 }
+.query-searches-button {
+  flex-shrink: 0;
+}
+.query-searches-menu {
+  min-width: 260px;
+  max-width: min(480px, calc(100vw - 24px));
+  max-height: min(720px, 85vh);
+  overflow-y: auto;
+}
+.saved-search-menu-row {
+  display: flex;
+  align-items: stretch;
+  gap: 2px;
+}
+.saved-search-menu-item {
+  flex: 1;
+  min-width: 0;
+}
+.saved-search-menu-delete {
+  flex: 0 0 30px;
+  width: 30px;
+  padding-inline: 8px;
+}
 .code-input {
   font-family:
     Cascadia Code,
     Consolas,
     monospace;
   font-size: 11px;
-}
-.insights-editor textarea {
-  line-height: 1.6;
 }
 .viewer-container {
   flex: 1;

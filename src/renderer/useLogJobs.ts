@@ -55,10 +55,8 @@ export function useLogJobs(
   const mounted = useRef(true);
   const sequence = useRef(0);
   const operations = useRef(new Map<string, number>());
-  const operationKinds = useRef(new Map<string, LogTab["kind"]>());
   const operationSources = useRef(new Map<string, string>());
   const observedSources = useRef(new Map<string, string>());
-  const observedKinds = useRef(new Map<string, LogTab["kind"]>());
   const requests = useRef(
     new Map<
       string,
@@ -88,7 +86,6 @@ export function useLogJobs(
     const tab = state.tabs.find((item) => item.id === tabId);
     return Boolean(
       tab &&
-      operationKinds.current.get(tabId) === tab.kind &&
       operationSources.current.get(tabId) ===
         sourceIdentity(tab.connectionId, tab.sources, state.connections),
     );
@@ -138,7 +135,6 @@ export function useLogJobs(
                 update.events ?? [],
                 workspaceRef.current.preferences.maxEvents,
                 undefined,
-                prior.request?.kind === "insights",
               )
             : { events: prior.events, evicted: 0 };
         const terminal = ["error", "cancelled", "complete"].includes(
@@ -190,10 +186,8 @@ export function useLogJobs(
         ...current.current.values(),
       ]);
       operations.current.clear();
-      operationKinds.current.clear();
       operationSources.current.clear();
       observedSources.current.clear();
-      observedKinds.current.clear();
       requests.current.clear();
       current.current.clear();
       latestRequest.current.clear();
@@ -216,7 +210,6 @@ export function useLogJobs(
       const tab = state.tabs.find((item) => item.id === tabId);
       operations.current.set(tabId, generation);
       if (!tab || !mounted.current) return;
-      operationKinds.current.set(tabId, tab.kind);
       operationSources.current.set(
         tabId,
         sourceIdentity(tab.connectionId, tab.sources, state.connections),
@@ -334,7 +327,6 @@ export function useLogJobs(
         state.connections,
       );
       operations.current.set(tab.id, generation);
-      operationKinds.current.set(tab.id, tab.kind);
       operationSources.current.set(tab.id, source);
       if (!ownsOperation(tab.id, generation)) return;
       const old = current.current.get(tab.id);
@@ -379,7 +371,7 @@ export function useLogJobs(
           !live &&
           prior?.request &&
           prior.cursor &&
-          prior.request.kind === tab.kind &&
+          prior.request.kind === "events" &&
           sourceIdentity(prior.request.connection.id, prior.request.sources, [
             prior.request.connection,
             ...(prior.request.connections ?? []),
@@ -419,12 +411,12 @@ export function useLogJobs(
                 tab.customStart,
                 tab.customEnd,
               ),
-              kind: tab.kind,
-              filterPattern:
-                tab.kind === "events"
-                  ? compileServerFilter(tab.filterPattern, tab.filterMode)
-                  : "",
-              query: tab.kind === "insights" ? tab.query : "",
+              kind: "events",
+              filterPattern: compileServerFilter(
+                tab.filterPattern,
+                tab.filterMode,
+              ),
+              query: "",
               limit: Math.min(
                 10000,
                 workspaceRef.current.preferences.maxEvents,
@@ -529,10 +521,8 @@ export function useLogJobs(
     ])) {
       if (!ids.has(tabId)) {
         operations.current.delete(tabId);
-        operationKinds.current.delete(tabId);
         operationSources.current.delete(tabId);
         observedSources.current.delete(tabId);
-        observedKinds.current.delete(tabId);
         latestRequest.current.delete(tabId);
         autoStarted.current.delete(tabId);
         sleepingLive.current.delete(tabId);
@@ -555,24 +545,18 @@ export function useLogJobs(
         workspace.connections,
       );
       const previousSource = observedSources.current.get(tab.id);
-      const previousKind = observedKinds.current.get(tab.id);
+      const sourceChanged =
+        previousSource !== undefined && previousSource !== source;
       observedSources.current.set(tab.id, source);
-      observedKinds.current.set(tab.id, tab.kind);
-      if (
-        (previousSource !== undefined && previousSource !== source) ||
-        (previousKind !== undefined && previousKind !== tab.kind)
-      ) {
+      if (sourceChanged) {
         const pending = pendingTimeRefresh.current.get(tab.id);
         if (pending) clearTimeout(pending);
         pendingTimeRefresh.current.delete(tab.id);
-        // A manual run for the new source/mode can already own the tab.
-        if (
-          operationSources.current.get(tab.id) !== source ||
-          operationKinds.current.get(tab.id) !== tab.kind
-        ) {
+        // A manual run for the new source can already own the tab.
+        if (operationSources.current.get(tab.id) !== source) {
+          sleepingLive.current.delete(tab.id);
           refresh.add(tab.id);
           operations.current.set(tab.id, ++sequence.current);
-          operationKinds.current.set(tab.id, tab.kind);
           operationSources.current.set(tab.id, source);
           latestRequest.current.delete(tab.id);
           const id = current.current.get(tab.id);
@@ -598,7 +582,7 @@ export function useLogJobs(
         const prior = next[tabId];
         if (
           prior?.request &&
-          prior.request.kind === operationKinds.current.get(tabId) &&
+          prior.request.kind === "events" &&
           sourceIdentity(prior.request.connection.id, prior.request.sources, [
             prior.request.connection,
             ...(prior.request.connections ?? []),
@@ -692,13 +676,7 @@ export function useLogJobs(
       let next = previous;
       for (const [tabId, runtime] of Object.entries(previous)) {
         if (runtime.events.length <= limit) continue;
-        const merged = mergeEvents(
-          runtime.events,
-          [],
-          limit,
-          undefined,
-          runtime.request?.kind === "insights",
-        );
+        const merged = mergeEvents(runtime.events, [], limit, undefined);
         next = {
           ...next,
           [tabId]: {
@@ -729,8 +707,7 @@ export function useLogJobs(
           runtime.state !== "idle" &&
           !runtime.live &&
           !runtime.liveState &&
-          !["running", "queued"].includes(runtime.state) &&
-          tab.kind === "events"
+          !["running", "queued"].includes(runtime.state)
         )
           void run(tab);
       }

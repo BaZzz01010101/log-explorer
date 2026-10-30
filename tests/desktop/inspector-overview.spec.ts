@@ -244,8 +244,8 @@ test("new tabs open the inspector at 30 percent and the toolbar toggle preserves
   const a = (await toggle.boundingBox())!,
     b = (await exportButton.boundingBox())!;
   expect(Math.abs(a.y + a.height / 2 - b.y - b.height / 2)).toBeLessThan(2);
-  expect(a.x + a.width).toBeLessThan(b.x);
-  expect(b.x - a.x - a.width).toBeLessThan(15);
+  expect(b.x + b.width).toBeLessThan(a.x);
+  expect(a.x - b.x - b.width).toBeLessThan(15);
   const selected = await region.getAttribute("data-event-id");
   await toggle.click();
   await expect(region).toHaveCount(0);

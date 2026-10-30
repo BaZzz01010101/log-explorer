@@ -45,9 +45,6 @@
   min-width: 0;
   cursor: pointer;
 }
-.inspector-message-lane + .inspector-message-lane {
-  border-left: 1px solid var(--mantine-color-default-border);
-}
 .inspector-message-mark {
   position: absolute;
   left: 0;

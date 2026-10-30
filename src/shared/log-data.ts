@@ -368,6 +368,23 @@ export type LocalFilterTerm =
   | { kind: "literal"; text: string }
   | { kind: "property"; path: string; expected?: string };
 
+export interface LocalFilterOptions {
+  regex?: boolean;
+  caseSensitive?: boolean;
+}
+export const LOCAL_FILTER_REGEX_LIMIT = 8192;
+
+/** Search the complete stream ID without container paths, dates or version labels. */
+export function localFilterStream(logStream: string): {
+  text: string;
+  start: number;
+} {
+  const tail = /[^/]+(?=\/*$)/.exec(logStream);
+  if (!tail) return { text: "", start: logStream.length };
+  const prefix = tail[0].lastIndexOf("]") + 1;
+  return { text: tail[0].slice(prefix), start: tail.index + prefix };
+}
+
 /** The local filter grammar is shared by filtering and match evidence. */
 export function parseLocalFilter(query: string): LocalFilterTerm[] | undefined {
   const tokens = localFilterTokens(query);
@@ -405,12 +422,13 @@ export function parseLocalFilter(query: string): LocalFilterTerm[] | undefined {
   return terms;
 }
 
-/** @/json/pointer=value and @"/quoted pointer"="value" match properties; other terms search message and source. */
+/** Regex mode is called only in a terminable worker in production. */
 export function matchesLocalFilter(
   event: LogEvent,
   parsed: ParsedMessage,
   query: string,
   level: string | readonly string[],
+  options: LocalFilterOptions = {},
 ): boolean {
   if (
     Array.isArray(level)
@@ -418,10 +436,21 @@ export function matchesLocalFilter(
       : level && level !== "all" && inferLevel(parsed, event.message) !== level
   )
     return false;
+  const stream = localFilterStream(event.logStream).text;
+  if (options.regex) {
+    if (query.length > LOCAL_FILTER_REGEX_LIMIT) return false;
+    try {
+      const regex = new RegExp(query, options.caseSensitive ? "u" : "iu");
+      return regex.test(event.message) || regex.test(stream);
+    } catch {
+      return false;
+    }
+  }
   const terms = parseLocalFilter(query);
   if (!terms) return false;
-  const searchable =
-    `${event.message}\n${event.logGroup}\n${event.logStream}`.toLowerCase();
+  const normalize = (text: string) =>
+    options.caseSensitive ? text : text.toLowerCase();
+  const searchable = [event.message, stream].map(normalize);
   for (const term of terms) {
     if (term.kind === "property") {
       if (parsed.kind !== "json") return false;
@@ -429,11 +458,12 @@ export function matchesLocalFilter(
       if (value === undefined) return false;
       if (
         term.expected !== undefined &&
-        summarizeValue(value, MESSAGE_LIMIT).toLowerCase() !==
-          term.expected.toLowerCase()
+        normalize(summarizeValue(value, MESSAGE_LIMIT)) !==
+          normalize(term.expected)
       )
         return false;
-    } else if (!searchable.includes(term.text.toLowerCase())) return false;
+    } else if (!searchable.some((text) => text.includes(normalize(term.text))))
+      return false;
   }
   return true;
 }

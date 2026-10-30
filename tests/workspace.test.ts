@@ -190,6 +190,10 @@ describe("workspace state", () => {
   it("bounds histories, saves and removes favorite views, and cleans up removed connections", () => {
     let state = createWorkspace();
     state = workspaceReducer(state, {
+      type: "preferences/update",
+      patch: { recentSearchesLimit: 100 },
+    });
+    state = workspaceReducer(state, {
       type: "favorites/save",
       tabId: state.tabs[0].id,
     });

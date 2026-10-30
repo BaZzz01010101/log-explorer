@@ -1,9 +1,16 @@
-import { useLayoutEffect, useMemo, useState, type RefObject } from "react";
+import {
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type RefObject,
+} from "react";
 import {
   buildOverviewMarks,
   type OverviewRow,
   type OverviewMark,
 } from "../event-overview";
+import { createOverviewColorResolver } from "../overview-colors";
 
 export function EventOverview({
   rows,
@@ -18,6 +25,45 @@ export function EventOverview({
   scrollRef: RefObject<HTMLDivElement | null>;
   onNavigate(index: number): void;
 }) {
+  const overviewRef = useRef<HTMLDivElement>(null);
+  const [palette, setPalette] = useState(new Map<string, string>());
+  const colors = useMemo(
+    () => [...new Set(rows.flatMap((row) => row.colors))],
+    [rows],
+  );
+  useLayoutEffect(() => {
+    const overview = overviewRef.current;
+    if (!overview) return;
+    const refresh = () => {
+      const resolve = createOverviewColorResolver(overview);
+      const next = new Map(colors.map((color) => [color, resolve(color)]));
+      setPalette((previous) =>
+        previous.size === next.size &&
+        [...next].every(([color, value]) => previous.get(color) === value)
+          ? previous
+          : next,
+      );
+    };
+    refresh();
+    const observer = new MutationObserver(refresh);
+    for (
+      let ancestor: HTMLElement | null = overview;
+      ancestor;
+      ancestor = ancestor.parentElement
+    )
+      observer.observe(ancestor, {
+        attributes: true,
+        attributeFilter: [
+          "class",
+          "style",
+          "data-mantine-color-scheme",
+          "data-theme",
+        ],
+      });
+    return () => observer.disconnect();
+  }, [colors]);
+  const mapColor = (color: string, lane: "severity" | "highlights") =>
+    lane === "highlights" ? (palette.get(color) ?? color) : color;
   const [geometry, setGeometry] = useState({ height: 0, total: 0, offset: 0 });
   useLayoutEffect(() => {
     const scroll = scrollRef.current;
@@ -92,6 +138,7 @@ export function EventOverview({
   };
   return (
     <div
+      ref={overviewRef}
       className="event-overview"
       role="group"
       aria-label="Event scrollbar overview"
@@ -144,8 +191,8 @@ export function EventOverview({
                 height: mark.height,
                 background:
                   mark.colors.length === 1
-                    ? mark.colors[0]
-                    : `linear-gradient(to right, ${mark.colors.flatMap((color, index) => [`${color} ${(index * 100) / mark.colors.length}%`, `${color} ${((index + 1) * 100) / mark.colors.length}%`]).join(", ")})`,
+                    ? mapColor(mark.colors[0], lane)
+                    : `linear-gradient(to right, ${mark.colors.flatMap((color, index) => [`${mapColor(color, lane)} ${(index * 100) / mark.colors.length}%`, `${mapColor(color, lane)} ${((index + 1) * 100) / mark.colors.length}%`]).join(", ")})`,
               }}
               onClick={(event) => {
                 event.stopPropagation();

@@ -44,6 +44,23 @@ import { normalizeRelativeTimeTemplates } from "../../shared/relative-time-templ
 import "./settings.css";
 import { settingsResizeEdges, useSettingsWindow } from "./settings-window";
 import type { SettingsPreviewSnapshot } from "../settings-preview";
+import {
+  DEFAULT_RECENT_SEARCHES_LIMIT,
+  MAX_RECENT_SEARCHES_LIMIT,
+} from "../../shared/query-history";
+
+const shortcutLabels: Record<string, string> = {
+  nextTab: "Next tab in tab bar",
+  previousTab: "Previous tab in tab bar",
+  recentTab: "Next recent tab",
+  previousRecentTab: "Previous recent tab",
+  explorerRegex: "Explorer regex",
+  explorerCaseSensitive: "Explorer match case",
+  highlightRegex: "Highlight regex",
+  highlightCaseSensitive: "Highlight match case",
+  localFilterRegex: "Local filter regex",
+  localFilterCaseSensitive: "Local filter match case",
+};
 
 function NumericPreference({
   value,
@@ -359,6 +376,21 @@ export function Settings({
               })
             }
           />
+          <NumericPreference
+            label="Recent searches to keep"
+            description="The latest searches appear beside the search field."
+            min={1}
+            max={MAX_RECENT_SEARCHES_LIMIT}
+            value={
+              preferences.recentSearchesLimit ?? DEFAULT_RECENT_SEARCHES_LIMIT
+            }
+            onCommit={(recentSearchesLimit) =>
+              dispatch({
+                type: "preferences/update",
+                patch: { recentSearchesLimit },
+              })
+            }
+          />
           <Checkbox
             label="Automatically expand inspector paths to highlighted matches"
             checked={preferences.autoExpandFilterMatches !== false}
@@ -479,19 +511,15 @@ export function Settings({
       <Tabs.Panel value="shortcuts" pt="md" className="settings-form-page">
         <div className="settings-form-content">
           <Text size="sm" c="dimmed" mb="sm">
-            Use Control, Meta, Shift or Alt and a key. Explorer shortcuts apply
-            while the log group search field is focused.
+            Use Control, Meta, Shift or Alt and a key. Search and highlight
+            shortcuts apply while their corresponding field is focused.
           </Text>
           <Stack gap="xs" className="settings-shortcuts-grid">
             {Object.entries(preferences.shortcuts).map(([action, shortcut]) => (
               <TextInput
                 key={action}
                 label={
-                  action === "explorerRegex"
-                    ? "Explorer regex"
-                    : action === "explorerCaseSensitive"
-                      ? "Explorer match case"
-                      : action.replace(/([A-Z])/g, " $1")
+                  shortcutLabels[action] ?? action.replace(/([A-Z])/g, " $1")
                 }
                 value={shortcut}
                 maxLength={80}
@@ -569,26 +597,28 @@ export function Settings({
           <Text size="xs" c="dimmed">
             Saved queries
           </Text>
-          {workspace.savedQueries.map((q) => (
-            <Group
-              key={q.id}
-              justify="space-between"
-              wrap="nowrap"
-              className="settings-saved-item"
-            >
-              <Text size="sm">{q.name}</Text>
-              <ActionIcon
-                aria-label={`Remove ${q.name}`}
-                color="red"
-                variant="subtle"
-                onClick={() =>
-                  dispatch({ type: "query/remove", queryId: q.id })
-                }
+          {workspace.savedQueries
+            .filter((q) => q.kind === "events")
+            .map((q) => (
+              <Group
+                key={q.id}
+                justify="space-between"
+                wrap="nowrap"
+                className="settings-saved-item"
               >
-                <IconTrash size={14} />
-              </ActionIcon>
-            </Group>
-          ))}
+                <Text size="sm">{q.name}</Text>
+                <ActionIcon
+                  aria-label={`Remove ${q.name}`}
+                  color="red"
+                  variant="subtle"
+                  onClick={() =>
+                    dispatch({ type: "query/remove", queryId: q.id })
+                  }
+                >
+                  <IconTrash size={14} />
+                </ActionIcon>
+              </Group>
+            ))}
           <Text size="xs" c="dimmed">
             Visualization presets
           </Text>

@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, useState, type MouseEvent } from "react";
 import { ownValue } from "../../shared/records";
+import { clearEditControl } from "../scoped-edit-history";
 import {
   ActionIcon,
   Badge,
@@ -29,7 +30,6 @@ import type {
   Connection,
   Favorite,
   ViewFavorite,
-  LogGroup,
   LogSource,
   Preferences,
 } from "../../shared/contracts";
@@ -47,6 +47,7 @@ import {
 } from "../useScrollPagination";
 import { ResourceDragLabel } from "./ResourceDragLabel";
 import { ViewFavorites } from "./ViewFavorites";
+import { SourceDetails, type SourceDetailsResource } from "./SourceDetails";
 import type { ResourceActionMode, ResourcePayload } from "../resource-drag";
 import {
   changeExplorerSelection,
@@ -75,9 +76,6 @@ interface Props {
   onRenameFavorite?(id: string, title: string): void;
   onManage(): void;
 }
-function description(group: LogGroup) {
-  return `Retention: ${group.retentionDays === undefined ? "Indefinite" : group.retentionDays + " days"}\nClass: ${group.logClass ?? "Standard"}\nStored: ${group.storedBytes === undefined ? "Not provided" : (group.storedBytes / 1048576).toLocaleString(undefined, { maximumFractionDigits: 2 }) + " MiB"}`;
-}
 export function ExplorerSidebar(props: Props) {
   const [connectionId, setConnectionId] = useState(props.activeConnectionId);
   const [search, setSearch] = useState(""),
@@ -89,6 +87,9 @@ export function ExplorerSidebar(props: Props) {
     props.preferences?.shortcuts?.explorerCaseSensitive ?? "Alt+C";
   const [groups, setGroups] = useState(new Set<string>());
   const [selected, setSelected] = useState(new Map<string, SelectedResource>());
+  const [detailRow, setDetailRow] = useState<
+    (SourceDetailsResource & { key: string }) | undefined
+  >();
   const selectionAnchor = useRef<string | null>(null);
   const [contextKey, setContextKey] = useState<string | null>(null);
   const [activeKey, setActiveKey] = useState<string | null>(null),
@@ -127,6 +128,29 @@ export function ExplorerSidebar(props: Props) {
     regex,
     caseSensitive,
   );
+  const connectionIdentity = JSON.stringify([
+    selectedConnection?.id,
+    selectedConnection?.profile,
+    selectedConnection?.region,
+    selectedConnection?.mode,
+  ]);
+  const detailsMatchConnection =
+    detailRow &&
+    detailRow.connection.id === selectedConnection?.id &&
+    detailRow.connection.profile === selectedConnection?.profile &&
+    detailRow.connection.region === selectedConnection?.region &&
+    detailRow.connection.mode === selectedConnection?.mode;
+  const currentDetails = detailsMatchConnection
+    ? (rows.find(
+        (row): row is ExplorerRow & SourceDetailsResource =>
+          (row.kind === "group" || row.kind === "stream") &&
+          row.key === detailRow.key,
+      ) ?? detailRow)
+    : undefined;
+  const inspect = (row: ExplorerRow) => {
+    if (row.kind === "group" || row.kind === "stream") setDetailRow(row);
+  };
+  useEffect(() => setDetailRow(undefined), [connectionIdentity]);
   const missingStreams = rows.flatMap((row) =>
     row.kind === "group" &&
     groups.has(row.key) &&
@@ -170,19 +194,6 @@ export function ExplorerSidebar(props: Props) {
     else if (mode === "new-multisource" || mode === "new-split")
       props.onOpen(payload.connectionId, payload.sources, "permanent");
   };
-  const allowed = new Set(
-    props.connections
-      .filter(
-        (connection) =>
-          connection.enabled !== false &&
-          profiles.some(
-            (account) =>
-              account.mode === connection.mode &&
-              account.profile === connection.profile,
-          ),
-      )
-      .map((connection) => connection.id),
-  );
   const activeIndex =
     rows.findIndex((row) => row.key === activeKey) >= 0
       ? rows.findIndex((row) => row.key === activeKey)
@@ -206,6 +217,7 @@ export function ExplorerSidebar(props: Props) {
   });
   const jump = (id: string) => {
     setConnectionId(id);
+    setDetailRow(undefined);
     setActiveKey(null);
     setSelected(new Map());
     selectionAnchor.current = null;
@@ -215,6 +227,7 @@ export function ExplorerSidebar(props: Props) {
   useEffect(() => {
     setConnectionId(props.activeConnectionId);
     setActiveKey(null);
+    setDetailRow(undefined);
   }, [props.activeConnectionId]);
   useEffect(() => {
     const timer = setTimeout(() => setDebounced(search), 220);
@@ -235,6 +248,7 @@ export function ExplorerSidebar(props: Props) {
       return next;
     });
   const toggle = (row: ExplorerRow) => {
+    inspect(row);
     setActiveKey(row.key);
     if (row.kind === "group") {
       toggleSet(setGroups, row.key);
@@ -252,6 +266,7 @@ export function ExplorerSidebar(props: Props) {
   ) => {
     const resource = selectable(row);
     if (!resource) return;
+    inspect(row);
     setActiveKey(row.key);
     const anchor = selectionAnchor.current;
     if (mode !== "range" && mode !== "add-range")
@@ -276,6 +291,7 @@ export function ExplorerSidebar(props: Props) {
     row: ExplorerRow,
     mode: "preview" | "permanent" = "preview",
   ) => {
+    inspect(row);
     if (row.kind === "group")
       props.onOpen(row.connection.id, [{ logGroup: row.group.name }], mode);
     else if (row.kind === "stream")
@@ -351,20 +367,6 @@ export function ExplorerSidebar(props: Props) {
     ]),
     targets,
   });
-  const openFavorite = (
-    favorite: Favorite,
-    mode: "preview" | "permanent" = "preview",
-  ) =>
-    props.onOpen(
-      favorite.connectionId,
-      [
-        {
-          logGroup: favorite.logGroup,
-          logStreams: favorite.logStream ? [favorite.logStream] : undefined,
-        },
-      ],
-      mode,
-    );
   const copy = (value: string) =>
     void window.explorer
       .copy(value)
@@ -478,7 +480,13 @@ export function ExplorerSidebar(props: Props) {
                   size={22}
                   variant="subtle"
                   aria-label="Clear log group search"
-                  onClick={() => {
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={(event) => {
+                    clearEditControl(
+                      event.currentTarget
+                        .closest(".mantine-Input-wrapper")
+                        ?.querySelector<HTMLInputElement>("input") ?? null,
+                    );
                     setSearch("");
                     setDebounced("");
                   }}
@@ -641,6 +649,7 @@ export function ExplorerSidebar(props: Props) {
           event.preventDefault();
           if (!own) tree.current?.focus({ preventScroll: true });
           const row = rows[next.index];
+          inspect(row);
           if (event.shiftKey && selectable(row)) {
             if (!selectionAnchor.current)
               selectionAnchor.current = rows[activeIndex]?.key ?? row.key;
@@ -679,8 +688,10 @@ export function ExplorerSidebar(props: Props) {
               <div
                 key={row.key}
                 onFocusCapture={() => {
-                  if (row.kind !== "loading" && row.kind !== "empty")
+                  if (row.kind !== "loading" && row.kind !== "empty") {
                     setActiveKey(row.key);
+                    inspect(row);
+                  }
                 }}
                 style={{
                   position: "absolute",
@@ -765,9 +776,6 @@ export function ExplorerSidebar(props: Props) {
                             }
                           />
                           <ResourceDragLabel
-                            title={
-                              row.group.name + "\n" + description(row.group)
-                            }
                             payload={payloadFor(row)}
                             onClick={(event) => clickResource(row, event)}
                             onDoubleClick={() => open(row, "permanent")}
@@ -795,7 +803,6 @@ export function ExplorerSidebar(props: Props) {
                             }
                           />
                           <ResourceDragLabel
-                            title={row.stream.name}
                             payload={payloadFor(row)}
                             onClick={(event) => clickResource(row, event)}
                             onDoubleClick={() => open(row, "permanent")}
@@ -937,26 +944,8 @@ export function ExplorerSidebar(props: Props) {
             {notice}
           </Text>
         )}
-        {props.recents.some((item) => allowed.has(item.connectionId)) && (
-          <details>
-            <summary>Recent sources</summary>
-            {props.recents
-              .filter((item) => allowed.has(item.connectionId))
-              .slice(0, 6)
-              .map((item, index) => (
-                <button
-                  key={index}
-                  className="quick-resource"
-                  data-tooltip={item.logGroup}
-                  onClick={() => openFavorite(item)}
-                  onDoubleClick={() => openFavorite(item, "permanent")}
-                >
-                  {item.logStream ?? item.logGroup.split("/").at(-1)}
-                </button>
-              ))}
-          </details>
-        )}
       </div>
+      <SourceDetails resource={currentDetails} onCopy={copy} />
     </aside>
   );
 }

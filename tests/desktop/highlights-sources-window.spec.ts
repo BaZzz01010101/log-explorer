@@ -595,14 +595,18 @@ test("unused AWS anchor permits the selected fixture source with accurate Live h
   await launch();
   await expect(page.locator(".query-status")).toContainText("540 loaded");
   await expect(page.locator(".pane-heading")).toContainText("us-east-1");
-  await page.getByRole("button", { name: "Live", exact: true }).hover();
-  await expect(page.getByRole("tooltip")).toContainText(
-    "explicitly simulated fixture stream",
+  const live = page.getByRole("button", { name: "Live", exact: true });
+  await expect(live).toHaveAttribute(
+    "aria-description",
+    "Start an explicitly simulated fixture stream",
   );
+  await live.hover();
+  await page.waitForTimeout(650);
+  await expect(page.getByRole("tooltip")).toHaveCount(0);
   await expect(page.getByText(/limited fixture interpreter/)).toHaveCount(0);
 });
 
-test("sole AWS source shows AWS Live costs despite an offline anchor without enabling AWS", async () => {
+test("sole AWS source retains the AWS Live cost description despite an offline anchor without enabling AWS", async () => {
   await close();
   const workspace = createWorkspace(),
     offline = workspace.connections[0];
@@ -619,8 +623,11 @@ test("sole AWS source shows AWS Live costs despite an offline anchor without ena
   await writeFile(join(directory, "workspace.json"), JSON.stringify(workspace));
   await launch("error");
   await expect(page.getByRole("alert")).toContainText("AWS access is disabled");
-  await page.getByRole("button", { name: "Live", exact: true }).hover();
-  await expect(page.getByRole("tooltip")).toContainText("AWS charges apply");
+  const live = page.getByRole("button", { name: "Live", exact: true });
+  await expect(live).toHaveAttribute("aria-description", /AWS charges apply/);
+  await live.hover();
+  await page.waitForTimeout(650);
+  await expect(page.getByRole("tooltip")).toHaveCount(0);
   await expect(page.getByText(/limited fixture interpreter/)).toHaveCount(0);
   expect(
     (await page.evaluate(() => window.explorer.environment())).canEnableAws,
@@ -1025,11 +1032,16 @@ test("tab context menu saves a complete split view, reopens an independent snaps
     page.locator(".source-badge[data-source-connection='other-fixtures']"),
   ).toHaveCount(1);
   await expect(
-    page.getByRole("menuitem", { name: "Remove favorite", exact: true }),
+    page.getByRole("menuitem", { name: "Delete", exact: true }),
   ).toHaveCount(0);
   await favorite.click({ button: "right" });
+  await page.getByRole("menuitem", { name: "Delete", exact: true }).click();
   await page
-    .getByRole("menuitem", { name: "Remove favorite", exact: true })
+    .getByRole("group", {
+      name: "Delete favorite Saved investigation",
+      exact: true,
+    })
+    .getByRole("button", { name: "Delete", exact: true })
     .click();
   await expect(favorite).toHaveCount(0);
   await expect(page.locator(".query-pane")).toHaveCount(2);
@@ -1261,7 +1273,7 @@ test("favorite context menus track the pointer and rename aliases persist withou
   const point = { x: rect.x + 25, y: rect.y + rect.height / 2 };
   await page.mouse.click(point.x, point.y, { button: "right" });
   const menu = page.getByRole("menu").filter({
-    has: page.getByRole("menuitem", { name: "Open saved view", exact: true }),
+    has: page.getByRole("menuitem", { name: "Open", exact: true }),
   });
   await expect(menu).toBeVisible();
   await capture("favorite-menu-at-pointer.png");
@@ -1271,9 +1283,7 @@ test("favorite context menus track the pointer and rename aliases persist withou
       return Math.hypot(box.x - point.x, box.y - point.y);
     })
     .toBeLessThan(18);
-  await page
-    .getByRole("menuitem", { name: "Rename favorite", exact: true })
-    .click();
+  await page.getByRole("menuitem", { name: "Rename", exact: true }).click();
   const rename = page.getByRole("dialog", {
     name: "Rename favorite",
     exact: true,
@@ -1296,7 +1306,7 @@ test("favorite context menus track the pointer and rename aliases persist withou
   await page.keyboard.press("Shift+F10");
   await capture("favorite-keyboard-menu.png");
   await expect(
-    page.getByRole("menuitem", { name: "Rename favorite", exact: true }),
+    page.getByRole("menuitem", { name: "Rename", exact: true }),
   ).toBeVisible();
   await page.keyboard.press("Escape");
   await close();
@@ -1347,15 +1357,16 @@ for (const theme of ["light", "dark"] as const)
     await writeFile(join(directory, "workspace.json"), JSON.stringify(state));
     await launch();
     const favorites = page.locator(".saved-view-favorite");
+    const favoriteRows = page.locator(".saved-view-favorite-row");
     await expect(favorites).toHaveCount(2);
     await page.mouse.move(1000, 80);
-    const idleColor = await favorites
+    const idleColor = await favoriteRows
       .first()
       .evaluate((el) => getComputedStyle(el).backgroundColor);
     await favorites.first().hover();
     await expect
       .poll(() =>
-        favorites
+        favoriteRows
           .first()
           .evaluate((el) => getComputedStyle(el).backgroundColor),
       )
@@ -1364,7 +1375,7 @@ for (const theme of ["light", "dark"] as const)
       .first()
       .click({ button: "right", position: { x: 180, y: 10 } });
     await expect(
-      page.getByRole("menuitem", { name: "Open saved view", exact: true }),
+      page.getByRole("menuitem", { name: "Open", exact: true }),
     ).toHaveCount(1);
     const previousMenuId = await page.getByRole("menu").getAttribute("id");
     await favorites
@@ -1375,11 +1386,9 @@ for (const theme of ["light", "dark"] as const)
       previousMenuId!,
     );
     await expect(
-      page.getByRole("menuitem", { name: "Open saved view", exact: true }),
+      page.getByRole("menuitem", { name: "Open", exact: true }),
     ).toHaveCount(1);
-    await page
-      .getByRole("menuitem", { name: "Open saved view", exact: true })
-      .click();
+    await page.getByRole("menuitem", { name: "Open", exact: true }).click();
     const activeTab = page
       .locator(".workspace-tab")
       .getByRole("tab", { selected: true });
@@ -1460,7 +1469,9 @@ for (const mode of ["table", "hybrid"] as const)
       name: "Customize columns",
       exact: true,
     });
-    await columns.getByLabel("Show Source", { exact: true }).uncheck();
+    await columns
+      .getByRole("button", { name: "Hide Source", exact: true })
+      .click();
     await columns.locator(".mantine-Modal-close").click();
     await expect(source).toHaveCount(0);
     await close();

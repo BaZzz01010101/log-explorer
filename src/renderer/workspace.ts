@@ -39,6 +39,10 @@ import { parseRelativePreset } from "./query-state";
 import { normalizeRelativeTimeTemplates } from "../shared/relative-time-templates";
 import { decodeResourceDrop, mergeSources } from "./source-management";
 import type { ResourcePayload, ResourceActionMode } from "./resource-drag";
+import {
+  DEFAULT_RECENT_SEARCHES_LIMIT,
+  MAX_RECENT_SEARCHES_LIMIT,
+} from "../shared/query-history";
 
 export type WorkspaceAction =
   | {
@@ -138,6 +142,7 @@ const DEFAULT_PREFERENCES: Preferences = {
   pinnedTabsSeparateRow: false,
   settingsDetached: false,
   closedTabHistoryDays: 7,
+  recentSearchesLimit: DEFAULT_RECENT_SEARCHES_LIMIT,
   fontSize: 12,
   maxEvents: 10000,
   refreshSeconds: 0,
@@ -150,13 +155,19 @@ const DEFAULT_PREFERENCES: Preferences = {
     toggleTheme: "Control+Shift+L",
     closeTab: "Control+W",
     reopenTab: "Control+Shift+T",
-    nextTab: "Control+Tab",
-    previousTab: "Control+Shift+Tab",
+    nextTab: "Control+PageDown",
+    previousTab: "Control+PageUp",
+    recentTab: "Control+Tab",
+    previousRecentTab: "Control+Shift+Tab",
     splitPane: "Control+\\",
     toggleSidebar: "Control+B",
     runQuery: "Control+Enter",
     explorerRegex: "Alt+E",
     explorerCaseSensitive: "Alt+C",
+    highlightRegex: "Alt+E",
+    highlightCaseSensitive: "Alt+C",
+    localFilterRegex: "Alt+E",
+    localFilterCaseSensitive: "Alt+C",
   },
 };
 const record = (value: unknown): Record<string, unknown> =>
@@ -275,10 +286,28 @@ function parseView(value: unknown): ViewConfig {
         current.findIndex((other) => other.path === column.path) === index,
     ),
     localSearch: string(raw.localSearch),
+    ...(typeof raw.localSearchRegex === "boolean"
+      ? { localSearchRegex: raw.localSearchRegex }
+      : {}),
+    ...(typeof raw.localSearchCaseSensitive === "boolean"
+      ? { localSearchCaseSensitive: raw.localSearchCaseSensitive }
+      : {}),
     inspectorInfoCollapsed: raw.inspectorInfoCollapsed === true,
     inspectorWrap: raw.inspectorWrap !== false,
     ...(typeof raw.highlightText === "string"
       ? { highlightText: string(raw.highlightText, "", 200) }
+      : {}),
+    ...(typeof raw.highlightRegex === "boolean"
+      ? { highlightRegex: raw.highlightRegex }
+      : {}),
+    ...(typeof raw.highlightCaseSensitive === "boolean"
+      ? { highlightCaseSensitive: raw.highlightCaseSensitive }
+      : {}),
+    ...(typeof raw.localSearchWidth === "number"
+      ? { localSearchWidth: number(raw.localSearchWidth, 360, 140, 2400) }
+      : {}),
+    ...(typeof raw.highlightTextWidth === "number"
+      ? { highlightTextWidth: number(raw.highlightTextWidth, 300, 140, 2400) }
       : {}),
     level: string(raw.level, "", 40),
     levels: Array.isArray(raw.levels)
@@ -343,8 +372,7 @@ function baseTab(
     kind: "events",
     filterPattern: "",
     filterMode: "auto",
-    query:
-      "fields @timestamp, @message, @logStream\n| sort @timestamp desc\n| limit 1000",
+    query: "",
     timePreset: "clear",
     view: defaultView(),
   };
@@ -376,7 +404,7 @@ function parseTab(value: unknown, connections: Connection[]): LogTab | null {
     ...(typeof raw.customTitle === "string" && raw.customTitle.trim()
       ? { customTitle: string(raw.customTitle, "", 512) }
       : {}),
-    kind: raw.kind === "insights" ? "insights" : "events",
+    kind: "events",
     filterPattern: string(raw.filterPattern),
     filterMode:
       raw.filterMode === "plain" || raw.filterMode === "auto"
@@ -413,19 +441,27 @@ function parseConnection(value: unknown): Connection | null {
 }
 function parsePreferences(value: unknown): Preferences {
   const raw = record(value);
+  const storedShortcuts = record(raw.shortcuts);
   const shortcuts: Record<string, string> = {
     ...DEFAULT_PREFERENCES.shortcuts,
   };
-  for (const [name, shortcut] of Object.entries(record(raw.shortcuts)).slice(
-    0,
-    50,
-  )) {
+  for (const [name, shortcut] of Object.entries(storedShortcuts).slice(0, 50)) {
     if (
       Object.hasOwn(DEFAULT_PREFERENCES.shortcuts, name) &&
       typeof shortcut === "string"
     )
       shortcuts[name] = shortcut.slice(0, 80);
   }
+  if (
+    !Object.hasOwn(storedShortcuts, "recentTab") &&
+    shortcuts.nextTab === "Control+Tab"
+  )
+    shortcuts.nextTab = DEFAULT_PREFERENCES.shortcuts.nextTab;
+  if (
+    !Object.hasOwn(storedShortcuts, "previousRecentTab") &&
+    shortcuts.previousTab === "Control+Shift+Tab"
+  )
+    shortcuts.previousTab = DEFAULT_PREFERENCES.shortcuts.previousTab;
   return {
     theme: raw.theme === "light" ? "light" : "dark",
     density: raw.density === "comfortable" ? "comfortable" : "compact",
@@ -433,6 +469,14 @@ function parsePreferences(value: unknown): Preferences {
     pinnedTabsSeparateRow: raw.pinnedTabsSeparateRow === true,
     settingsDetached: raw.settingsDetached === true,
     closedTabHistoryDays: historyRetentionDays(raw.closedTabHistoryDays),
+    recentSearchesLimit: Math.round(
+      number(
+        raw.recentSearchesLimit,
+        DEFAULT_RECENT_SEARCHES_LIMIT,
+        1,
+        MAX_RECENT_SEARCHES_LIMIT,
+      ),
+    ),
     relativeTimeTemplates: normalizeRelativeTimeTemplates(
       raw.relativeTimeTemplates,
     ),
@@ -1015,7 +1059,11 @@ export function restoreWorkspace(value: unknown): Workspace {
     savedQueries: unique(
       list(raw.savedQueries, 500).map(parseQuery).filter(valid),
     ),
-    history: unique(list(raw.history, 100).map(parseQuery).filter(valid)),
+    history: unique(
+      list(raw.history, MAX_RECENT_SEARCHES_LIMIT)
+        .map(parseQuery)
+        .filter(valid),
+    ).slice(0, preferences.recentSearchesLimit),
     presets: unique(list(raw.presets, 500).map(parsePreset).filter(valid)),
     preferences,
   };
@@ -1438,6 +1486,7 @@ function legacyWorkspaceReducer(
       return {
         ...state,
         preferences,
+        history: state.history.slice(0, preferences.recentSearchesLimit),
         closedTabs: recentClosedTabs(
           state.closedTabs,
           preferences.closedTabHistoryDays,
@@ -1489,7 +1538,11 @@ function legacyWorkspaceReducer(
                     item.text !== query.text ||
                     item.filterMode !== query.filterMode),
               ),
-            ].slice(0, 100),
+            ].slice(
+              0,
+              state.preferences.recentSearchesLimit ??
+                DEFAULT_RECENT_SEARCHES_LIMIT,
+            ),
           }
         : state;
     }
@@ -2541,9 +2594,6 @@ export function workspaceReducer(
           ...structuredClone(original),
           id: nextId("tab", entryIdentities(state, tabs)),
           preview: false,
-          ...(original.customTitle
-            ? { customTitle: `${original.customTitle} copy`.slice(0, 512) }
-            : { title: `${original.title} copy`.slice(0, 512) }),
         };
         tabs.push(copy);
         map.set(tabId, copy.id);
@@ -2556,9 +2606,6 @@ export function workspaceReducer(
         ? {
             ...structuredClone(split),
             id,
-            ...(split.title
-              ? { title: `${split.title} copy`.slice(0, 512) }
-              : {}),
             panes: split.panes.map((pane) => ({
               ...pane,
               tabId: map.get(pane.tabId!)!,
@@ -2719,16 +2766,7 @@ export function workspaceReducer(
         (nextSplitAxis(state.layout!, paneId) === "horizontal"
           ? "right"
           : "bottom");
-      const candidates = workspaceEntries(state).filter(
-        (entry) => entry.id !== activeEntryId(state),
-      );
-      const alternative =
-        candidates.find((entry) => entry.kind === "single") ??
-        candidates.find(
-          (entry) =>
-            entry.tabIds.length + state.panes.length <= MAX_SPLIT_PANES,
-        );
-      const id = action.tabId ?? alternative?.id;
+      const id = action.tabId;
       if (id && !entryFor(state, id)) return input;
       if (id && entryFor(state, id)?.id !== activeEntryId(state))
         return projectWorkspaceDrop(state, id, paneId, edge) ?? input;

@@ -12,25 +12,16 @@ import {
   DescribeLogGroupsCommand,
   DescribeLogStreamsCommand,
   FilterLogEventsCommand,
-  StartQueryCommand,
-  GetQueryResultsCommand,
-  StopQueryCommand,
   StartLiveTailCommand,
   type DescribeLogGroupsCommandOutput,
   type DescribeLogStreamsCommandOutput,
   type FilterLogEventsCommandOutput,
-  type StartQueryCommandOutput,
-  type GetQueryResultsCommandOutput,
   type StartLiveTailCommandOutput,
-  type StopQueryCommandOutput,
 } from "@aws-sdk/client-cloudwatch-logs";
 export type CloudWatchCommand =
   | DescribeLogGroupsCommand
   | DescribeLogStreamsCommand
   | FilterLogEventsCommand
-  | StartQueryCommand
-  | GetQueryResultsCommand
-  | StopQueryCommand
   | StartLiveTailCommand;
 export interface AwsTransport {
   send(
@@ -52,11 +43,6 @@ export interface LogAdapter {
     signal: AbortSignal,
   ): Promise<Page<LogStream>>;
   events(request: QueryRequest, signal: AbortSignal): Promise<QueryUpdate>;
-  insights(
-    request: QueryRequest,
-    signal: AbortSignal,
-    emit: (update: QueryUpdate) => void,
-  ): Promise<void>;
   live(
     request: QueryRequest,
     signal: AbortSignal,
@@ -67,8 +53,6 @@ export interface LogAdapter {
 export interface AwsAdapterOptions {
   allowAws: () => boolean;
   transportFactory?: (connection: Connection) => Promise<AwsTransport>;
-  pollIntervalMs?: number;
-  maxPolls?: number;
 }
 
 export function throwIfAborted(signal: AbortSignal): void {
@@ -241,55 +225,6 @@ function eventId(parts: Array<string | number | undefined>): string {
   return createHash("sha256").update(JSON.stringify(parts)).digest("hex");
 }
 
-function streamQuery(request: QueryRequest): string {
-  if (!request.sources.some((source) => source.logStreams?.length))
-    return request.query;
-  const escape = (value: string) =>
-    value.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&");
-  const predicates = request.sources.map(
-    (source) =>
-      `(@log like /:${escape(nameFromIdentifier(source.logGroup))}$/` +
-      (source.logStreams?.length
-        ? ` and @logStream in ${JSON.stringify(source.logStreams)}`
-        : "") +
-      ")",
-  );
-  return `filter ${predicates.join(" or ")} | ${request.query}`;
-}
-
-function resultEvents(
-  response: GetQueryResultsCommandOutput,
-  request: QueryRequest,
-  queryId: string,
-): LogEvent[] {
-  return (response.results ?? [])
-    .slice(0, request.limit)
-    .map((fields, index) => {
-      const row = Object.create(null) as Record<string, string>;
-      for (const item of fields)
-        if (item.field) row[item.field] = item.value ?? "";
-      const rawTime = row["@timestamp"] ?? "";
-      // CloudWatch service timestamps without an explicit zone describe UTC.
-      const time = /^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(?:\.\d+)?$/.test(
-        rawTime,
-      )
-        ? rawTime.replace(" ", "T") + "Z"
-        : rawTime;
-      const timestamp = Date.parse(time);
-      const log = row["@log"] ?? "";
-      return {
-        // @ptr identifies the source record, not an expanded/unnested result row.
-        id: `${queryId}:${index}:${row["@ptr"] ?? ""}`,
-        timestamp: Number.isFinite(timestamp) ? timestamp : request.endTime,
-        logGroup: log.includes(":")
-          ? log.slice(log.indexOf(":") + 1)
-          : "[Insights result]",
-        logStream: row["@logStream"] ?? "",
-        message: JSON.stringify(row),
-      };
-    });
-}
-
 async function defaultTransport(
   connection: Connection,
   allowAws: () => boolean,
@@ -348,28 +283,9 @@ export function createAwsAdapter(
     gate();
     return client;
   }
-  async function stopQuery(queryId: string): Promise<StopQueryCommandOutput> {
-    // Revocation blocks all new work. Only cancellation of an already started
-    // query may reuse its existing client; never construct a transport here.
-    if (!transport || destroyed) throw new Error("AWS connection was closed");
-    const signal = AbortSignal.timeout(5000);
-    const release = await slots.acquire(signal);
-    try {
-      const client = await transport;
-      if (destroyed) throw new Error("AWS connection was closed");
-      throwIfAborted(signal);
-      return (await withAbort(
-        client.send(new StopQueryCommand({ queryId }), { abortSignal: signal }),
-        signal,
-      )) as StopQueryCommandOutput;
-    } finally {
-      release();
-    }
-  }
   async function send<T>(
     command: CloudWatchCommand,
     signal: AbortSignal,
-    beforeDispatch?: AbortSignal,
   ): Promise<T> {
     gate();
     const release = await slots.acquire(signal);
@@ -378,7 +294,6 @@ export function createAwsAdapter(
       for (let attempt = 0; ; attempt++) {
         gate();
         throwIfAborted(signal);
-        if (beforeDispatch) throwIfAborted(beforeDispatch);
         try {
           const timeout = new AbortController();
           const timer = setTimeout(() => timeout.abort(), 30000);
@@ -405,10 +320,9 @@ export function createAwsAdapter(
               : "";
           const retryable =
             /Throttl|TooManyRequests/.test(name) ||
-            (!(command instanceof StartQueryCommand) &&
-              /ServiceUnavailable|TimeoutError|RequestTimeout|InternalFailure|InternalServerError/.test(
-                name,
-              ));
+            /ServiceUnavailable|TimeoutError|RequestTimeout|InternalFailure|InternalServerError/.test(
+              name,
+            );
           if (!retryable || attempt >= 2) throw error;
           await delay(
             Math.min(2000, 200 * 2 ** attempt) +
@@ -665,115 +579,9 @@ export function createAwsAdapter(
         },
       };
     },
-    async insights(request, signal, emit) {
-      if (request.cursor)
-        throw new Error("Insights results cannot reuse an event continuation");
-      gate();
-      throwIfAborted(signal);
-      const started = Date.now();
-      let queryId: string | undefined;
-      let terminal = false;
-      try {
-        // Once a StartQuery is dispatched, capture its ID even if the caller
-        // cancels, so its server job can be stopped rather than left running.
-        const startSignal = AbortSignal.timeout(15000);
-        const response = await send<StartQueryCommandOutput>(
-          new StartQueryCommand({
-            queryLanguage: "CWLI",
-            logGroupIdentifiers: request.sources.map((source) =>
-              source.logGroup.replace(/:\*$/, ""),
-            ),
-            startTime: Math.floor(request.startTime / 1000),
-            endTime: Math.ceil(request.endTime / 1000),
-            queryString: streamQuery(request),
-            limit: Math.min(request.limit, 10000),
-          }),
-          startSignal,
-          signal,
-        );
-        queryId = response.queryId;
-        if (!queryId)
-          throw new Error("CloudWatch did not return an Insights query ID");
-        for (let poll = 0; poll < (options.maxPolls ?? 3600); poll++) {
-          throwIfAborted(signal);
-          const result = await send<GetQueryResultsCommandOutput>(
-            new GetQueryResultsCommand({ queryId }),
-            signal,
-          );
-          throwIfAborted(signal);
-          const status = result.status;
-          const events = resultEvents(result, request, queryId);
-          const stats = {
-            recordsMatched: result.statistics?.recordsMatched,
-            recordsScanned: result.statistics?.recordsScanned,
-            bytesScanned: result.statistics?.bytesScanned,
-            elapsedMs: Date.now() - started,
-          };
-          if (status === "Complete") {
-            terminal = true;
-            emit({
-              requestId: request.requestId,
-              state: "complete",
-              events,
-              replace: true,
-              stats,
-              truncated: !!result.nextToken || events.length >= request.limit,
-            });
-            return;
-          }
-          if (status === "Cancelled") {
-            terminal = true;
-            throw Object.assign(
-              new Error("Insights query was cancelled by CloudWatch"),
-              { name: "AbortError" },
-            );
-          }
-          if (
-            status === "Failed" ||
-            status === "Timeout" ||
-            status === "Unknown"
-          ) {
-            terminal = true;
-            throw new Error(
-              `CloudWatch Insights query ended with status ${status}`,
-            );
-          }
-          if (status !== "Running" && status !== "Scheduled")
-            throw new Error(
-              "CloudWatch returned an unexpected Insights query status",
-            );
-          emit({
-            requestId: request.requestId,
-            state: "running",
-            events,
-            replace: true,
-            stats,
-          });
-          await delay(options.pollIntervalMs ?? 1000, signal);
-        }
-        throw new Error(
-          "Insights polling time limit reached. Query has been stopped; narrow the time range and retry.",
-        );
-      } finally {
-        if (queryId && !terminal) {
-          try {
-            const result = await stopQuery(queryId);
-            if (!result.success)
-              throw new Error("CloudWatch did not confirm cancellation");
-          } catch (error) {
-            // Cleanup failures must be visible and cannot masquerade as success.
-            throw new Error(
-              `Could not stop Insights query ${queryId}: ${error instanceof Error ? error.message : "unknown error"}. The server query may still be running.`,
-            );
-          }
-        }
-      }
-    },
     async live(request, signal, emit) {
       if (request.kind !== "events")
-        throw new Error(
-          "Live Tail supports event filters; Insights queries are finite operations",
-        );
+        throw new Error("Only Events queries are supported");
       if (request.sources.length > 10)
         throw new Error("CloudWatch Live Tail supports at most 10 log groups");
       if (

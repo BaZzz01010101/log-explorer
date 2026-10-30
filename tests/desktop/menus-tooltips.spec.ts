@@ -191,9 +191,28 @@ test("menu and Popover tooltips support native mouse selection and copying witho
   };
   const query = "request id = abc-123; status >= 500";
   await page
-    .getByRole("button", { name: "Saved queries and presets", exact: true })
+    .getByRole("button", { name: "Saved and recent searches", exact: true })
     .click();
-  await page.getByRole("menuitem", { name: query, exact: true }).hover();
+  const recent = page.getByRole("menuitem", { name: query, exact: true });
+  // Identical fully visible labels no longer need a popup. Keep this native
+  // selection/copy case about the full hint for an actually clipped menu label.
+  const clipped = await recent.evaluate((element) => {
+    const text = document
+      .createTreeWalker(element, NodeFilter.SHOW_TEXT)
+      .nextNode();
+    const label = text?.parentElement;
+    if (!label) throw new Error("Recent search label is missing");
+    Object.assign(label.style, {
+      display: "block",
+      maxWidth: "120px",
+      whiteSpace: "nowrap",
+      overflow: "hidden",
+      textOverflow: "ellipsis",
+    });
+    return label.scrollWidth > label.clientWidth;
+  });
+  expect(clipped).toBe(true);
+  await recent.hover();
   await selectAndCopy(query);
   await expect(
     page.getByRole("menuitem", { name: query, exact: true }),
@@ -220,7 +239,7 @@ test("context menus are exclusive across components and outside clicks dismiss t
   await action("Save view to Favorites").click();
   const favorite = page.locator(".saved-view-favorite").first();
   await favorite.click({ button: "right" });
-  await expect(action("Open saved view")).toBeVisible();
+  await expect(action("Open")).toBeVisible();
   await page.locator(".workspace-tab").first().click({ button: "right" });
   await expect(action("Rename tab")).toBeVisible();
   await expect(page.getByRole("menu")).toHaveCount(1);
@@ -238,12 +257,12 @@ test("context menus are exclusive across components and outside clicks dismiss t
   await page.locator(".app-footer").click({ position: { x: 200, y: 8 } });
   await expect(page.getByRole("menu")).toHaveCount(0);
   await favorite.dispatchEvent("contextmenu", { clientX: 150, clientY: 350 });
-  await expect(action("Open saved view")).toBeVisible();
+  await expect(action("Open")).toBeVisible();
   await page.evaluate(() => window.dispatchEvent(new Event("blur")));
   await expect(page.getByRole("menu")).toHaveCount(0);
 });
 
-test("resource copy actions and delegated tooltips retain selectable raw text", async () => {
+test("resource copy actions and source details retain selectable raw text without source tooltips", async () => {
   const groupArn =
     "arn:aws:logs:eu-west-1:000000000000:log-group:/aws/lambda/orders-api";
   await app.evaluate(({ clipboard, ipcMain }, arn) => {
@@ -288,11 +307,16 @@ test("resource copy actions and delegated tooltips retain selectable raw text", 
   ).toBe(groupArn + ":log-stream:" + name);
   await group.locator(".resource-label").hover();
   const tooltip = page.locator('[role="tooltip"][data-text-tooltip]');
-  await expect(tooltip).toContainText("/aws/lambda/orders-api");
-  await tooltip.hover();
-  await page.waitForTimeout(550);
-  await expect(tooltip).toBeVisible();
-  await tooltip.evaluate((element) => {
+  await expect(group.locator(".resource-label")).not.toHaveAttribute(
+    "data-tooltip",
+    /.+/,
+  );
+  const details = page.getByRole("region", {
+    name: "Current source details",
+    exact: true,
+  });
+  await expect(details).toContainText("/aws/lambda/orders-api");
+  await details.locator(".source-details-body").evaluate((element) => {
     const range = document.createRange();
     range.selectNodeContents(element);
     getSelection()!.removeAllRanges();

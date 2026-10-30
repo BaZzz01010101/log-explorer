@@ -9,7 +9,8 @@
 }
 .viewer-toolbar {
   display: flex;
-  gap: 7px;
+  --viewer-control-gap: 8px;
+  gap: var(--viewer-control-gap);
   align-items: center;
   padding: 10px 12px;
   border-bottom: 1px solid var(--mantine-color-default-border);
@@ -17,17 +18,46 @@
   flex: none;
 }
 .local-search {
-  flex: 1 1 185px;
-  max-width: 420px;
-  min-width: 120px;
+  width: 100%;
+  min-width: 0;
 }
 .level-filter {
   flex: 0 0 106px;
 }
 .quick-highlight {
-  flex: 1 1 145px;
-  max-width: 240px;
-  min-width: 120px;
+  width: 100%;
+  min-width: 0;
+}
+.viewer-edit-field {
+  flex: 0 1 auto;
+  min-width: min(140px, 100%);
+  max-width: 100%;
+  box-sizing: border-box;
+  padding-right: var(--viewer-control-gap);
+  position: relative;
+}
+.viewer-field-resizer {
+  position: absolute;
+  inset: 0 -4px 0 auto;
+  width: 8px;
+  cursor: col-resize;
+  user-select: none;
+  touch-action: none;
+  outline: none;
+}
+.viewer-field-resizer::before {
+  content: "";
+  position: absolute;
+  width: 1px;
+  top: 3px;
+  bottom: 3px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--mantine-color-default-border);
+}
+.viewer-field-resizer:is(:hover, :focus-visible)::before {
+  width: 3px;
+  background: var(--mantine-color-indigo-5);
 }
 .toolbar-spacer {
   flex: 1;
@@ -698,6 +728,12 @@ body.resizing-columns * {
 .column-config:last-child {
   border-bottom: 0;
 }
+.column-hidden .column-path {
+  color: var(--mantine-color-dimmed);
+}
+.column-delete-placeholder {
+  flex: 0 0 28px;
+}
 .column-dragging {
   opacity: 0.4;
 }
@@ -749,7 +785,8 @@ body.resizing-columns * {
 @media (max-width: 800px) {
   .viewer-toolbar {
     padding: 7px;
-    gap: 5px;
+    --viewer-control-gap: 5px;
+    gap: var(--viewer-control-gap);
   }
   .viewer-meta > span:nth-child(2),
   .viewer-footer > span:nth-child(2) {

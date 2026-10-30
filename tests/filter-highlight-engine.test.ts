@@ -13,6 +13,37 @@ const event: LogEvent = {
   logGroup: "group",
   logStream: "stream",
 };
+it("uses local regex and case options for evidence and match revisions without overview marks", () => {
+  const filters = {
+    server: "",
+    local: "NEEDLE",
+    localOptions: { regex: true },
+  };
+  const insensitive = highlightEvent(
+    event,
+    [],
+    "light",
+    [],
+    "utc",
+    false,
+    "",
+    filters,
+  );
+  expect(insensitive.filters?.local?.matched).toBe(true);
+  const sensitive = highlightEvent(event, [], "light", [], "utc", false, "", {
+    ...filters,
+    localOptions: { regex: true, caseSensitive: true },
+  });
+  expect(sensitive.filters?.local?.matched).toBe(false);
+  const literal = highlightEvent(event, [], "light", [], "utc", false, "", {
+    ...filters,
+    localOptions: { regex: false },
+  });
+  expect(insensitive.matchKey).not.toBe(literal.matchKey);
+  expect(
+    highlightEvent(event, [], "light", [], "utc", true, "", filters).overview,
+  ).toEqual([]);
+});
 it("tracks field-specific filter evidence without marking every filtered event on the list overview", () => {
   const filters = {
     server: '{ $.outer.status >= 500 && $.outer.id = "needle" }',

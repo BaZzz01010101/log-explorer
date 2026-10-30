@@ -107,6 +107,42 @@ it("copies full current scalar and object values from the field menu", async () 
   expect(copy).toHaveBeenLastCalledWith(JSON.stringify(value.payload, null, 2));
 });
 
+it("copies an escaped JSON path from the field menu without hover path tooltips", async () => {
+  const copy = vi.fn();
+  await act(async () => {
+    renderer = create(
+      <JsonTree value={{ "a/b~c": 1 }} highlight="" onCopyValue={copy} />,
+    );
+  });
+  await openField("/a~1b~0c");
+  await act(async () => button("Copy /a~1b~0c path")!.props.onClick());
+  expect(copy).toHaveBeenLastCalledWith("/a~1b~0c");
+  expect(
+    renderer.root
+      .findAll((node) => node.props.className === "json-key")
+      .every((node) => !node.props["data-tooltip"]),
+  ).toBe(true);
+});
+
+it("an explicit row expansion request opens nested JSON once and leaves later manual folding intact", async () => {
+  const render = (request: number) => (
+    <JsonTree
+      value={{ nested: { list: [{ value: 1 }] } }}
+      highlight=""
+      expandRequest={request}
+    />
+  );
+  await act(async () => {
+    renderer = create(render(1));
+  });
+  expect(button("Collapse /nested/list/0")).toBeDefined();
+  await act(async () => button("Collapse /nested")!.props.onClick());
+  await act(async () => renderer.update(render(1)));
+  expect(button("Expand /nested")).toBeDefined();
+  await act(async () => renderer.update(render(2)));
+  expect(button("Collapse /nested/list/0")).toBeDefined();
+});
+
 it("unfolds nested structured values and folds the entire object", async () => {
   await act(async () => {
     renderer = create(

@@ -445,7 +445,7 @@ test("reading older rows pauses following while events continue and Follow Live 
     .toBeLessThan(80);
 });
 
-test("Run leaves Live explicitly and query mode changes stop the stream without late updates", async () => {
+test("Run leaves Live explicitly and Stop retains received rows without late updates before another Run", async () => {
   await page.getByRole("button", { name: "Live", exact: true }).click();
   await expect.poll(received).toBeGreaterThanOrEqual(1);
   const run = page.getByTestId("run-query");
@@ -459,17 +459,64 @@ test("Run leaves Live explicitly and query mode changes stop the stream without 
     "aria-rowcount",
     "540",
   );
+  await page.evaluate(() => {
+    (window as any).__stoppedLiveId = undefined;
+    window.explorer.onUpdate((update) => {
+      if (update.liveState === "streaming")
+        (window as any).__stoppedLiveId = update.requestId;
+    });
+  });
   await page.getByRole("button", { name: "Live", exact: true }).click();
   await expect(status()).toHaveAttribute("data-live-state", "streaming");
-  await page
-    .locator("label")
-    .filter({ hasText: /^Insights$/ })
-    .click();
-  await expect(status()).toHaveAttribute("data-query-state", "complete");
+  await expect.poll(received).toBeGreaterThanOrEqual(1);
+  const retiredId = await page.evaluate(
+    () => (window as any).__stoppedLiveId as string,
+  );
+  expect(retiredId).toBeTruthy();
+  await page.getByRole("button", { name: "Stop Live", exact: true }).click();
+  await expect(status()).toHaveAttribute("data-live-state", "stopped");
+  const stoppedReceived = await received();
+  const stoppedRows = await page
+    .locator(".viewer-scroll")
+    .getAttribute("aria-rowcount");
+  expect(stoppedReceived).toBeGreaterThan(0);
+  expect(Number(stoppedRows)).toBeGreaterThan(540);
   await expect(
     page.getByRole("button", { name: "Live", exact: true }),
-  ).toBeDisabled();
-  await expect(status()).not.toHaveAttribute("data-live-state", "streaming");
+  ).toBeEnabled();
+  await app!.evaluate(({ BrowserWindow }, requestId) => {
+    BrowserWindow.getAllWindows()[0].webContents.send("explorer:update", {
+      requestId,
+      state: "running",
+      liveState: "streaming",
+      events: [
+        {
+          id: "retired-live-event",
+          timestamp: Date.now(),
+          logGroup: "/aws/lambda/orders-api",
+          logStream: "retired",
+          message: "Late event from a stopped Live session",
+        },
+      ],
+      replace: false,
+    });
+  }, retiredId);
+  await page.waitForTimeout(1500);
+  await expect(status()).toHaveAttribute("data-live-state", "stopped");
+  expect(await received()).toBe(stoppedReceived);
+  await expect(page.locator(".viewer-scroll")).toHaveAttribute(
+    "aria-rowcount",
+    stoppedRows!,
+  );
+  await expect(
+    page.locator('.virtual-event[data-event-id="retired-live-event"]'),
+  ).toHaveCount(0);
+  await run.click();
+  await expect(status()).toHaveAttribute("data-query-state", "complete");
+  await expect(page.locator(".viewer-scroll")).toHaveAttribute(
+    "aria-rowcount",
+    "540",
+  );
 });
 
 test("native keyboard scrolling pauses Live following without stopping reception", async () => {

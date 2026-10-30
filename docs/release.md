@@ -1,6 +1,146 @@
 # Building and releasing
 
-## Latest local verification build (0.1.56)
+## Verified build 0.1.64
+
+Favorite hover and confirmation emphasis, compact confirmation buttons, and redundant-tooltip suppression are packaged under `release/0.1.64/`. Verification: 1,097 unit tests and 24 targeted hidden/offline packaged desktop regressions, with matching installer, executable and ASAR hashes. Evidence is in `.tmp/desktop-verification-0.1.64.json`.
+
+The hash-checked handoff stages this version, waits for the user app to exit naturally and retains the previous build. State is `.tmp/standard-build-update-0.1.64.json`; six hidden checks are queued against the exact standard launch folder after promotion. The helpers never close or launch the user app.
+
+## Verified build 0.1.63
+
+Favorite confirmations, tooltip cleanup and contextual filter controls are packaged under `release/0.1.63/`. Verification: 1,081 unit tests and 41 hidden/offline packaged desktop regressions. The artifact manifest contains matching installer, executable and ASAR hashes. The existing natural-exit handoff keeps a backup and verifies the standard launch folder; state is `.tmp/standard-build-update-0.1.63.json`, with four post-promotion desktop checks queued. The running user app is never closed or launched by these helpers.
+
+## Verified build 0.1.62
+
+The tab-menu cleanup is packaged under `release/0.1.62/`, with matching installer, executable and ASAR hashes in its artifact manifest. Verification: 1,047 unit tests and four targeted hidden/offline desktop checks. The standard-folder update uses the existing natural-exit handoff and retained backup; current state is in `.tmp/standard-build-update-0.1.62.json`. Four hidden checks are queued against the standard path after promotion.
+
+## Verified build 0.1.61
+
+The versioned Windows build and installer are under `release/0.1.61/`. The package passed 1,047 unit tests and 43 hidden/offline desktop regressions. Three artifact hashes are in `release/0.1.61/artifact-manifest.json`, with verification proof in `.tmp/desktop-verification-0.1.61.json`.
+
+Use the existing hash-checked natural-exit handoff to promote `release/win-unpacked`, retaining the prior folder. The current handoff state is `.tmp/standard-build-update-0.1.61.json`; eight exact-standard-path checks are queued after promotion. The helper never closes or launches the user’s app.
+
+## Latest local verification build (0.1.60)
+
+Events/Insights switches now retire old work and leave the selected mode idle
+until explicit execution. Query drafts and undo remain independent and retained.
+Old sleeping Live intent and pending date timers cannot restart a retired mode;
+newer manual Run ownership is preserved. Source/date refreshes remain available.
+
+The columns editor uses one reversible eye toggle at the left of each row;
+checkboxes and duplicate right-side hide actions are removed. Hidden names are
+dimmed, protected columns have no delete action, and custom columns retain
+deletion. Visibility buttons remain interactive, with last-visible-column feedback
+inside the modal. See [behavior and evidence](manual-mode-switch-0.1.60.md).
+
+All 1,039 unit/integration tests and 11 targeted final packaged desktop checks
+pass with no failures, skips or flaky cases. Native coverage verifies manual
+execution and no query on switching modes/existing idle tabs in both themes,
+Events/SQL undo, Live retirement, reversible column visibility and grayed names,
+protected/custom actions, last-column feedback, and persisted Source visibility
+in Table/Hybrid. Review, typecheck/build, formatting, whitespace, NSIS packaging
+and artifact hashes pass. Evidence: `.tmp/unit-0.1.60-final2.json`,
+`.tmp/desktop-verification-0.1.60.json`, and
+`release/0.1.60/artifact-manifest.json`.
+
+Verification used hidden isolated offline windows; real AWS and installer
+installation were not exercised. The normal launch folder was updated after
+natural app exit, with a backup retained. All three promoted hashes match, and
+all four hidden post-update checks pass. State and evidence are recorded in
+`.tmp/standard-build-update-0.1.60.json` and
+`.tmp/test-results-standard-0.1.60/report.json`. Changes remain uncommitted.
+
+## Earlier local verification build (0.1.59)
+
+Switching away from Insights no longer reports a false stop failure when the
+query has already ended. After unsuccessful stopping, cleanup confirms the same
+query's status with the existing client and one shared five-second deadline.
+Confirmed ended states are accepted; running, unknown or unreadable states still
+surface the stop failure. Retired results are never published. Events filters
+now retain independent per-tab undo/redo across mode and tab switches, including
+clear-button edits. See [behavior and evidence](query-cancel-and-undo-0.1.59.md).
+
+All 1,038 unit/integration tests and 10 targeted final packaged desktop checks
+pass with no failures, skips or flaky cases. Deterministic adapter/service tests
+reproduce the already-ended failure and cover completion states, unsuccessful
+stop responses, permission/read failures, shared cleanup deadlines, access
+revocation and shutdown without retained false cleanup errors. Hidden native
+checks cover Events/SQL undo isolation in both themes, tab/mode switches, clear
+undo/redo, all three Events filter modes and Live-to-Insights transitions.
+Review, typecheck/build, formatting, whitespace, packaging and artifact hashes
+pass. Evidence: `.tmp/unit-0.1.59-final.json`,
+`.tmp/desktop-verification-0.1.59.json`, and
+`release/0.1.59/artifact-manifest.json`.
+
+The AWS response was reproduced with deterministic transports; real AWS and
+installer installation were not exercised. Native verification used hidden,
+isolated offline windows. The gated update waits for natural app exit, preserves
+a backup and queues four standard-path undo postchecks. Its state is recorded in
+`.tmp/standard-build-update-0.1.59.json`. Changes remain uncommitted.
+
+## Earlier local verification build (0.1.58)
+
+Explorer replaces Recent sources with a collapsible current-source details pane,
+showing only the last interacted group/stream, selectable identifiers, copy
+actions and available metadata. Resource and event-content hover tooltips are
+removed. Protected columns can only be hidden in the editor, and Left/Right
+folds/unfolds the current event without intercepting nested controls or resizing.
+
+Saved/recent searches moves beside Run and omits view presets. Saved searches
+can be deleted; new names use the single-line query, focused and selected for
+replacement. Preferences controls recent-search retention (default 30, 1–100).
+Insights SQL undo/redo survives mode and tab switching using bounded, independent
+per-tab histories. See [behavior and evidence](source-details-and-searches-0.1.58.md).
+
+All 1,020 unit/integration tests and 28 targeted final packaged desktop checks
+pass without failures, skips or flaky cases. Native coverage includes both
+themes, current-source identity/copying/collapse, protected-column editor actions,
+row and nested-control keyboard behavior, saved-search placement/naming/deletion
+and focus return, persisted history limits, SQL undo/redo across modes/tabs,
+column context actions, hybrid scrolling/resizing, menu exclusivity and copyable
+custom tooltips. Review found and regression tests reproduced two keyboard focus
+edge cases, both fixed before packaging. Build/typecheck, formatting, whitespace,
+NSIS packaging and artifact hashes pass. Evidence:
+`.tmp/unit-0.1.58-final2.json`, `.tmp/desktop-verification-0.1.58.json` and
+`release/0.1.58/artifact-manifest.json`.
+
+Verification used hidden isolated offline windows; real AWS and installer
+installation were not exercised. The gated update waits for natural app exit,
+retains a backup and queues four hidden standard-path postchecks. State is
+recorded in `.tmp/standard-build-update-0.1.58.json`. Changes remain uncommitted.
+
+## Earlier local verification build (0.1.57)
+
+Ctrl-click an event expander to open the row and its JSON recursively and fit the
+detail height to the available viewport. Manual folds and resized heights survive
+virtualization. JSON keys no longer display path tooltips; Copy path is available
+in each field menu.
+
+Local-filter and quick-highlight fields have centered resize handles and saved
+widths. Quick highlighting adds case and regex toggles, using the existing bounded
+worker for regex matching. Clear crosses participate in each control's undo/redo
+history. Scrollbar maps adapt pale colors for contrast independently from event
+paint, reduce brightness on dark tracks and omit inspector lane separators. See
+[behavior and evidence](log-view-controls-0.1.57.md).
+
+All 997 unit/integration tests and 36 targeted final packaged desktop checks pass
+with zero failures, skips or flaky cases. Coverage includes both themes, recursive
+expansion before and after ordinary expansion, virtualization retention, field
+resizing and persistence, regex/case modes, invalid patterns, clear undo/redo,
+map colors and navigation, inspector interactions and synchronized previews.
+Typecheck/build, formatting, whitespace, packaging and artifact hashes pass.
+Evidence: `.tmp/unit-0.1.57-final2.json`,
+`.tmp/desktop-verification-0.1.57.json` and
+`release/0.1.57/artifact-manifest.json`.
+
+Verification used hidden isolated offline windows; real AWS and installer
+installation were not exercised. The gated handoff completed after natural app
+exit and preserved a backup. All three promoted artifact hashes match, and all
+four hidden standard-path postchecks pass. State and evidence are recorded in
+`.tmp/standard-build-update-0.1.57.json` and
+`.tmp/test-results-standard-0.1.57/report.json`. Changes remain uncommitted.
+
+## Earlier local verification build (0.1.56)
 
 Closed-history tooltips no longer lose their opening timer after rapid movement
 across unrelated controls. The delegated handler cancels both prior timers and
@@ -635,6 +775,6 @@ For packaged verification, launch `AWS Log Explorer.exe --offline-verification`.
 
 Workspace configuration lives in Electron's per-user application-data directory as `workspace.json`, with a previous-file backup. Log payloads are kept in memory and exported only through an explicit local save dialog. Back up configuration before distributing an incompatible workspace migration. Preserve the original file and surface recovery warnings when loading fails.
 
-The current implementation is version `0.1.34`. The release configuration and offline tests provide a starting point for distribution; they do not establish a signed, security-audited or commercially validated production release.
+The current implementation is version `0.1.64`. The release configuration and offline tests provide a starting point for distribution; they do not establish a signed, security-audited or commercially validated production release.
 
 The standard launch folder was updated to 0.1.11 after natural app exit, with a retained backup and matching executable/ASAR/installer hashes. Two additional hidden checks passed against the exact standard path: `.tmp/test-results-standard-0.1.11/report.json`.
