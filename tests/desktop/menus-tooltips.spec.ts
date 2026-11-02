@@ -1,4 +1,4 @@
-import { openSettingsWindow } from "./settings-panel";
+import { openSettingsWindow, setShortcutBinding } from "./settings-panel";
 import {
   _electron as electron,
   expect,
@@ -251,10 +251,14 @@ test("context menus are exclusive across components and outside clicks dismiss t
   await expect(page.getByRole("button", { name: /^Details for/ })).toHaveCount(
     0,
   );
-  await page.locator(".app-footer").click({ position: { x: 200, y: 8 } });
+  await page
+    .getByRole("textbox", { name: "Local filter loaded events", exact: true })
+    .click();
   await expect(page.getByRole("menu")).toHaveCount(0);
   await favorite.click({ button: "right" });
-  await page.locator(".app-footer").click({ position: { x: 200, y: 8 } });
+  await page
+    .getByRole("textbox", { name: "Local filter loaded events", exact: true })
+    .click();
   await expect(page.getByRole("menu")).toHaveCount(0);
   await favorite.dispatchEvent("contextmenu", { clientX: 150, clientY: 350 });
   await expect(action("Open")).toBeVisible();
@@ -342,12 +346,8 @@ test("resource copy actions and source details retain selectable raw text withou
 test("Explorer shortcut edits are saved and only apply inside the group filter", async () => {
   await openSettingsWindow(page);
   await page.getByRole("tab", { name: "Shortcuts", exact: true }).click();
-  await page
-    .getByRole("textbox", { name: "Explorer regex", exact: true })
-    .fill("Alt+R");
-  await page
-    .getByRole("textbox", { name: "Explorer match case", exact: true })
-    .fill("Alt+M");
+  await setShortcutBinding(page, "Explorer regex", "Alt+R");
+  await setShortcutBinding(page, "Explorer match case", "Alt+M");
   await page.keyboard.press("Escape");
   const regex = page.getByRole("button", {
     name: "Use regular expression",
@@ -371,11 +371,11 @@ test("Explorer shortcut edits are saved and only apply inside the group filter",
   await expect(regex).toHaveAttribute("aria-pressed", "true");
   await expect(matchCase).toHaveAttribute("aria-pressed", "true");
   await expect
-    .poll(async () => (await stored()).preferences.shortcuts.explorerRegex)
-    .toBe("Alt+R");
-  expect((await stored()).preferences.shortcuts.explorerCaseSensitive).toBe(
-    "Alt+M",
-  );
+    .poll(async () => {
+      const shortcuts = (await stored()).preferences.shortcuts;
+      return [shortcuts.explorerRegex, shortcuts.explorerCaseSensitive];
+    })
+    .toEqual(["Alt+R", "Alt+M"]);
   await regex.hover();
   await expect(
     page.getByRole("tooltip").filter({ hasText: "Alt+R" }),
@@ -411,7 +411,7 @@ test("Explorer case and regex shortcuts are scoped, configurable and shown in se
     await page.getByRole("combobox", { name: "Theme", exact: true }).click();
     await page
       .getByRole("option", {
-        name: theme,
+        name: theme === "dark" ? "Dark" : "Light",
         exact: true,
       })
       .click();

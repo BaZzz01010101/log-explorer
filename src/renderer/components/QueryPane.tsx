@@ -35,6 +35,7 @@ import { contextEventIndex } from "../context-event";
 import { SourceBadges } from "./SourceBadges";
 import { ServerFilterInput } from "./ServerFilterInput";
 import { DEFAULT_RECENT_SEARCHES_LIMIT } from "../../shared/query-history";
+import { InlineDeleteConfirmation } from "./InlineDeleteConfirmation";
 import "./sources.css";
 
 interface Props {
@@ -80,6 +81,15 @@ export function QueryPane({
     sourceConnections.every((connection) => connection.mode === "offline");
   const [saveOpened, setSaveOpened] = useState(false);
   const [saveName, setSaveName] = useState("");
+  const [pendingSearchDeletes, setPendingSearchDeletes] = useState<Set<string>>(
+    () => new Set(),
+  );
+  const finishDelete = (id: string) =>
+    setPendingSearchDeletes((previous) => {
+      const next = new Set(previous);
+      next.delete(id);
+      return next;
+    });
   const [followLive, setFollowLive] = useState(false);
   const sourceContext = useMemo(
     () => ({
@@ -226,10 +236,21 @@ export function QueryPane({
                   <Menu.Divider />
                   <Menu.Label>Saved searches</Menu.Label>
                   {savedSearches.map((query) => (
-                    <div key={query.id} className="saved-search-menu-row">
+                    <div
+                      key={query.id}
+                      className={`saved-search-menu-row inline-delete-row${pendingSearchDeletes.has(query.id) ? " is-confirming-delete" : ""}`}
+                      data-saved-search-id={query.id}
+                      data-confirming-delete={
+                        pendingSearchDeletes.has(query.id) || undefined
+                      }
+                    >
                       <Menu.Item
                         className="saved-search-menu-item"
-                        data-tooltip={query.text}
+                        data-tooltip={
+                          pendingSearchDeletes.has(query.id)
+                            ? undefined
+                            : query.text
+                        }
                         onClick={() =>
                           onPatch({
                             kind: "events",
@@ -240,19 +261,32 @@ export function QueryPane({
                       >
                         {query.name}
                       </Menu.Item>
-                      {onDeleteQuery && (
-                        <Menu.Item
-                          className="saved-search-menu-delete"
-                          aria-label={`Delete saved search ${query.name}`}
-                          color="red"
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            onDeleteQuery(query.id);
-                          }}
-                        >
-                          <IconTrash size={14} />
-                        </Menu.Item>
-                      )}
+                      {onDeleteQuery &&
+                        (pendingSearchDeletes.has(query.id) ? (
+                          <InlineDeleteConfirmation
+                            label={`Delete saved search ${query.name}`}
+                            onCancel={() => finishDelete(query.id)}
+                            onDelete={() => {
+                              finishDelete(query.id);
+                              onDeleteQuery(query.id);
+                            }}
+                          />
+                        ) : (
+                          <Menu.Item
+                            className="saved-search-menu-delete"
+                            aria-label={`Delete saved search ${query.name}`}
+                            color="red"
+                            closeMenuOnClick={false}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              setPendingSearchDeletes((previous) =>
+                                new Set(previous).add(query.id),
+                              );
+                            }}
+                          >
+                            <IconTrash size={14} />
+                          </Menu.Item>
+                        ))}
                     </div>
                   ))}
                 </>

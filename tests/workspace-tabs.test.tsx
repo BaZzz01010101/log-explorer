@@ -103,6 +103,58 @@ beforeEach(() => {
   });
 });
 
+it("opens pointer and keyboard tab menus without changing the existing selection or active view", async () => {
+  const workspace = createWorkspace();
+  const second = createTab("offline", [{ logGroup: "second" }]);
+  const third = createTab("offline", [{ logGroup: "third" }]);
+  workspace.tabs.push(second, third);
+  await act(async () => {
+    renderer = create(
+      <WorkspaceDragSurface workspace={workspace} dispatch={dispatch}>
+        <WorkspaceTabs workspace={workspace} dispatch={dispatch} />
+      </WorkspaceDragSurface>,
+    );
+  });
+  const row = (id: string) =>
+    renderer!.root.findAll(
+      (node) =>
+        typeof node.type === "string" && node.props["data-tab-id"] === id,
+    )[0];
+  const selected = () =>
+    renderer!.root
+      .findAll(
+        (node) =>
+          typeof node.type === "string" &&
+          node.props["data-tab-id"] &&
+          node.props.className.includes("is-selected"),
+      )
+      .map((node) => node.props["data-tab-id"]);
+  const contextMenu = (id: string) =>
+    act(async () =>
+      row(id).props.onContextMenu({
+        preventDefault: vi.fn(),
+        target: { closest: () => null },
+      }),
+    );
+  await contextMenu(second.id);
+  expect(selected()).toEqual([]);
+  await act(async () =>
+    renderer!.root
+      .findByProps({ id: `tab-${second.id}` })
+      .props.onClick({ ctrlKey: true, preventDefault: vi.fn() }),
+  );
+  expect(selected()).toEqual([workspace.tabs[0].id, second.id]);
+  await contextMenu(third.id);
+  expect(selected()).toEqual([workspace.tabs[0].id, second.id]);
+  await act(async () =>
+    renderer!.root
+      .findByProps({ id: `tab-${third.id}` })
+      .props.onKeyDown({ key: "F10", shiftKey: true, preventDefault: vi.fn() }),
+  );
+  expect(selected()).toEqual([workspace.tabs[0].id, second.id]);
+  expect(dispatch).not.toHaveBeenCalled();
+});
+
 it("does not render an empty separate pinned row", async () => {
   const workspace = createWorkspace();
   workspace.preferences.pinnedTabsSeparateRow = true;

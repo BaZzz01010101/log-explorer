@@ -1,0 +1,164 @@
+.shortcut-editor {
+  width: 100%;
+  max-width: 720px;
+  margin-inline: auto;
+  container-type: inline-size;
+  container-name: shortcut-settings;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  color: var(--mantine-color-text);
+}
+.shortcut-editor-toolbar,
+.shortcut-editor-confirm,
+.shortcut-editor-controls,
+.shortcut-editor-binding,
+.shortcut-editor-keys,
+.shortcut-editor-resolution {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.shortcut-editor-toolbar input {
+  flex: 1;
+  min-width: 0;
+  min-height: 30px;
+  padding: 4px 8px;
+  border: 1px solid var(--mantine-color-default-border);
+  border-radius: var(--mantine-radius-sm);
+  background: var(--mantine-color-body);
+  color: var(--mantine-color-text);
+  font: inherit;
+}
+.shortcut-editor-list {
+  display: flex;
+  flex-direction: column;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.shortcut-editor-row {
+  display: grid;
+  grid-template-columns: minmax(160px, 1fr) auto;
+  align-items: center;
+  column-gap: 12px;
+  row-gap: 6px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--mantine-color-default-border);
+}
+.shortcut-editor-command {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: var(--mantine-font-size-sm);
+}
+.shortcut-editor-command small,
+.shortcut-editor-disabled,
+.shortcut-editor-record-label,
+.shortcut-editor-hint,
+.shortcut-editor-empty {
+  color: var(--mantine-color-dimmed);
+  font-size: var(--mantine-font-size-xs);
+}
+.shortcut-editor-binding,
+.shortcut-editor-button {
+  min-height: 30px;
+  padding: 4px 8px;
+  border: 1px solid var(--mantine-color-default-border);
+  border-radius: var(--mantine-radius-sm);
+  background: var(--mantine-color-default);
+  color: var(--mantine-color-text);
+  font: inherit;
+  font-size: var(--mantine-font-size-xs);
+  cursor: pointer;
+}
+.shortcut-editor-binding {
+  justify-content: space-between;
+  min-width: 164px;
+}
+.shortcut-editor-binding:hover,
+.shortcut-editor-button:hover {
+  background: var(--mantine-color-default-hover);
+}
+.shortcut-editor input:focus-visible,
+.shortcut-editor button:focus-visible {
+  outline: 2px solid var(--mantine-primary-color-filled);
+  outline-offset: 2px;
+}
+.shortcut-editor button:disabled,
+.shortcut-editor input:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.shortcut-editor-button.primary {
+  background: var(--mantine-primary-color-filled);
+  color: var(--mantine-color-white);
+  border-color: var(--mantine-primary-color-filled);
+}
+.shortcut-editor-keys {
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.shortcut-editor-keys kbd {
+  min-width: 20px;
+  padding: 1px 5px;
+  border: 1px solid var(--mantine-color-default-border);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  background: var(--mantine-color-body);
+  font: inherit;
+  line-height: 18px;
+  text-align: center;
+}
+.shortcut-editor-hint,
+.shortcut-editor-error,
+.shortcut-editor-resolution {
+  grid-column: 1 / -1;
+}
+.shortcut-editor-error {
+  color: var(--mantine-color-error);
+  font-size: var(--mantine-font-size-xs);
+}
+.shortcut-editor-confirm,
+.shortcut-editor-resolution {
+  flex-wrap: wrap;
+  font-size: var(--mantine-font-size-xs);
+}
+.shortcut-editor-confirm {
+  padding: 10px;
+  border: 1px solid var(--mantine-color-default-border);
+  border-radius: var(--mantine-radius-sm);
+}
+.shortcut-editor-confirm > span,
+.shortcut-editor-resolution > span {
+  flex: 1 1 180px;
+}
+.shortcut-editor-row.recording .shortcut-editor-binding {
+  border-color: var(--mantine-primary-color-filled);
+}
+@media (max-width: 680px) {
+  .shortcut-editor-row {
+    grid-template-columns: 1fr;
+  }
+  .shortcut-editor-controls {
+    flex-wrap: wrap;
+  }
+  .shortcut-editor-binding {
+    flex: 1;
+  }
+}
+@container shortcut-settings (max-width: 680px) {
+  .shortcut-editor-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .shortcut-editor-controls {
+    min-width: 0;
+    flex-wrap: wrap;
+  }
+  .shortcut-editor-binding {
+    min-width: 0;
+    max-width: 100%;
+    flex: 1 1 164px;
+  }
+}

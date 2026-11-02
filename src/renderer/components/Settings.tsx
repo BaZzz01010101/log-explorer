@@ -1,35 +1,23 @@
 import { useEffect, useState } from "react";
 import {
   ActionIcon,
-  Alert,
-  Badge,
-  Button,
-  Checkbox,
   Group,
   Modal,
-  NumberInput,
-  Select,
   Stack,
   Switch,
   Tabs,
   Text,
-  Textarea,
-  TextInput,
-  type NumberInputProps,
 } from "@mantine/core";
 import {
   IconExternalLink,
   IconLayoutSidebarLeftCollapse,
-  IconTrash,
 } from "@tabler/icons-react";
 import { notifications } from "@mantine/notifications";
 import type { EnvironmentInfo, Workspace } from "../../shared/contracts";
 import type { WorkspaceAction } from "../workspace";
-import { parseWorkspaceInput } from "../../main/workspace-input";
-import {
-  HighlightProfilesEditor,
-  createHighlightProfilesEditorState,
-} from "./HighlightProfilesEditor";
+import { PreferencesEditor } from "./PreferencesEditor";
+import { ShortcutsEditor } from "./ShortcutsEditor";
+import { SettingLabel } from "./SettingLabel";
 import {
   ProfileConnectionsEditor,
   createProfileConnectionsEditorState,
@@ -44,70 +32,6 @@ import { normalizeRelativeTimeTemplates } from "../../shared/relative-time-templ
 import "./settings.css";
 import { settingsResizeEdges, useSettingsWindow } from "./settings-window";
 import type { SettingsPreviewSnapshot } from "../settings-preview";
-import {
-  DEFAULT_RECENT_SEARCHES_LIMIT,
-  MAX_RECENT_SEARCHES_LIMIT,
-} from "../../shared/query-history";
-
-const shortcutLabels: Record<string, string> = {
-  nextTab: "Next tab in tab bar",
-  previousTab: "Previous tab in tab bar",
-  recentTab: "Next recent tab",
-  previousRecentTab: "Previous recent tab",
-  explorerRegex: "Explorer regex",
-  explorerCaseSensitive: "Explorer match case",
-  highlightRegex: "Highlight regex",
-  highlightCaseSensitive: "Highlight match case",
-  localFilterRegex: "Local filter regex",
-  localFilterCaseSensitive: "Local filter match case",
-};
-
-function NumericPreference({
-  value,
-  onCommit,
-  live = false,
-  ...props
-}: Omit<NumberInputProps, "value" | "onChange" | "onBlur" | "onKeyDown"> & {
-  value: number;
-  live?: boolean;
-  onCommit(value: number): void;
-}) {
-  // Preserve intermediate input such as `1` while the user is entering `14`.
-  // Apply only the finished value: an intermediate lower event limit must not
-  // evict logs, and partial refresh settings must not start automatic queries.
-  const [draft, setDraft] = useState<string | number | undefined>();
-  const commit = () => {
-    if (typeof draft === "number" && Number.isFinite(draft)) onCommit(draft);
-    setDraft(undefined);
-  };
-  return (
-    <NumberInput
-      {...props}
-      value={draft ?? value}
-      clampBehavior="none"
-      allowDecimal={false}
-      allowNegative={false}
-      onChange={(next) => {
-        setDraft(next);
-        if (
-          live &&
-          typeof next === "number" &&
-          Number.isFinite(next) &&
-          next >= (props.min ?? -Infinity) &&
-          next <= (props.max ?? Infinity)
-        )
-          onCommit(next);
-      }}
-      onBlur={commit}
-      onKeyDown={(event) => {
-        if (event.key === "Enter") {
-          event.preventDefault();
-          event.currentTarget.blur();
-        }
-      }}
-    />
-  );
-}
 
 export function Settings({
   opened,
@@ -139,15 +63,9 @@ export function Settings({
   const [profiles, setProfiles] = useState<string[]>([]);
   const [accessPending, setAccessPending] = useState(false);
   const [activeTab, setActiveTab] = useState<string | null>("connections");
-  const [importText, setImportText] = useState("");
   const [previewPointer, setPreviewPointer] = useState<number | null>(null);
   const settingsWindow = useSettingsWindow(opened && presentation === "modal");
   // Keep editor selections and drafts above the pane/modal remount boundary.
-  const [highlightEditorState, setHighlightEditorState] = useState(() =>
-    createHighlightProfilesEditorState(
-      workspace.preferences.highlightProfiles?.[0]?.id,
-    ),
-  );
   const [connectionsEditorState, setConnectionsEditorState] = useState(
     createProfileConnectionsEditorState,
   );
@@ -218,7 +136,19 @@ export function Settings({
     };
   }, [opened, presentation]);
   useEffect(() => {
-    if (requestedTab) setActiveTab(requestedTab);
+    const next =
+      requestedTab === "highlights-tree" ? "highlights" : requestedTab;
+    if (
+      next &&
+      [
+        "connections",
+        "appearance",
+        "time-ranges",
+        "highlights",
+        "shortcuts",
+      ].includes(next)
+    )
+      setActiveTab(next);
   }, [requestedTab, requestedTabKey]);
   useEffect(() => {
     if (environment?.awsEnabled)
@@ -259,35 +189,70 @@ export function Settings({
         <Tabs.Tab value="appearance">Preferences</Tabs.Tab>
         <Tabs.Tab value="time-ranges">Time ranges</Tabs.Tab>
         <Tabs.Tab value="highlights">Highlights</Tabs.Tab>
-        <Tabs.Tab value="highlights-tree">Highlights tree</Tabs.Tab>
         <Tabs.Tab value="shortcuts">Shortcuts</Tabs.Tab>
-        <Tabs.Tab value="workspace">Workspace</Tabs.Tab>
       </Tabs.List>
       <Tabs.Panel value="connections" pt="md" className="settings-form-page">
         <Stack
           gap="sm"
           className="settings-form-content settings-connections-form"
         >
-          <Alert
-            color={environment?.awsEnabled ? "teal" : "yellow"}
-            title={
-              environment?.awsEnabled
-                ? "AWS access is enabled"
-                : "AWS access is disabled"
-            }
-          >
-            <Text size="sm">
-              {environment?.packaged
-                ? "Use your configured AWS profiles. This choice is remembered between restarts and can be disabled here."
-                : "Development builds use local fixtures only. They cannot read AWS profiles, SSO sessions or connect to AWS."}
-            </Text>
-          </Alert>
-          <Switch
-            label="Enable AWS access"
-            checked={environment?.awsEnabled ?? false}
-            disabled={!environment?.canEnableAws || accessPending}
-            onChange={(e) => void setAws(e.currentTarget.checked)}
-          />
+          <Group gap="xl" className="settings-access-switches">
+            <Switch
+              aria-label="Enable AWS access"
+              label={
+                <SettingLabel
+                  label="Enable AWS access"
+                  help={
+                    environment?.canEnableAws
+                      ? "Use your configured AWS profiles to read CloudWatch Logs."
+                      : "AWS access is unavailable in development and offline verification builds."
+                  }
+                />
+              }
+              checked={environment?.awsEnabled ?? false}
+              disabled={!environment?.canEnableAws || accessPending}
+              onChange={(event) => void setAws(event.currentTarget.checked)}
+            />
+            <Switch
+              aria-label="Offline fixtures"
+              label={
+                <SettingLabel
+                  label="Offline fixtures"
+                  help="Show local sample log sources in Explorer. These sources do not connect to AWS."
+                />
+              }
+              checked={workspace.connections.some(
+                (connection) =>
+                  connection.mode === "offline" && connection.enabled !== false,
+              )}
+              onChange={(event) => {
+                const enabled = event.currentTarget.checked;
+                const hasFixtures = workspace.connections.some(
+                  (connection) => connection.mode === "offline",
+                );
+                dispatch({
+                  type: "connections/set",
+                  connections: hasFixtures
+                    ? workspace.connections.map((connection) =>
+                        connection.mode === "offline"
+                          ? { ...connection, enabled }
+                          : connection,
+                      )
+                    : [
+                        ...workspace.connections,
+                        {
+                          id: crypto.randomUUID(),
+                          name: "Offline fixtures",
+                          profile: "default",
+                          region: "eu-west-1",
+                          mode: "offline",
+                          enabled,
+                        },
+                      ],
+                });
+              }}
+            />
+          </Group>
           <ProfileConnectionsEditor
             uiState={connectionsEditorState}
             onUiStateChange={setConnectionsEditorState}
@@ -308,158 +273,10 @@ export function Settings({
         </Stack>
       </Tabs.Panel>
       <Tabs.Panel value="appearance" pt="md" className="settings-form-page">
-        <Stack
-          gap="sm"
-          className="settings-form-content settings-preferences-form"
-        >
-          <Group grow className="settings-preference-row">
-            <Select
-              label="Theme"
-              allowDeselect={false}
-              value={preferences.theme}
-              data={["dark", "light"]}
-              onChange={(v) =>
-                dispatch({
-                  type: "preferences/update",
-                  patch: { theme: v as "dark" | "light" },
-                })
-              }
-            />
-            <Select
-              label="Density"
-              value={preferences.density}
-              data={["compact", "comfortable"]}
-              onChange={(v) =>
-                dispatch({
-                  type: "preferences/update",
-                  patch: { density: v as "compact" | "comfortable" },
-                })
-              }
-            />
-          </Group>
-          <Select
-            label="Tab layout"
-            value={preferences.tabBarLayout}
-            data={[
-              { value: "scroll", label: "Scroll" },
-              { value: "wrap", label: "Multiple rows" },
-            ]}
-            allowDeselect={false}
-            onChange={(value) => {
-              if (value === "scroll" || value === "wrap")
-                dispatch({
-                  type: "preferences/update",
-                  patch: { tabBarLayout: value },
-                });
-            }}
-          />
-          <NumericPreference
-            label="Closed tab history (days)"
-            description="Closed tabs are kept for at most this many days after closing."
-            min={1}
-            max={365}
-            value={preferences.closedTabHistoryDays ?? 7}
-            onCommit={(closedTabHistoryDays) =>
-              dispatch({
-                type: "preferences/update",
-                patch: { closedTabHistoryDays },
-              })
-            }
-          />
-          <Checkbox
-            label="Put pinned tabs on a separate row"
-            checked={preferences.pinnedTabsSeparateRow === true}
-            onChange={(event) =>
-              dispatch({
-                type: "preferences/update",
-                patch: { pinnedTabsSeparateRow: event.currentTarget.checked },
-              })
-            }
-          />
-          <NumericPreference
-            label="Recent searches to keep"
-            description="The latest searches appear beside the search field."
-            min={1}
-            max={MAX_RECENT_SEARCHES_LIMIT}
-            value={
-              preferences.recentSearchesLimit ?? DEFAULT_RECENT_SEARCHES_LIMIT
-            }
-            onCommit={(recentSearchesLimit) =>
-              dispatch({
-                type: "preferences/update",
-                patch: { recentSearchesLimit },
-              })
-            }
-          />
-          <Checkbox
-            label="Automatically expand inspector paths to highlighted matches"
-            checked={preferences.autoExpandFilterMatches !== false}
-            onChange={(event) =>
-              dispatch({
-                type: "preferences/update",
-                patch: {
-                  autoExpandFilterMatches: event.currentTarget.checked,
-                },
-              })
-            }
-          />
-          <Group grow className="settings-preference-row">
-            <NumericPreference
-              label="Log font size"
-              live
-              min={10}
-              max={20}
-              value={preferences.fontSize}
-              onCommit={(v) =>
-                dispatch({
-                  type: "preferences/update",
-                  patch: { fontSize: v },
-                })
-              }
-            />
-            <Select
-              label="Timestamp display"
-              value={preferences.timezone}
-              data={[
-                { value: "local", label: "Local time" },
-                { value: "utc", label: "UTC" },
-              ]}
-              onChange={(v) =>
-                dispatch({
-                  type: "preferences/update",
-                  patch: { timezone: v as "local" | "utc" },
-                })
-              }
-            />
-          </Group>
-          <NumericPreference
-            label="Maximum events per view"
-            description="Older live events are removed visibly at this memory limit"
-            min={100}
-            max={100000}
-            step={1000}
-            value={preferences.maxEvents}
-            onCommit={(v) =>
-              dispatch({
-                type: "preferences/update",
-                patch: { maxEvents: v },
-              })
-            }
-          />
-          <NumericPreference
-            label="Automatic refresh (seconds)"
-            description="0 disables refresh. Event queries only; each refresh makes AWS requests when enabled."
-            min={0}
-            max={3600}
-            value={preferences.refreshSeconds}
-            onCommit={(v) =>
-              dispatch({
-                type: "preferences/update",
-                patch: { refreshSeconds: v },
-              })
-            }
-          />
-        </Stack>
+        <PreferencesEditor
+          value={preferences}
+          onChange={(patch) => dispatch({ type: "preferences/update", patch })}
+        />
       </Tabs.Panel>
       <Tabs.Panel value="time-ranges" pt="md">
         <RelativeTimeTemplatesEditor
@@ -475,25 +292,6 @@ export function Settings({
         />
       </Tabs.Panel>
       <Tabs.Panel value="highlights" pt="md" className="settings-highlights">
-        <HighlightProfilesEditor
-          uiState={highlightEditorState}
-          onUiStateChange={setHighlightEditorState}
-          preferences={preferences}
-          previewEnabled={presentation === "modal"}
-          previewSnapshot={previewSnapshot}
-          onChange={(highlightProfiles) =>
-            dispatch({
-              type: "preferences/update",
-              patch: { highlightProfiles },
-            })
-          }
-        />
-      </Tabs.Panel>
-      <Tabs.Panel
-        value="highlights-tree"
-        pt="md"
-        className="settings-highlights"
-      >
         <HighlightTreeEditor
           uiState={highlightTreeState}
           onUiStateChange={setHighlightTreeState}
@@ -509,145 +307,14 @@ export function Settings({
         />
       </Tabs.Panel>
       <Tabs.Panel value="shortcuts" pt="md" className="settings-form-page">
-        <div className="settings-form-content">
-          <Text size="sm" c="dimmed" mb="sm">
-            Use Control, Meta, Shift or Alt and a key. Search and highlight
-            shortcuts apply while their corresponding field is focused.
-          </Text>
-          <Stack gap="xs" className="settings-shortcuts-grid">
-            {Object.entries(preferences.shortcuts).map(([action, shortcut]) => (
-              <TextInput
-                key={action}
-                label={
-                  shortcutLabels[action] ?? action.replace(/([A-Z])/g, " $1")
-                }
-                value={shortcut}
-                maxLength={80}
-                onChange={(e) =>
-                  dispatch({
-                    type: "preferences/update",
-                    patch: {
-                      shortcuts: {
-                        ...preferences.shortcuts,
-                        [action]: e.currentTarget.value,
-                      },
-                    },
-                  })
-                }
-              />
-            ))}
-          </Stack>
-        </div>
-      </Tabs.Panel>
-      <Tabs.Panel value="workspace" pt="md">
-        <Stack gap="sm" className="settings-workspace-form">
-          <TextInput
-            label="Workspace name"
-            value={workspace.name}
-            maxLength={120}
-            onChange={(e) =>
-              dispatch({
-                type: "workspace/update",
-                patch: { name: e.currentTarget.value },
-              })
+        {opened && activeTab === "shortcuts" && (
+          <ShortcutsEditor
+            shortcuts={preferences.shortcuts}
+            onChange={(shortcuts) =>
+              dispatch({ type: "preferences/update", patch: { shortcuts } })
             }
           />
-          <Button
-            variant="light"
-            onClick={() =>
-              void window.explorer
-                .exportData(JSON.stringify(workspace, null, 2), "json")
-                .catch((e) =>
-                  notifications.show({ color: "red", message: String(e) }),
-                )
-            }
-          >
-            Export workspace configuration
-          </Button>
-          <Textarea
-            className="settings-workspace-json"
-            label="Import workspace JSON"
-            description="Replaces the current layout and settings. Logs and credentials are never imported."
-            rows={6}
-            value={importText}
-            onChange={(e) => setImportText(e.currentTarget.value)}
-          />
-          <Button
-            variant="light"
-            disabled={!importText.trim()}
-            onClick={() => {
-              try {
-                const value = JSON.parse(importText);
-                dispatch({
-                  type: "workspace/restore",
-                  workspace: parseWorkspaceInput(value),
-                });
-                setImportText("");
-                notifications.show({
-                  message: "Workspace imported",
-                  color: "teal",
-                });
-              } catch (e) {
-                notifications.show({ color: "red", message: String(e) });
-              }
-            }}
-          >
-            Import configuration
-          </Button>
-          <Text size="xs" c="dimmed">
-            Saved queries
-          </Text>
-          {workspace.savedQueries
-            .filter((q) => q.kind === "events")
-            .map((q) => (
-              <Group
-                key={q.id}
-                justify="space-between"
-                wrap="nowrap"
-                className="settings-saved-item"
-              >
-                <Text size="sm">{q.name}</Text>
-                <ActionIcon
-                  aria-label={`Remove ${q.name}`}
-                  color="red"
-                  variant="subtle"
-                  onClick={() =>
-                    dispatch({ type: "query/remove", queryId: q.id })
-                  }
-                >
-                  <IconTrash size={14} />
-                </ActionIcon>
-              </Group>
-            ))}
-          <Text size="xs" c="dimmed">
-            Visualization presets
-          </Text>
-          {workspace.presets.map((p) => (
-            <Group
-              key={p.id}
-              justify="space-between"
-              wrap="nowrap"
-              className="settings-saved-item"
-            >
-              <Text size="sm">
-                {p.name}
-                <Badge ml="xs" size="xs">
-                  {p.logGroup ?? "All groups"}
-                </Badge>
-              </Text>
-              <ActionIcon
-                aria-label={`Remove preset ${p.name}`}
-                color="red"
-                variant="subtle"
-                onClick={() =>
-                  dispatch({ type: "preset/remove", presetId: p.id })
-                }
-              >
-                <IconTrash size={14} />
-              </ActionIcon>
-            </Group>
-          ))}
-        </Stack>
+        )}
       </Tabs.Panel>
     </Tabs>
   );

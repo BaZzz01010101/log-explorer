@@ -249,15 +249,14 @@ test("all 18 direction and duration choices query the clicked event source at ex
     .locator(`[data-event-id="${other.id}"] .inspect-cell`)
     .first()
     .click();
-  await expect(page.getByText("Saved locally", { exact: true })).toBeVisible();
   const original = (await savedWorkspace()).tabs.find(
     (tab) => tab.id === originId,
   )!;
   let count = 1;
   for (const [direction, menu] of [
-    ["past", "Previous logs"],
-    ["future", "Next logs"],
-    ["both", "Before and after"],
+    ["past", "Back"],
+    ["future", "Forward"],
+    ["both", "Both directions"],
   ] as const) {
     for (const [duration, durationMs] of [
       ["1 second", 1000],
@@ -334,7 +333,7 @@ test("all 18 direction and duration choices query the clicked event source at ex
       );
       await page.locator(`[data-tab-id="${originId}"] [role="tab"]`).click();
       await expect(
-        page.locator(`[data-event-id="${anchor.id}"]`),
+        page.locator(`.virtual-event[data-event-id="${anchor.id}"]`),
       ).toBeVisible();
     }
   }
@@ -343,9 +342,7 @@ test("all 18 direction and duration choices query the clicked event source at ex
 test("dark nested context menus keep one owner, themed hoverable hints and dismiss on Escape, outside clicks and another menu", async () => {
   await loadEvents();
   await openContext();
-  await page
-    .getByRole("menuitem", { name: "Previous logs", exact: true })
-    .hover();
+  await page.getByRole("menuitem", { name: "Back", exact: true }).hover();
   const choice = page.getByRole("menuitem", { name: "5 seconds", exact: true });
   await choice.hover();
   await expect(page.getByRole("menu")).toHaveCount(3);
@@ -423,7 +420,7 @@ for (const paged of [false, true])
     );
     await openContext();
     await page
-      .getByRole("menuitem", { name: "Before and after", exact: true })
+      .getByRole("menuitem", { name: "Both directions", exact: true })
       .hover();
     await page
       .getByRole("menuitem", { name: "5 minutes", exact: true })

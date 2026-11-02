@@ -228,19 +228,24 @@
   min-width: 0;
 }
 .time-template-quick-caption {
+  --time-unit-bracket: color-mix(
+    in srgb,
+    var(--mantine-color-text) 50%,
+    var(--mantine-color-default-border)
+  );
   position: relative;
   height: 24px;
   margin-top: 8px;
   margin-inline: calc(var(--time-template-gap) / -2);
   padding-top: 6px;
-  border-top: 1px solid var(--mantine-color-default-border);
+  border-top: 2px solid var(--time-unit-bracket);
   text-align: center;
   color: color-mix(
     in srgb,
     var(--mantine-color-text) 80%,
     var(--mantine-color-dimmed)
   );
-  font-weight: 500;
+  font-weight: 600;
 }
 .time-template-quick-group:first-child .time-template-quick-caption {
   margin-left: 0;
@@ -252,9 +257,9 @@
 .time-template-quick-caption::after {
   content: "";
   position: absolute;
-  top: -6px;
-  height: 6px;
-  border-left: 1px solid var(--mantine-color-default-border);
+  top: -8px;
+  height: 8px;
+  border-left: 2px solid var(--time-unit-bracket);
 }
 .time-template-quick-caption::before {
   left: 0;
@@ -334,12 +339,56 @@
 .settings-tabs .mantine-ActionIcon-root {
   flex-shrink: 0;
 }
-.settings-tabs .settings-preferences-form,
 .settings-tabs .settings-shortcuts-grid {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   gap: 12px;
   align-items: start;
+}
+.settings-tabs .settings-preferences-form {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+.settings-preference-section {
+  min-width: 0;
+}
+.settings-preference-heading {
+  margin: 0 0 9px;
+  color: var(--mantine-color-text);
+  font-size: 16px;
+  font-weight: 650;
+  line-height: 1.4;
+}
+.settings-preference-options {
+  overflow: hidden;
+  border: 1px solid var(--mantine-color-default-border);
+  border-radius: 5px;
+  background: color-mix(
+    in srgb,
+    var(--mantine-color-text) 3%,
+    var(--mantine-color-body)
+  );
+}
+.settings-preference-option {
+  min-width: 0;
+  padding: 12px;
+}
+.settings-preference-option + .settings-preference-option {
+  border-top: 1px solid var(--mantine-color-default-border);
+}
+.settings-preference-option .mantine-InputWrapper-label,
+.settings-preference-option .mantine-Switch-label {
+  color: var(--mantine-color-text);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.45;
+}
+.settings-preference-option .mantine-InputWrapper-label {
+  margin-bottom: 5px;
+}
+.settings-preference-option .mantine-Switch-body {
+  align-items: center;
 }
 .settings-form-content {
   width: 100%;

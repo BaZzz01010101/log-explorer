@@ -60,7 +60,8 @@ interface Props {
   connections: Connection[];
   activeConnectionId: string;
   preferences?: Pick<Preferences, "profileVisibility"> &
-    Partial<Pick<Preferences, "shortcuts">>;
+    Partial<Pick<Preferences, "shortcuts" | "sourceDetailsHeight">>;
+  onSourceDetailsHeightChange?(height: number): void;
   onConnectionChange?(id: string): void;
   onResourceAction?(payload: ResourcePayload, mode: ResourceActionMode): void;
   favorites: ViewFavorite[];
@@ -563,7 +564,6 @@ export function ExplorerSidebar(props: Props) {
         aria-activedescendant={
           rows[activeIndex] ? rowId(activeIndex) : undefined
         }
-        aria-describedby={treeId + "-help"}
         tabIndex={0}
         onFocusCapture={() => setFocused(true)}
         onBlurCapture={(event) => {
@@ -933,19 +933,19 @@ export function ExplorerSidebar(props: Props) {
           Open {selectedSources.length} selected sources
         </Button>
       )}
-      <div className="sidebar-footer">
-        <Text size="xs" c="dimmed" id={treeId + "-help"}>
-          Arrow keys navigate · Enter previews · Double-click keeps · Space
-          selects · Ctrl/Cmd toggles · Shift selects a range · Right-click for
-          actions
-        </Text>
-        {notice && (
+      {notice && (
+        <div className="sidebar-footer">
           <Text size="xs" role="status" aria-live="polite">
             {notice}
           </Text>
-        )}
-      </div>
-      <SourceDetails resource={currentDetails} onCopy={copy} />
+        </div>
+      )}
+      <SourceDetails
+        resource={currentDetails}
+        onCopy={copy}
+        height={props.preferences?.sourceDetailsHeight}
+        onHeightChange={props.onSourceDetailsHeightChange}
+      />
     </aside>
   );
 }

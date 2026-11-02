@@ -337,10 +337,9 @@ for (const theme of ["light", "dark"]) {
       await page.mouse.up();
       expect((await field.boundingBox())!.width).toBeGreaterThan(before + 60);
       await separator.press("ArrowRight");
-      await expect(
-        page.getByText("Saved locally", { exact: true }),
-      ).toBeVisible();
-      expect((await stored()).tabs[0].view[key]).toBeGreaterThan(before + 80);
+      await expect
+        .poll(async () => (await stored()).tabs[0].view[key])
+        .toBeGreaterThan(before + 80);
     }
     await quick().fill("abc\\d+");
     await page
@@ -369,10 +368,12 @@ for (const theme of ["light", "dark"]) {
       })
       .click();
     await expect(quick()).not.toHaveAttribute("aria-invalid", "true");
-    expect((await stored()).tabs[0].view.highlightCaseSensitive).toBe(true);
-    await expect(
-      page.getByText("Saved locally", { exact: true }),
-    ).toBeVisible();
+    await expect
+      .poll(async () => {
+        const view = (await stored()).tabs[0].view;
+        return [view.highlightCaseSensitive, view.highlightRegex];
+      })
+      .toEqual([true, false]);
     await page.reload();
     await expect(
       page.getByRole("button", { name: "Match highlight case", exact: true }),

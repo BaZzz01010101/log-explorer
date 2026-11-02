@@ -271,21 +271,15 @@ describe("workspace state", () => {
     expect(state.preferences.shortcuts.closeTab).toBe("Alt+W");
   });
 
-  it("allows disabling automatic refresh and preserves it after restoration", () => {
-    const state = workspaceReducer(createWorkspace(), {
-      type: "preferences/update",
-      patch: { refreshSeconds: 0 },
+  it("discards the removed refresh preference while preserving view and user settings", () => {
+    const previous = createWorkspace();
+    const restored = restoreWorkspace({
+      ...previous,
+      preferences: { ...previous.preferences, refreshSeconds: 1, fontSize: 16 },
     });
-    expect(state.preferences.refreshSeconds).toBe(0);
-    expect(
-      restoreWorkspace(JSON.parse(JSON.stringify(state))).preferences
-        .refreshSeconds,
-    ).toBe(0);
-    const tooFrequent = workspaceReducer(state, {
-      type: "preferences/update",
-      patch: { refreshSeconds: 1 },
-    });
-    expect(tooFrequent.preferences.refreshSeconds).toBe(5);
+    expect(restored.preferences).not.toHaveProperty("refreshSeconds");
+    expect(restored.preferences.fontSize).toBe(16);
+    expect(restored.tabs).toEqual(previous.tabs);
   });
 
   it("shows universal event columns in a new view", () => {

@@ -1,5 +1,6 @@
 import { NumberInput, Stack, Text } from "@mantine/core";
 import { useEffect, useRef } from "react";
+import { SettingLabel } from "./SettingLabel";
 import {
   normalizeRelativeTimeTemplates,
   RELATIVE_TIME_UNITS,
@@ -62,10 +63,6 @@ export function RelativeTimeTemplatesEditor({
   const templates = normalizeRelativeTimeTemplates(value);
   return (
     <Stack gap="md" className="time-template-editor">
-      <Text size="xs" c="dimmed">
-        Adjust each shortcut below. Values stay in ascending order; neighboring
-        slots move when needed.
-      </Text>
       {(
         [
           ["quick", "Quick toolbar"],
@@ -74,7 +71,10 @@ export function RelativeTimeTemplatesEditor({
       ).map(([section, name]) => (
         <section key={section} aria-label={`${name} templates`}>
           <Text component="h3" size="sm" fw={600} mb="xs">
-            {name}
+            <SettingLabel
+              label={name}
+              help="Durations stay in ascending order within each unit. Editing a slot adjusts its neighbors when needed."
+            />
           </Text>
           {section === "quick" ? (
             <div className="time-template-quick-scroll">

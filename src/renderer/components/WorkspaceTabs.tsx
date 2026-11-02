@@ -282,7 +282,6 @@ function SortableTab({
               event.preventDefault();
               if ((event.target as HTMLElement).closest("[data-tab-control]"))
                 return;
-              if (!selected) setSelected([tab.id]);
               setMenuOpen(true);
             }}
           >
@@ -320,7 +319,6 @@ function SortableTab({
                     event.key === "ContextMenu"
                   ) {
                     event.preventDefault();
-                    if (!selected) setSelected([tab.id]);
                     setMenuOpen(true);
                   } else {
                     listeners?.onKeyDown?.(event);

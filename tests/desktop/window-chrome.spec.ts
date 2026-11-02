@@ -302,10 +302,8 @@ test("application menu theme, zoom, exclusivity and close save work without a na
   await expect(page.getByRole("menu")).toHaveCount(1);
   await page.keyboard.press("Escape");
   await openSettingsWindow(page);
-  await page.getByRole("tab", { name: "Workspace", exact: true }).click();
-  await page
-    .getByLabel("Workspace name", { exact: true })
-    .fill("Compact chrome final edit");
+  await page.getByRole("tab", { name: "Preferences", exact: true }).click();
+  await page.getByLabel("Log font size", { exact: true }).fill("16");
   await page.keyboard.press("Escape");
   await menu();
   const closed = app.waitForEvent("close");
@@ -317,7 +315,7 @@ test("application menu theme, zoom, exclusivity and close save work without a na
   const workspace = JSON.parse(
     await readFile(join(directory, "workspace.json"), "utf8"),
   );
-  expect(workspace.name).toBe("Compact chrome final edit");
+  expect(workspace.preferences.fontSize).toBe(16);
   expect(workspace.preferences.theme).toBe("dark");
 });
 

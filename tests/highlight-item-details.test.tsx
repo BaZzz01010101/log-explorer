@@ -74,9 +74,16 @@ it.each([false, true])(
 // geometry checks run in the packaged desktop tests, not a mocked DOM.
 function field(node: ReactNode, label: string): ReactElement<any> {
   for (const child of Children.toArray(node)) {
-    if (!isValidElement<{ label?: string; children?: ReactNode }>(child))
+    if (
+      !isValidElement<{
+        label?: string;
+        "aria-label"?: string;
+        children?: ReactNode;
+      }>(child)
+    )
       continue;
-    if (child.props.label === label) return child;
+    if (child.props.label === label || child.props["aria-label"] === label)
+      return child;
     if (child.props.children) {
       try {
         return field(child.props.children, label);
@@ -147,7 +154,7 @@ it("rejects attempted read-only switch changes and unlocks the same field for ed
 
 it("keeps the eye dropper visible in read-only color fields on supported hosts", () => {
   const view = markup(<RuleFields draft={rule} readOnly onChange={vi.fn()} />);
-  expect(view.match(/<button\b/g)).toHaveLength(2);
+  expect(view).toContain('aria-label="Help for JSON Pointer path"');
   expect(view.match(/<button\b[^>]*aria-hidden="true"/g)).toHaveLength(2);
 });
 

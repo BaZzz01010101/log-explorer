@@ -216,11 +216,41 @@ it("loads event filter semantics and deletes a saved search without loading it",
   });
   expect(props.onRun).not.toHaveBeenCalled();
   props.onPatch.mockClear();
-  const remove = renderer!.root.findByProps({
-    "aria-label": "Delete saved search Failures",
-  });
-  expect(remove.props.closeMenuOnClick).not.toBe(false);
-  await act(async () => remove.props.onClick({ stopPropagation: vi.fn() }));
+  const remove = () =>
+    renderer!.root.findByProps({
+      "aria-label": "Delete saved search Failures",
+    });
+  expect(remove().props.closeMenuOnClick).toBe(false);
+  await act(async () => remove().props.onClick({ stopPropagation: vi.fn() }));
+  expect(props.onDeleteQuery).not.toHaveBeenCalled();
+  const confirmation = () =>
+    renderer!.root.findByProps({
+      role: "group",
+      "aria-label": "Delete saved search Failures",
+    });
+  expect(
+    confirmation()
+      .findAllByType("button")
+      .map((node) => node.children.join("")),
+  ).toEqual(["Delete", "Cancel"]);
+  await act(async () =>
+    confirmation()
+      .findAllByType("button")[1]
+      .props.onClick({ stopPropagation: vi.fn() }),
+  );
+  expect(props.onDeleteQuery).not.toHaveBeenCalled();
+  expect(
+    renderer!.root.findAllByProps({
+      role: "group",
+      "aria-label": "Delete saved search Failures",
+    }),
+  ).toHaveLength(0);
+  await act(async () => remove().props.onClick({ stopPropagation: vi.fn() }));
+  await act(async () =>
+    confirmation()
+      .findAllByType("button")[0]
+      .props.onClick({ stopPropagation: vi.fn() }),
+  );
   expect(props.onDeleteQuery).toHaveBeenCalledExactlyOnceWith("saved");
   expect(props.onPatch).not.toHaveBeenCalled();
 });

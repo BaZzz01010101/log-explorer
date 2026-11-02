@@ -392,14 +392,16 @@ test("whole tabs reorder near the strip and create highlighted nested splits awa
     for (const dimension of ["x", "y", "width", "height"] as const)
       expect(Math.abs(actual[dimension] - shown[dimension])).toBeLessThan(2);
   };
-  await expect(
-    page.getByLabel("Add split pane", { exact: true }),
-  ).toHaveAttribute("data-split-axis", "horizontal");
+  await expect(page.getByLabel("Split pane", { exact: true })).toHaveAttribute(
+    "data-split-axis",
+    "horizontal",
+  );
   await splitByDrag("orders-api", 0, "right");
   await expect(page.locator(".workspace-pane")).toHaveCount(2);
-  await expect(
-    page.getByLabel("Add split pane", { exact: true }),
-  ).toHaveAttribute("data-split-axis", "vertical");
+  await expect(page.getByLabel("Split pane", { exact: true })).toHaveAttribute(
+    "data-split-axis",
+    "vertical",
+  );
   await splitByDrag("payments-worker", 1, "bottom");
   await expect(page.locator(".workspace-pane")).toHaveCount(3);
   const three = await paneRectangles();
@@ -414,9 +416,7 @@ test("whole tabs reorder near the strip and create highlighted nested splits awa
     page.locator('.workspace-tab[data-entry-kind="split"]'),
   ).toHaveCount(1);
   await expect(page.locator(".workspace-tab")).toHaveCount(1);
-  await expect(
-    page.getByLabel("Add split pane", { exact: true }),
-  ).toBeEnabled();
+  await expect(page.getByLabel("Split pane", { exact: true })).toBeEnabled();
   const four = await paneRectangles();
   expect(four.every((rect) => rect.width > 100 && rect.height > 100)).toBe(
     true,
@@ -469,7 +469,7 @@ test("right clicking a selection shows those tabs in split mode", async () => {
 });
 
 test("trusted settings edits and final workspace changes survive a natural restart", async () => {
-  await page.getByLabel("Add split pane", { exact: true }).click();
+  await page.getByLabel("Split pane", { exact: true }).click();
   const divider = page.getByRole("separator", {
     name: "Resize panes horizontally",
   });
@@ -504,31 +504,26 @@ test("trusted settings edits and final workspace changes survive a natural resta
   await expect(page.locator(".query-status").first()).toHaveText(
     loadedBeforeLimitEdit,
   );
-  const refresh = page.getByLabel("Automatic refresh (seconds)", {
-    exact: true,
-  });
-  await typeText(refresh, "120");
-  await expect(refresh).toHaveValue("120");
-  await typeText(refresh, "0");
-  await expect(refresh).toHaveValue("0");
   await page
     .getByRole("combobox", { name: "Timestamp display", exact: true })
     .click();
   await page.getByRole("option", { name: "UTC", exact: true }).click();
   await page.getByRole("combobox", { name: "Density", exact: true }).click();
-  await page.getByRole("option", { name: "comfortable", exact: true }).click();
-  await page.getByRole("tab", { name: "Workspace", exact: true }).click();
-  await typeText(page.getByLabel("Workspace name"), "Trusted input restored");
+  await page.getByRole("option", { name: "Comfortable", exact: true }).click();
+  await typeText(
+    page.getByLabel("Search history limit", { exact: true }),
+    "23",
+  );
   // The final edit closes before the save debounce is allowed to elapse.
   await closeNaturally();
   const saved = JSON.parse(
     await readFile(join(directory, "workspace.json"), "utf8"),
   );
-  expect(saved.name).toBe("Trusted input restored");
+  expect(saved.preferences).not.toHaveProperty("refreshSeconds");
   expect(saved.preferences).toMatchObject({
     fontSize: 14,
     maxEvents: 25000,
-    refreshSeconds: 0,
+    recentSearchesLimit: 23,
     timezone: "utc",
     density: "comfortable",
   });
@@ -537,9 +532,6 @@ test("trusted settings edits and final workspace changes survive a natural resta
   expect(saved.panes).toHaveLength(2);
   expect(saved).not.toHaveProperty("events");
   await launch();
-  await expect(
-    page.getByText("Trusted input restored", { exact: true }),
-  ).toBeVisible();
   await expect(page.locator(".workspace-pane")).toHaveCount(2);
   await expect(
     page.getByRole("separator", { name: "Resize panes horizontally" }),

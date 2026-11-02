@@ -1,0 +1,25 @@
+.settings-field-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+}
+.settings-label-help {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 18px;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--mantine-color-dimmed);
+  cursor: help;
+}
+.settings-label-help:hover,
+.settings-label-help[aria-expanded="true"] {
+  background: var(--mantine-color-indigo-light);
+  color: var(--mantine-color-indigo-text);
+}

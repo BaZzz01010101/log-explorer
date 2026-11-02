@@ -604,7 +604,7 @@ test("recent search count is editable in Preferences and retained after reload",
   await openSettingsWindow(page);
   await page.getByRole("tab", { name: "Preferences", exact: true }).click();
   const limit = page.getByRole("textbox", {
-    name: "Recent searches to keep",
+    name: "Search history limit",
     exact: true,
   });
   await limit.fill("2");

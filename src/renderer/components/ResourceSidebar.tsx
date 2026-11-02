@@ -12,7 +12,8 @@ import type {
 
 interface Props {
   preferences?: Pick<Preferences, "profileVisibility"> &
-    Partial<Pick<Preferences, "shortcuts">>;
+    Partial<Pick<Preferences, "shortcuts" | "sourceDetailsHeight">>;
+  onSourceDetailsHeightChange?(height: number): void;
   connections: Connection[];
   activeConnectionId: string;
   onConnectionChange?(connectionId: string): void;

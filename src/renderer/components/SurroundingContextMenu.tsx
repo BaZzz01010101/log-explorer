@@ -9,9 +9,9 @@ import {
 import { Menu } from "./AppMenu";
 
 const directions: { direction: ContextDirection; label: string }[] = [
-  { direction: "past", label: "Previous logs" },
-  { direction: "future", label: "Next logs" },
-  { direction: "both", label: "Before and after" },
+  { direction: "past", label: "Back" },
+  { direction: "future", label: "Forward" },
+  { direction: "both", label: "Both directions" },
 ];
 
 export function SurroundingContextMenu({

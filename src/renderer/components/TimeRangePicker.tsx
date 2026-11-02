@@ -329,6 +329,7 @@ export function TimeRangePicker({
                 <Tabs.Panel value="absolute" pt="sm">
                   <RangeCalendar
                     month={month}
+                    timezone={timezone}
                     start={calendarDay(draft.start.date)}
                     end={calendarDay(draft.end.date)}
                     anchor={anchor}

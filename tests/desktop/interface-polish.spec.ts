@@ -187,7 +187,9 @@ for (const theme of ["light", "dark"]) {
     await entry.hover();
     await expect(tooltip).toBeVisible();
     const controls = await page
-      .locator(".app-footer p")
+      .locator(
+        `input[aria-label="Search log groups"], [aria-label="CloudWatch filter pattern"], input[aria-label="Local filter loaded events"]`,
+      )
       .evaluateAll((elements) =>
         elements.slice(0, 3).map((element) => {
           const box = element.getBoundingClientRect();
@@ -214,7 +216,9 @@ for (const theme of ["light", "dark"]) {
     await page.mouse.move(controls[0].x, controls[0].y);
     await expect(tooltip).toHaveCount(0);
     await page.evaluate(() => {
-      const [first, second] = document.querySelectorAll(".app-footer p");
+      const [first, second] = document.querySelectorAll(
+        `input[aria-label="Search log groups"], [aria-label="CloudWatch filter pattern"], input[aria-label="Local filter loaded events"]`,
+      );
       const next = document.querySelector('[data-closed-tab-id="closed-2"]')!;
       // Keep these exits in one event-loop turn. Hidden native input is
       // frame-paced, which otherwise lets the leaked close timers expire.
@@ -590,9 +594,9 @@ for (const theme of ["light", "dark"]) {
             document.documentElement.scrollWidth <= innerWidth,
         ),
     ).toBe(true);
-    await pane.getByRole("tab", { name: "Workspace", exact: true }).click();
+    await pane.getByRole("tab", { name: "Preferences", exact: true }).click();
     await expect(
-      pane.getByLabel("Workspace name", { exact: true }),
+      pane.getByLabel("Log font size", { exact: true }),
     ).toBeVisible();
     await activity("AWS logs explorer").click();
     await expect(page.locator('[data-node-kind="group"]')).toHaveCount(9);

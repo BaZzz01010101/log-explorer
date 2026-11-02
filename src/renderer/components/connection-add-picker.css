@@ -1,0 +1,76 @@
+.connection-add-trigger {
+  align-self: flex-start;
+  max-width: 100%;
+}
+.connection-add-picker {
+  max-width: calc(100vw - 24px);
+  max-height: calc(100dvh - 32px);
+  overflow: hidden;
+}
+.connection-add-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  margin-bottom: 6px;
+  border: 1px solid var(--mantine-color-default-border);
+  border-radius: var(--mantine-radius-sm);
+  background: var(--mantine-color-body);
+}
+.connection-add-search:focus-within {
+  border-color: var(--mantine-primary-color-filled);
+}
+.connection-add-search > svg {
+  flex: 0 0 auto;
+  color: var(--mantine-color-dimmed);
+}
+.connection-add-search > input {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--mantine-color-text);
+  font: inherit;
+  font-size: var(--mantine-font-size-xs);
+}
+.connection-add-choices {
+  max-height: min(280px, 45dvh);
+  overflow: auto;
+  scrollbar-width: thin;
+}
+.connection-add-choice {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  border: 0;
+  border-radius: var(--mantine-radius-sm);
+  padding: 7px 8px;
+  color: var(--mantine-color-text);
+  background: transparent;
+  font: inherit;
+  font-size: var(--mantine-font-size-xs);
+  text-align: left;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+.connection-add-choice[aria-selected="true"] {
+  background: var(--mantine-color-default-hover);
+}
+.connection-add-description {
+  color: var(--mantine-color-dimmed);
+}
+.profile-connections-editor .settings-profile-cards {
+  width: 100%;
+}
+.profile-connections-editor .configured-region {
+  gap: 8px;
+}
+.profile-connections-editor .configured-region > .mantine-ActionIcon-root,
+.profile-connections-editor
+  .settings-profile-heading
+  > .mantine-ActionIcon-root {
+  flex: 0 0 auto;
+}

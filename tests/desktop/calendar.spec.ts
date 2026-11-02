@@ -59,6 +59,7 @@ async function launch() {
   child.on("close", (code) =>
     processOutput.push(`child-close ${Date.now()} ${code}`),
   );
+  page = await app.firstWindow();
   await app.evaluate(({ app, BrowserWindow, ipcMain }) => {
     const mark = (stage: string) =>
       console.log("Calendar close probe", Date.now(), stage);
@@ -70,7 +71,6 @@ async function launch() {
     app.on("before-quit", () => mark("before-quit"));
     app.on("will-quit", () => mark("will-quit"));
   });
-  page = await app.firstWindow();
   page.setDefaultTimeout(6000);
   const cdp = await page.context().newCDPSession(page);
   await cdp.send("Emulation.setFocusEmulationEnabled", { enabled: true });
@@ -637,7 +637,12 @@ for (const theme of ["dark", "light"] as const) {
     await openSettingsWindow(page);
     await page.getByRole("tab", { name: "Preferences", exact: true }).click();
     await page.getByRole("combobox", { name: "Theme", exact: true }).click();
-    await page.getByRole("option", { name: theme, exact: true }).click();
+    await page
+      .getByRole("option", {
+        name: theme === "dark" ? "Dark" : "Light",
+        exact: true,
+      })
+      .click();
     await page.keyboard.press("Escape");
     const selectedTemplateBackground = await page
       .getByRole("button", { name: "Clear time filter", exact: true })
@@ -757,7 +762,12 @@ test("Custom popover fits normal and narrow panes in both themes", async () => {
     await openSettingsWindow(page);
     await page.getByRole("tab", { name: "Preferences", exact: true }).click();
     await page.getByRole("combobox", { name: "Theme", exact: true }).click();
-    await page.getByRole("option", { name: theme, exact: true }).click();
+    await page
+      .getByRole("option", {
+        name: theme === "dark" ? "Dark" : "Light",
+        exact: true,
+      })
+      .click();
     await page.keyboard.press("Escape");
     await expect(
       page.getByRole("dialog", { name: "Settings", exact: true }),
@@ -816,3 +826,117 @@ test("Custom popover fits normal and narrow panes in both themes", async () => {
     await page.keyboard.press("Escape");
   }
 });
+
+for (const theme of ["light", "dark"] as const) {
+  test(`${theme} calendar Today and wheel navigate without changing or applying the draft range`, async () => {
+    test.setTimeout(90000);
+    await openSettingsWindow(page);
+    await page.getByRole("tab", { name: "Preferences", exact: true }).click();
+    await page.getByRole("combobox", { name: "Theme", exact: true }).click();
+    await page
+      .getByRole("option", {
+        name: theme === "dark" ? "Dark" : "Light",
+        exact: true,
+      })
+      .click();
+    await page.keyboard.press("Escape");
+    // It is December in Madrid and still November in UTC. Today must follow
+    // the user's display timezone, including when clicked after midnight.
+    await page.clock.setFixedTime(new Date("2026-11-30T23:30:00Z"));
+    await timezone("UTC");
+    await openAbsolute();
+    await chooseDay("2026-11-10");
+    const draft = () =>
+      Promise.all(
+        ["Start date", "Start time", "End date", "End time"].map((name) =>
+          field(name).inputValue(),
+        ),
+      );
+    const initial = await draft();
+    const today = popover().getByRole("button", { name: "Today", exact: true });
+    await expect(
+      popover().getByText("Choose a start date, then an end date", {
+        exact: true,
+      }),
+    ).toHaveCount(0);
+    await today.click();
+    await expect.poll(async () => (await visibleDays())[0]).toBe("2026-11-01");
+    expect(await draft()).toEqual(initial);
+    const hoverCalendar = () =>
+      popover().locator(".calendar-month h3").first().hover();
+    const scrollTop = await popover().evaluate((element) => element.scrollTop);
+    await hoverCalendar();
+    await page.mouse.wheel(0, -100);
+    await expect.poll(async () => (await visibleDays())[0]).toBe("2026-10-01");
+    await page.mouse.wheel(0, 100);
+    await expect.poll(async () => (await visibleDays())[0]).toBe("2026-11-01");
+    await page.mouse.wheel(0, 100);
+    await expect.poll(async () => (await visibleDays())[0]).toBe("2026-12-01");
+    expect(await draft()).toEqual(initial);
+    expect(await popover().evaluate((element) => element.scrollTop)).toBe(
+      scrollTop,
+    );
+    // The first click is still the anchor despite navigating months and Today.
+    await chooseDay("2026-12-12");
+    await expect(field("Start date")).toHaveValue("2026/11/10");
+    await expect(field("End date")).toHaveValue("2026/12/12");
+    await expect(field("Start time")).toHaveValue("00:00:00");
+    await expect(field("End time")).toHaveValue("23:59:59");
+    const selected = await draft();
+    await today.click();
+    await expect.poll(async () => (await visibleDays())[0]).toBe("2026-11-01");
+    expect(await draft()).toEqual(selected);
+    await expectNoRequests();
+    await page.getByRole("button", { name: "Cancel", exact: true }).click();
+    await timezone("Local time");
+    await openAbsolute();
+    const localDraft = await draft();
+    await page
+      .getByRole("button", { name: "Previous month", exact: true })
+      .click();
+    await today.focus();
+    await page.keyboard.press("Enter");
+    await expect.poll(async () => (await visibleDays())[0]).toBe("2026-12-01");
+    expect(await draft()).toEqual(localDraft);
+    await expect(today).toHaveCSS("cursor", "pointer");
+    await expect(today).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+    const contrast = await today.evaluate((element) => {
+      const canvas = document.createElement("canvas");
+      canvas.width = canvas.height = 1;
+      const context = canvas.getContext("2d")!;
+      const luminance = (color: string) => {
+        context.clearRect(0, 0, 1, 1);
+        context.fillStyle = color;
+        context.fillRect(0, 0, 1, 1);
+        const channels = Array.from(context.getImageData(0, 0, 1, 1).data)
+          .slice(0, 3)
+          .map((value) => {
+            const channel = value / 255;
+            return channel <= 0.04045
+              ? channel / 12.92
+              : ((channel + 0.055) / 1.055) ** 2.4;
+          });
+        return (
+          channels[0] * 0.2126 + channels[1] * 0.7152 + channels[2] * 0.0722
+        );
+      };
+      const foreground = luminance(getComputedStyle(element).color);
+      const background = luminance(
+        getComputedStyle(element.closest(".time-range-popover")!)
+          .backgroundColor,
+      );
+      return (
+        (Math.max(foreground, background) + 0.05) /
+        (Math.min(foreground, background) + 0.05)
+      );
+    });
+    expect(contrast).toBeGreaterThanOrEqual(4.5);
+    await expectNoRequests();
+    await captureHiddenPage(
+      `${theme}-calendar-today-wheel.png`,
+      test.info().outputDir,
+    );
+    await page.getByRole("button", { name: "Cancel", exact: true }).click();
+    await expectNoRequests();
+  });
+}

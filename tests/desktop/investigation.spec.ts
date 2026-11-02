@@ -175,7 +175,6 @@ test("server and local filtering export real selected data and row menu opens so
   await expect(page.locator(".query-status")).toContainText(
     /1 shown \/ [\d,]+ loaded/,
   );
-  await expect(page.getByText("Saved locally", { exact: true })).toBeVisible();
   await expect(page.locator(".query-status")).toHaveAttribute(
     "data-query-state",
     "complete",
@@ -214,7 +213,7 @@ test("server and local filtering export real selected data and row menu opens so
     .getByRole("menuitem", { name: "Surrounding context", exact: true })
     .hover();
   await page
-    .getByRole("menuitem", { name: "Before and after", exact: true })
+    .getByRole("menuitem", { name: "Both directions", exact: true })
     .hover();
   await page.getByRole("menuitem", { name: "5 minutes", exact: true }).click();
   // Context is a new tab, so its inspector follows the default-open behavior.

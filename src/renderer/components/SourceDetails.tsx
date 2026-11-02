@@ -8,6 +8,7 @@ import {
 } from "@tabler/icons-react";
 import type { Connection, LogGroup, LogStream } from "../../shared/contracts";
 import { formatTimestamp } from "../timestamp-format";
+import { useSourceDetailsSize } from "./source-details-size";
 
 export type SourceDetailsResource = {
   connection: Connection;
@@ -66,11 +67,16 @@ function Field({
 export function SourceDetails({
   resource,
   onCopy,
+  height,
+  onHeightChange,
 }: {
   resource?: SourceDetailsResource;
   onCopy(value: string): void;
+  height?: number;
+  onHeightChange?(height: number): void;
 }) {
   const [expanded, setExpanded] = useState(true);
+  const sizing = useSourceDetailsSize({ height, onHeightChange, expanded });
   const bodyId = useId();
   const stream = resource?.kind === "stream" ? resource.stream : undefined;
   const group = resource?.group;
@@ -96,26 +102,36 @@ export function SourceDetails({
           ? "Delivery"
           : (group?.logClass ?? "Not provided");
   return (
-    <section className="source-details" aria-label="Current source details">
+    <section
+      className="source-details"
+      aria-label="Current source details"
+      ref={sizing.panel}
+      style={{ height: sizing.height }}
+    >
+      {expanded && <div {...sizing.separatorProps} aria-controls={bodyId} />}
       <button
         type="button"
         className="source-details-heading"
         aria-label="Toggle source details"
         aria-expanded={expanded}
         aria-controls={bodyId}
-        onClick={() => setExpanded((previous) => !previous)}
+        onClick={() => {
+          sizing.cancel();
+          setExpanded((previous) => !previous);
+        }}
       >
         {expanded ? (
           <IconChevronDown size={13} aria-hidden="true" />
         ) : (
           <IconChevronRight size={13} aria-hidden="true" />
         )}
-        <span>Source details</span>
-        {resource && (
-          <span className="source-details-kind">
-            {stream ? "Stream" : "Group"}
-          </span>
-        )}
+        <span>
+          {resource
+            ? stream
+              ? "Stream details"
+              : "Group details"
+            : "Source details"}
+        </span>
       </button>
       {expanded && (
         <div className="source-details-body" id={bodyId}>

@@ -1,5 +1,25 @@
 # Building and releasing
 
+## Verified build 0.1.67
+
+Calendar Today/wheel navigation, non-selecting tab context menus and the surrounding-context labels Back, Forward and Both directions are packaged under `release/0.1.67/`. Verification: 1,116 unit tests and 16 targeted hidden/offline packaged desktop checks pass. Test proof is `.tmp/desktop-verification-0.1.67.json`; artifact hashes are in `release/0.1.67/artifact-manifest.json`.
+
+The safe handoff waits for natural app exit, retains a previous-build backup and verifies hashes before updating the standard launch folder. State is `.tmp/standard-build-update-0.1.67.json`. Four hidden exact-standard-path checks are queued after promotion. The user's app is never force-closed or relaunched. No real AWS calls or installer installation were exercised.
+
+## Verified build 0.1.66
+
+Clearer Preferences sections and Favorites-style inline profile/rule deletion in Highlights are packaged under `release/0.1.66/`. Verification: 1,111 unit tests and 18 targeted hidden/offline packaged desktop checks pass, including both themes and pane/modal layouts. Artifact hashes are in `release/0.1.66/artifact-manifest.json`; test evidence is `.tmp/desktop-verification-0.1.66.json`.
+
+The hash-checked handoff retains a backup and waits for natural app exit before updating the normal launch folder. State is `.tmp/standard-build-update-0.1.66.json`, with promotion complete and all six hidden exact-standard-path checks passing. Final proof: `.tmp/final-verification-0.1.66.json`. The user's app is never force-closed or relaunched. No real AWS calls or installer installation were exercised.
+
+## Verified build 0.1.65
+
+Settings consolidation, real shortcut editing, searchable connection pickers, stable resizable source details and saved-search confirmations are packaged under `release/0.1.65/`. The obsolete Highlights/Workspace pages, periodic historical refresh, global footer and Explorer navigation hint are removed. Automatic state persistence and Live remain.
+
+Verification: 1,110 unit tests and 42 distinct targeted hidden/offline packaged desktop checks, including both themes and pane/modal layouts. Focused followups resolve three test-harness assertions; raw reports and the explicit aggregate are retained in `.tmp/desktop-verification-0.1.65.json`. Installer, executable and ASAR hashes are recorded in `release/0.1.65/artifact-manifest.json`. No real AWS or installer installation was exercised.
+
+The hidden handoff waits for natural app exit before promoting the normal folder, keeps a backup and checks matching artifacts. State: `.tmp/standard-build-update-0.1.65.json`. Promotion completed with matching hashes and a retained backup. All eight hidden isolated checks passed against the exact standard launch path. Final proof: `.tmp/final-verification-0.1.65.json`. The helpers never close or launch the user's app.
+
 ## Verified build 0.1.64
 
 Favorite hover and confirmation emphasis, compact confirmation buttons, and redundant-tooltip suppression are packaged under `release/0.1.64/`. Verification: 1,097 unit tests and 24 targeted hidden/offline packaged desktop regressions, with matching installer, executable and ASAR hashes. Evidence is in `.tmp/desktop-verification-0.1.64.json`.
@@ -775,6 +795,6 @@ For packaged verification, launch `AWS Log Explorer.exe --offline-verification`.
 
 Workspace configuration lives in Electron's per-user application-data directory as `workspace.json`, with a previous-file backup. Log payloads are kept in memory and exported only through an explicit local save dialog. Back up configuration before distributing an incompatible workspace migration. Preserve the original file and surface recovery warnings when loading fails.
 
-The current implementation is version `0.1.64`. The release configuration and offline tests provide a starting point for distribution; they do not establish a signed, security-audited or commercially validated production release.
+The current implementation is version `0.1.67`. The release configuration and offline tests provide a starting point for distribution; they do not establish a signed, security-audited or commercially validated production release.
 
 The standard launch folder was updated to 0.1.11 after natural app exit, with a retained backup and matching executable/ASAR/installer hashes. Two additional hidden checks passed against the exact standard path: `.tmp/test-results-standard-0.1.11/report.json`.

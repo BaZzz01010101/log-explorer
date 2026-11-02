@@ -1,18 +1,14 @@
 import { useState, type Dispatch, type SetStateAction } from "react";
-import { ownValue } from "../../shared/records";
 import {
   ActionIcon,
   Alert,
   Badge,
-  Button,
-  Checkbox,
   Group,
   Paper,
-  Select,
   Stack,
   Text,
 } from "@mantine/core";
-import { IconPlus, IconX } from "@tabler/icons-react";
+import { IconX } from "@tabler/icons-react";
 import type { Connection, Preferences } from "../../shared/contracts";
 import { AWS_REGIONS } from "../../shared/aws-regions";
 import {
@@ -20,6 +16,8 @@ import {
   profileIsEnabled,
   setProfileRegion,
 } from "../explorer-configuration";
+import { ConnectionAddPicker } from "./ConnectionAddPicker";
+import { SettingLabel } from "./SettingLabel";
 
 export interface ProfileConnectionsEditorState {
   profileToAdd: string | null;
@@ -53,10 +51,8 @@ export function ProfileConnectionsEditor({
   const [localUiState, setLocalUiState] = useState(
     createProfileConnectionsEditorState,
   );
-  const { profileToAdd, regionToAdd, error } = uiState ?? localUiState;
+  const { error } = uiState ?? localUiState;
   const setUiState = onUiStateChange ?? setLocalUiState;
-  const setProfileToAdd = (profileToAdd: string | null) =>
-    setUiState((previous) => ({ ...previous, profileToAdd }));
   const setError = (error: string) =>
     setUiState((previous) => ({ ...previous, error }));
   const visibility = preferences.profileVisibility ?? {};
@@ -95,62 +91,32 @@ export function ProfileConnectionsEditor({
     }
   };
   return (
-    <Stack gap="sm">
-      <Text size="sm" fw={600}>
-        Profiles and regions
-      </Text>
-      <Text size="xs" c="dimmed">
-        Add the profiles and regions you want in Explorer. Removing an entry
-        keeps its saved connection and open tabs.
-      </Text>
-      {!discoveryEnabled && (
-        <Alert color="blue" p="xs">
-          Configured profiles remain editable. Enable the packaged AWS session
-          above to discover additional local profile names.
-        </Alert>
-      )}
+    <Stack gap="sm" className="profile-connections-editor">
+      <SettingLabel
+        label="Profiles and regions"
+        help="Choose the profiles and regions shown in Explorer. Removing an entry keeps its saved connection and open tabs."
+      />
       {error && (
         <Alert color="red" p="xs">
           {error}
         </Alert>
       )}
-      <Group align="end" wrap="nowrap" className="settings-connection-add">
-        <Select
-          label="Known profile"
-          aria-label="Known profile to add"
-          placeholder={
-            available.length ? "Choose a profile…" : "No additional profiles"
-          }
-          searchable
-          data={available}
-          value={available.includes(profileToAdd ?? "") ? profileToAdd : null}
-          onChange={setProfileToAdd}
-          size="xs"
-          style={{ flex: 1 }}
-          disabled={!available.length}
-        />
-        <Button
-          size="xs"
-          aria-label="Add profile"
-          leftSection={<IconPlus size={14} />}
-          disabled={!profileToAdd || !available.includes(profileToAdd)}
-          onClick={() => {
-            if (
-              profileToAdd &&
-              available.includes(profileToAdd) &&
-              changeVisibility(profileToAdd, true)
-            )
-              setProfileToAdd(null);
-          }}
-        >
-          Add profile
-        </Button>
-      </Group>
-      {!added.length && (
-        <Text size="xs" c="dimmed">
-          Add a profile to choose its regions.
-        </Text>
-      )}
+      <ConnectionAddPicker
+        label="Add profile"
+        searchLabel="Search profiles"
+        placeholder="Search profiles…"
+        options={available.map((profile) => ({
+          value: profile,
+          label: profile,
+        }))}
+        emptyMessage={
+          discoveryEnabled
+            ? "All known profiles have been added."
+            : "No additional known profiles. Enable AWS access to discover local profiles."
+        }
+        noMatchesMessage="No profiles match your search."
+        onSelect={(profile) => changeVisibility(profile, true)}
+      />
       <div className="settings-profile-cards">
         {added.map((profile) => {
           const existing = connections.filter(
@@ -167,16 +133,20 @@ export function ProfileConnectionsEditor({
           const catalog = [
             ...AWS_REGIONS.map((region) => ({
               value: region.id,
-              label: region.name + " · " + region.id,
+              label: region.id,
+              description: region.name,
             })),
             ...[...new Set(existing.map((connection) => connection.region))]
               .filter((id) => !AWS_REGIONS.some((region) => region.id === id))
-              .map((id) => ({ value: id, label: id + " · Custom region" })),
+              .map((id) => ({
+                value: id,
+                label: id,
+                description: "Custom configured region",
+              })),
           ];
           const choices = catalog.filter(
             (region) => !selected.includes(region.value),
           );
-          const draft = ownValue(regionToAdd, profile) ?? null;
           return (
             <Paper
               withBorder
@@ -213,11 +183,6 @@ export function ProfileConnectionsEditor({
                     <IconX size={14} />
                   </ActionIcon>
                 </Group>
-                {selected.length === 0 && (
-                  <Text size="xs" c="dimmed">
-                    Add a region to show this profile in Explorer.
-                  </Text>
-                )}
                 {selected.map((region) => (
                   <Group
                     key={region}
@@ -245,84 +210,21 @@ export function ProfileConnectionsEditor({
                     </ActionIcon>
                   </Group>
                 ))}
-                <Group
-                  align="end"
-                  wrap="nowrap"
-                  className="settings-connection-add"
-                >
-                  <Select
-                    aria-label={`Add region for ${profile}`}
-                    placeholder="Choose a region or location…"
-                    searchable
-                    data={choices}
-                    value={
-                      choices.some((region) => region.value === draft)
-                        ? draft
-                        : null
-                    }
-                    onChange={(region) =>
-                      setUiState((previous) => ({
-                        ...previous,
-                        regionToAdd: {
-                          ...previous.regionToAdd,
-                          [profile]: region,
-                        },
-                      }))
-                    }
-                    size="xs"
-                    style={{ flex: 1 }}
-                    disabled={!choices.length}
-                  />
-                  <Button
-                    size="xs"
-                    variant="light"
-                    aria-label={`Confirm add region for ${profile}`}
-                    disabled={!draft || selected.includes(draft)}
-                    onClick={() => {
-                      if (draft && changeRegion(profile, draft, true))
-                        setUiState((previous) => ({
-                          ...previous,
-                          regionToAdd: {
-                            ...previous.regionToAdd,
-                            [profile]: null,
-                          },
-                        }));
-                    }}
-                  >
-                    Add region
-                  </Button>
-                </Group>
+                <ConnectionAddPicker
+                  label="Add region"
+                  ariaLabel={`Add region for ${profile}`}
+                  searchLabel={`Search regions for ${profile}`}
+                  placeholder="Search regions or locations…"
+                  options={choices}
+                  emptyMessage="All known regions have been added."
+                  noMatchesMessage="No regions match your search."
+                  onSelect={(region) => changeRegion(profile, region, true)}
+                />
               </Stack>
             </Paper>
           );
         })}
       </div>
-      {connections.some((connection) => connection.mode === "offline") && (
-        <details>
-          <summary>Offline fixture regions</summary>
-          <Stack gap="xs" mt="xs">
-            {connections
-              .filter((connection) => connection.mode === "offline")
-              .map((connection) => (
-                <Checkbox
-                  key={connection.id}
-                  label={`${connection.name} · ${connection.region}`}
-                  aria-label={`Show fixture connection ${connection.id}`}
-                  checked={connection.enabled !== false}
-                  onChange={(event) =>
-                    onConnections(
-                      connections.map((item) =>
-                        item.id === connection.id
-                          ? { ...item, enabled: event.currentTarget.checked }
-                          : item,
-                      ),
-                    )
-                  }
-                />
-              ))}
-          </Stack>
-        </details>
-      )}
     </Stack>
   );
 }

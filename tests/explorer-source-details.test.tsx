@@ -102,9 +102,11 @@ const check = (name: string) =>
     type: "checkbox",
     "aria-label": `Select ${name}`,
   });
-async function mount() {
+async function mount(
+  overrides: Partial<Parameters<typeof ExplorerSidebar>[0]> = {},
+) {
   await act(async () => {
-    renderer = create(<ExplorerSidebar {...props} />);
+    renderer = create(<ExplorerSidebar {...props} {...overrides} />);
   });
 }
 
@@ -148,7 +150,13 @@ it("replaces recent sources with one current group and copyable full metadata wi
   expect(textOf(details())).toContain("Choose a log group or stream");
   expect(textOf(renderer!.root)).not.toContain("Recent sources");
   expect(textOf(renderer!.root)).not.toContain("/legacy-recent");
+  expect(textOf(renderer!.root)).not.toContain("Arrow keys navigate");
+  expect(
+    renderer!.root.findByProps({ role: "tree" }).props["aria-describedby"],
+  ).toBeUndefined();
+  expect(details().props.style.height).toBe(220);
   await act(async () => label(group.name).props.onClick({}));
+  expect(details().props.style.height).toBe(220);
   const pane = textOf(details());
   for (const value of [
     group.name,
@@ -171,6 +179,9 @@ it("replaces recent sources with one current group and copyable full metadata wi
     details().findByProps({ "aria-label": "Copy ARN" }).props.onClick(),
   );
   expect(copy).toHaveBeenLastCalledWith(group.arn);
+  expect(textOf(renderer!.root.findByProps({ role: "status" }))).toBe(
+    "Resource copied",
+  );
 });
 
 it("shows only the last interacted source while preserving multi-selection and action payloads", async () => {
@@ -212,6 +223,7 @@ it("follows stream clicks and branch expansion with stream time and containing g
   expect(onOpen).not.toHaveBeenCalled();
   await act(async () => label(streamName).props.onClick({}));
   const pane = textOf(details());
+  expect(details().props.style.height).toBe(220);
   expect(pane).toContain(streamName);
   expect(pane).toContain(group.name);
   expect(pane).toContain("2026-10-29 07:00:00.123 UTC");
@@ -283,4 +295,34 @@ it("keeps a collapsed pane collapsed as the current source changes", async () =>
   ).toHaveLength(0);
   await act(async () => toggle().props.onClick());
   expect(textOf(details())).toContain(group.name);
+});
+
+it("restores the saved details height and forwards committed changes for persistence", async () => {
+  const onSourceDetailsHeightChange = vi.fn();
+  await mount({
+    preferences: { sourceDetailsHeight: 360 },
+    onSourceDetailsHeightChange,
+  });
+  expect(details().props.style.height).toBe(360);
+  await act(async () =>
+    renderer!.root
+      .findByProps({ "aria-label": "Resize source details" })
+      .props.onKeyDown({
+        key: "ArrowUp",
+        preventDefault() {},
+        stopPropagation() {},
+      }),
+  );
+  expect(onSourceDetailsHeightChange).toHaveBeenLastCalledWith(380);
+  await act(async () =>
+    renderer!.update(
+      <ExplorerSidebar
+        {...props}
+        preferences={{ sourceDetailsHeight: 380 }}
+        onSourceDetailsHeightChange={onSourceDetailsHeightChange}
+      />,
+    ),
+  );
+  await act(async () => label(group.name).props.onClick({}));
+  expect(details().props.style.height).toBe(380);
 });

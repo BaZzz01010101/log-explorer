@@ -157,9 +157,7 @@ const categoryNames = [
   "Preferences",
   "Time ranges",
   "Highlights",
-  "Highlights tree",
   "Shortcuts",
-  "Workspace",
 ];
 async function choose(name: string) {
   await page.getByRole("tab", { name, exact: true }).click();
@@ -297,21 +295,10 @@ for (const theme of ["light", "dark"])
             profileBox.y + profileBox.height,
           );
         }
-        const expand = page.getByRole("button", {
-          name: "Expand rule 1",
-          exact: true,
-        });
-        if (await expand.count()) await expand.click();
-        const edit = page.getByRole("button", {
-          name: "Edit rule 1",
-          exact: true,
-        });
-        if (
-          !(await page
-            .getByRole("button", { name: "Save rule", exact: true })
-            .count())
-        )
-          await edit.click();
+        await highlightPanel
+          .getByRole("treeitem", { name: /^Select rule/ })
+          .first()
+          .click();
         const colorFields = highlightPanel.locator(
           ".highlight-detail-fields .mantine-ColorInput-input",
         );
@@ -356,7 +343,7 @@ for (const theme of ["light", "dark"])
         await choose("Shortcuts");
         const fields = page
           .getByRole("tabpanel", { name: "Shortcuts", exact: true })
-          .locator(".mantine-TextInput-root");
+          .locator(".shortcut-editor-row");
         const first = (await fields.nth(0).boundingBox())!,
           second = (await fields.nth(1).boundingBox())!;
         expect(Math.abs(first.y - second.y) < 1).toBe(false);
@@ -369,15 +356,14 @@ for (const theme of ["light", "dark"])
           await slot.fill("2");
           await expect(slot).toHaveValue("2");
           await capturePage("narrow-time-ranges.png");
-          await choose("Workspace");
-          await page
-            .getByLabel("Import workspace JSON", { exact: true })
-            .fill('{"draft":');
         }
-        await choose("Workspace");
+        await choose("Time ranges");
         await expect(
-          page.getByLabel("Import workspace JSON", { exact: true }),
-        ).toHaveValue('{"draft":');
+          page.getByRole("textbox", {
+            name: "Quick toolbar Minutes slot 1",
+            exact: true,
+          }),
+        ).toHaveValue("2");
       }
       await choose("Highlights");
       await app.evaluate(async ({ BrowserWindow }) => {

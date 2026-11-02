@@ -61,7 +61,7 @@ async function launch(waitForQuery = true) {
     ).toBeAttached();
   else
     await expect(
-      page.getByText("Saved locally", { exact: true }),
+      page.getByRole("button", { name: "Application menu", exact: true }),
     ).toBeVisible();
 }
 async function closeNaturally() {

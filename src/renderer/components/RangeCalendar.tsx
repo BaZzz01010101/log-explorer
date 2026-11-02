@@ -1,7 +1,8 @@
-import { useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { IconChevronLeft, IconChevronRight } from "@tabler/icons-react";
 import {
   calendarMonthDays,
+  rangeInputFields,
   shiftCalendarDay,
   shiftCalendarMonth,
 } from "../time-range";
@@ -11,6 +12,7 @@ interface Props {
   start: string;
   end: string;
   anchor: string | null;
+  timezone?: "local" | "utc";
   onMonthChange(month: string): void;
   onSelect(day: string): void;
 }
@@ -20,17 +22,60 @@ export function RangeCalendar({
   start,
   end,
   anchor,
+  timezone = "local",
   onMonthChange,
   onSelect,
 }: Props) {
   const [hover, setHover] = useState<string | null>(null);
   const [focused, setFocused] = useState(start || month);
   const root = useRef<HTMLDivElement>(null);
+  const current = useRef({ month, onMonthChange });
+  current.current = { month, onMonthChange };
   const focusRequested = useRef(false);
   const secondMonth = shiftCalendarMonth(month, 1);
   const preview = anchor
     ? [anchor, hover ?? anchor].sort()
     : [start, end].sort();
+  useEffect(() => {
+    const element = root.current;
+    if (!element) return;
+    let accumulated = 0,
+      lastWheel = 0;
+    const wheel = (event: WheelEvent) => {
+      if (
+        !event.deltaY ||
+        !Number.isFinite(event.deltaY) ||
+        event.ctrlKey ||
+        event.metaKey ||
+        event.altKey ||
+        Math.abs(event.deltaX) > Math.abs(event.deltaY)
+      )
+        return;
+      // Keep the popover still; the wheel belongs to month navigation here.
+      event.preventDefault();
+      const delta =
+        event.deltaY *
+        (event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? 240 : 1);
+      if (
+        event.timeStamp - lastWheel > 250 ||
+        (accumulated && Math.sign(accumulated) !== Math.sign(delta))
+      )
+        accumulated = 0;
+      lastWheel = event.timeStamp;
+      accumulated += delta;
+      // Small trackpad packets accumulate instead of racing through months.
+      if (Math.abs(accumulated) < 40) return;
+      const step = Math.sign(accumulated);
+      accumulated = 0;
+      const next = shiftCalendarMonth(current.current.month, step);
+      if (next < "1970-01-01" || next > "9999-11-01") return;
+      current.current.month = next;
+      setHover(null);
+      current.current.onMonthChange(next);
+    };
+    element.addEventListener("wheel", wheel, { passive: false });
+    return () => element.removeEventListener("wheel", wheel);
+  }, []);
   useLayoutEffect(() => {
     if (!focusRequested.current) return;
     root.current
@@ -84,9 +129,21 @@ export function RangeCalendar({
         >
           <IconChevronLeft size={18} />
         </button>
-        <span className="calendar-selection-hint" role="status">
-          {anchor ? "Choose end date" : "Choose a start date, then an end date"}
-        </span>
+        <button
+          type="button"
+          className="calendar-today-button"
+          onClick={() => {
+            const today = rangeInputFields(
+              new Date().toISOString(),
+              timezone,
+            ).date.replaceAll("/", "-");
+            setHover(null);
+            setFocused(today);
+            onMonthChange(today.slice(0, 7) + "-01");
+          }}
+        >
+          Today
+        </button>
         <button
           type="button"
           className="calendar-navigation-button"

@@ -5,6 +5,7 @@ import { Menu } from "./AppMenu";
 import { IconLayoutColumns, IconStar, IconTrash } from "@tabler/icons-react";
 import type { ViewFavorite } from "../../shared/contracts";
 import { favoriteTooltip } from "../favorite-tooltip";
+import { InlineDeleteConfirmation } from "./InlineDeleteConfirmation";
 import "./view-favorites.css";
 
 function FavoriteItem({
@@ -86,33 +87,15 @@ function FavoriteItem({
               <span>{favorite.title}</span>
             </button>
             {confirmingDelete ? (
-              <div
+              <InlineDeleteConfirmation
                 className="favorite-delete-confirmation"
-                role="group"
-                aria-label={`Delete favorite ${favorite.title}`}
-                onPointerDown={(event) => event.stopPropagation()}
-              >
-                <button
-                  type="button"
-                  className="favorite-confirm-delete"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    setConfirmingDelete(false);
-                    onRemove?.(favorite.id);
-                  }}
-                >
-                  Delete
-                </button>
-                <button
-                  type="button"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    setConfirmingDelete(false);
-                  }}
-                >
-                  Cancel
-                </button>
-              </div>
+                label={`Delete favorite ${favorite.title}`}
+                onDelete={() => {
+                  setConfirmingDelete(false);
+                  onRemove?.(favorite.id);
+                }}
+                onCancel={() => setConfirmingDelete(false)}
+              />
             ) : (
               <button
                 type="button"

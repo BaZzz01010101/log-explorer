@@ -20,11 +20,47 @@
   scrollbar-gutter: auto;
 }
 .highlight-tree-row {
+  position: relative;
   color: var(--mantine-color-text);
   cursor: default;
   outline: none;
   user-select: none;
   touch-action: none;
+}
+.highlight-tree-delete-trigger {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--mantine-color-red-text);
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+}
+.highlight-tree-row:hover .highlight-tree-delete-trigger,
+.highlight-tree-row:focus-within .highlight-tree-delete-trigger {
+  opacity: 1;
+  pointer-events: auto;
+}
+.highlight-tree-delete-trigger:hover {
+  background: var(--mantine-color-red-light);
+}
+.highlight-tree-row.is-confirming-delete,
+.highlight-tree-row.is-confirming-delete:hover,
+.highlight-tree-row.is-confirming-delete[aria-selected="true"] {
+  background: var(--inline-confirm-background);
+  color: var(--mantine-color-text);
+}
+.highlight-tree-row .inline-delete-confirmation {
+  position: absolute;
+  inset: 0 2px 0 auto;
+  padding-left: 5px;
+  background: var(--inline-confirm-background);
 }
 .highlight-tree-row[aria-level="2"] {
   padding-left: 43px;

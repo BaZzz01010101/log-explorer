@@ -392,6 +392,12 @@ input:focus-visible {
   display: flex;
   align-items: stretch;
   gap: 2px;
+  border-radius: 4px;
+  min-height: 30px;
+}
+.saved-search-menu-row.is-confirming-delete .saved-search-menu-item {
+  background: transparent;
+  color: inherit;
 }
 .saved-search-menu-item {
   flex: 1;
@@ -448,19 +454,6 @@ input:focus-visible {
 }
 .status-dot.error {
   background: #e57979;
-}
-.app-footer {
-  height: 26px;
-  flex: 0 0 26px;
-  padding: 0 13px;
-  border-top: 1px solid var(--line);
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  background: var(--surface-alt);
-}
-.app-footer p {
-  font-size: 10px;
 }
 .empty-pane,
 .startup-loader {

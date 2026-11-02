@@ -13,7 +13,7 @@ import {
   restoreWorkspace,
 } from "../../src/renderer/workspace";
 import { desktopExecutablePath } from "./desktop-app";
-import { openSettingsWindow } from "./settings-panel";
+import { openSettingsWindow, setShortcutBinding } from "./settings-panel";
 
 // Hidden windows, private storage and offline-only requests keep these checks
 // independent of the installed application and the user's AWS configuration.
@@ -525,9 +525,7 @@ for (const theme of ["light", "dark"]) {
       ["Highlight regex", "Alt+U"],
       ["Highlight match case", "Alt+I"],
     ])
-      await page
-        .getByRole("textbox", { name: label, exact: true })
-        .fill(binding);
+      await setShortcutBinding(page, label, binding);
     await page
       .getByRole("button", { name: "Close Settings", exact: true })
       .click();

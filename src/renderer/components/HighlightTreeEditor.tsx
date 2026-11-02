@@ -23,15 +23,7 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import {
-  ActionIcon,
-  Button,
-  Group,
-  Modal,
-  Stack,
-  Switch,
-  Text,
-} from "@mantine/core";
+import { ActionIcon, Button, Switch, Text } from "@mantine/core";
 import {
   IconArrowDown,
   IconArrowUp,
@@ -57,6 +49,7 @@ import {
 } from "./HighlightItemDetails";
 import { HighlightEventsPreview } from "./HighlightEventsPreview";
 import { HighlightPaneDivider } from "./HighlightPaneDivider";
+import { InlineDeleteConfirmation } from "./InlineDeleteConfirmation";
 import { highlightTableKeyboardCoordinates } from "../highlight-table-keyboard";
 import "./highlight-profiles.css";
 import "./highlight-tree.css";
@@ -64,6 +57,7 @@ import "./highlight-tree.css";
 type Target = { profileId: string; ruleId?: string };
 export interface HighlightTreeEditorState {
   selected?: Target;
+  pendingDeletes?: Target[];
   expanded: string[];
   previewOpened: boolean;
   widthRatio: number;
@@ -210,7 +204,24 @@ export function HighlightTreeEditor({
   );
   const state = uiState ?? localState,
     setState = onUiStateChange ?? setLocalState;
-  const [confirming, setConfirming] = useState<Target>();
+  const confirming = state.pendingDeletes ?? [];
+  const setConfirming = (update: (previous: Target[]) => Target[]) =>
+    setState((previous) => ({
+      ...previous,
+      pendingDeletes: update(previous.pendingDeletes ?? []),
+    }));
+  const isSameTarget = (a: Target, b: Target) =>
+    a.profileId === b.profileId && a.ruleId === b.ruleId;
+  const requestDelete = (target: Target) =>
+    setConfirming((previous) =>
+      previous.some((item) => isSameTarget(item, target))
+        ? previous
+        : [...previous, target],
+    );
+  const cancelDelete = (target: Target) =>
+    setConfirming((previous) =>
+      previous.filter((item) => !isSameTarget(item, target)),
+    );
   const [focusRequest, setFocusRequest] = useState(0);
   const [dragging, setDragging] = useState(false);
   const sensors = useSensors(
@@ -228,12 +239,6 @@ export function HighlightTreeEditor({
     profile?.id === state.selected?.profileId
       ? profile.rules.find((item) => item.id === state.selected?.ruleId)
       : undefined;
-  const targetProfile = profiles.find(
-    (item) => item.id === confirming?.profileId,
-  );
-  const targetRule = targetProfile?.rules.find(
-    (item) => item.id === confirming?.ruleId,
-  );
   const [draftSize, setDraftSize] = useState<
     Partial<Record<"widthRatio" | "heightRatio" | "tablesRatio", number>>
   >({});
@@ -300,20 +305,24 @@ export function HighlightTreeEditor({
     patchProfile(owner.id, { rules: [...owner.rules, item] });
     select({ profileId: owner.id, ruleId: item.id }, true);
   };
-  const remove = () => {
+  const remove = (target: Target) => {
+    const targetProfile = profiles.find((item) => item.id === target.profileId);
     if (!targetProfile) {
-      setConfirming(undefined);
+      cancelDelete(target);
       return;
     }
-    if (confirming?.ruleId) {
+    if (target.ruleId) {
       const index = targetProfile.rules.findIndex(
-        (item) => item.id === confirming.ruleId,
+        (item) => item.id === target.ruleId,
       );
       const remaining = targetProfile.rules.filter(
-        (item) => item.id !== confirming.ruleId,
+        (item) => item.id !== target.ruleId,
       );
       patchProfile(targetProfile.id, { rules: remaining });
-      if (state.selected?.ruleId === confirming.ruleId)
+      if (
+        state.selected?.profileId === target.profileId &&
+        state.selected?.ruleId === target.ruleId
+      )
         select({
           profileId: targetProfile.id,
           ruleId: remaining[Math.min(index, remaining.length - 1)]?.id,
@@ -336,7 +345,13 @@ export function HighlightTreeEditor({
             : previous.selected,
       }));
     }
-    setConfirming(undefined);
+    setConfirming((previous) =>
+      previous.filter((item) =>
+        target.ruleId
+          ? !isSameTarget(item, target)
+          : item.profileId !== target.profileId,
+      ),
+    );
   };
   const row = (
     owner: HighlightProfile,
@@ -346,6 +361,7 @@ export function HighlightTreeEditor({
     const target = { profileId: owner.id, ruleId: child?.id },
       kind = child ? "rule" : "profile",
       label = child ? ruleName(child) : profileName(owner);
+    const pendingDelete = confirming.some((item) => isSameTarget(item, target));
     const selected =
       profile?.id === owner.id && (rule?.id ?? undefined) === child?.id;
     const siblings = child ? owner.rules : profiles,
@@ -375,7 +391,8 @@ export function HighlightTreeEditor({
             }
             aria-label={`Select ${kind} ${label}`}
             tabIndex={selected ? 0 : -1}
-            className="resource-row highlight-tree-row"
+            className={`resource-row highlight-tree-row inline-delete-row${pendingDelete ? " is-confirming-delete" : ""}`}
+            data-confirming-delete={pendingDelete || undefined}
             data-mantine-stop-propagation={
               sortable.isDragging ? "true" : undefined
             }
@@ -383,13 +400,21 @@ export function HighlightTreeEditor({
             data-tree-rule={child?.id}
             data-disabled={!owner.enabled || child?.enabled === false}
             data-tooltip={
-              child
-                ? child.pattern || "Empty match pattern"
-                : owner.groupPattern || "All log groups"
+              pendingDelete
+                ? undefined
+                : child
+                  ? child.pattern || "Empty match pattern"
+                  : owner.groupPattern || "All log groups"
             }
             onClick={() => select(target)}
             onContextMenu={() => select(target)}
-            onDoubleClick={() =>
+            onDoubleClick={(event) => {
+              if (
+                (event.target as Element).closest(
+                  "button, .inline-delete-confirmation",
+                )
+              )
+                return;
               child
                 ? select(target, true)
                 : setState((previous) => ({
@@ -397,9 +422,10 @@ export function HighlightTreeEditor({
                     expanded: previous.expanded.includes(owner.id)
                       ? previous.expanded.filter((id) => id !== owner.id)
                       : [...previous.expanded, owner.id],
-                  }))
-            }
+                  }));
+            }}
             onKeyDown={(event) => {
+              if (event.target !== event.currentTarget) return;
               if (
                 event.key === "ContextMenu" ||
                 (event.shiftKey && event.key === "F10")
@@ -449,6 +475,27 @@ export function HighlightTreeEditor({
             </span>
             {!child && (
               <span className="highlight-tree-count">{owner.rules.length}</span>
+            )}
+            {pendingDelete ? (
+              <InlineDeleteConfirmation
+                label={`Delete highlight ${kind} ${label}`}
+                onDelete={() => remove(target)}
+                onCancel={() => cancelDelete(target)}
+              />
+            ) : (
+              <button
+                type="button"
+                className="highlight-tree-delete-trigger"
+                aria-label={`Delete highlight ${kind} ${label}`}
+                data-tooltip={`Delete ${kind}`}
+                onPointerDown={(event) => event.stopPropagation()}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  requestDelete(target);
+                }}
+              >
+                <IconTrash size={14} aria-hidden="true" />
+              </button>
             )}
           </div>
         </Menu.ContextMenu>
@@ -500,7 +547,7 @@ export function HighlightTreeEditor({
             color="red"
             aria-label={`Delete ${kind} ${label}`}
             leftSection={<IconTrash size={14} />}
-            onClick={() => setConfirming(target)}
+            onClick={() => requestDelete(target)}
           >
             Delete
           </Menu.Item>
@@ -509,6 +556,12 @@ export function HighlightTreeEditor({
     );
   };
   const navigate = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (
+      (event.target as Element | undefined)?.closest?.(
+        ".highlight-tree-delete-trigger, .inline-delete-confirmation",
+      )
+    )
+      return;
     if (dragging) {
       // PointerSensor cancels Escape without consuming it. Let its document
       // listener cancel while preventing the outer Settings window from closing.
@@ -553,7 +606,7 @@ export function HighlightTreeEditor({
     } else if ((event.key === "Enter" || event.key === "F2") && profile)
       select({ profileId: profile.id, ruleId: rule?.id }, true);
     else if (event.key === "Delete" && profile)
-      setConfirming({ profileId: profile.id, ruleId: rule?.id });
+      requestDelete({ profileId: profile.id, ruleId: rule?.id });
     else return;
     event.preventDefault();
     event.stopPropagation();
@@ -792,58 +845,6 @@ export function HighlightTreeEditor({
           </section>
         </>
       )}
-      <Modal
-        opened={Boolean(confirming && targetProfile)}
-        onClose={() => setConfirming(undefined)}
-        title={
-          confirming?.ruleId
-            ? "Delete highlight rule?"
-            : "Delete highlight profile?"
-        }
-        aria-label="Confirm highlight deletion"
-        size="sm"
-        centered
-        attributes={{
-          content: {
-            onKeyDown(event: React.KeyboardEvent<HTMLDivElement>) {
-              if (event.key === "Escape") {
-                event.preventDefault();
-                event.stopPropagation();
-                setConfirming(undefined);
-              }
-            },
-          },
-        }}
-      >
-        <Stack gap="sm">
-          <Text size="sm">
-            {confirming?.ruleId
-              ? `Delete rule “${targetRule ? ruleName(targetRule) : ""}” from “${targetProfile ? profileName(targetProfile) : ""}”?`
-              : `Delete profile “${targetProfile ? profileName(targetProfile) : ""}” and its ${targetProfile?.rules.length ?? 0} rules?`}
-          </Text>
-          <Text size="xs" c="dimmed">
-            This removes its highlighting configuration from all views.
-          </Text>
-          <Group justify="flex-end">
-            <Button
-              variant="default"
-              size="xs"
-              aria-label="Cancel highlight deletion"
-              onClick={() => setConfirming(undefined)}
-            >
-              Cancel
-            </Button>
-            <Button
-              color="red"
-              size="xs"
-              aria-label="Delete highlight item"
-              onClick={remove}
-            >
-              Delete
-            </Button>
-          </Group>
-        </Stack>
-      </Modal>
     </div>
   );
 }

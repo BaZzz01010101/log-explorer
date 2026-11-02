@@ -691,37 +691,6 @@ export function useLogJobs(
   }, [workspace.preferences.maxEvents]);
 
   useEffect(() => {
-    if (!ready || !workspace.preferences.refreshSeconds) return;
-    const timer = setInterval(() => {
-      for (const tab of workspaceRef.current.tabs) {
-        const runtime = runtimesRef.current[tab.id];
-        // A changed source remains idle until explicitly queried.
-        if (
-          isVisible(tab.id) &&
-          runtime?.request &&
-          ownsRequest(
-            tab.id,
-            operations.current.get(tab.id)!,
-            runtime.request.requestId,
-          ) &&
-          runtime.state !== "idle" &&
-          !runtime.live &&
-          !runtime.liveState &&
-          !["running", "queued"].includes(runtime.state)
-        )
-          void run(tab);
-      }
-    }, workspace.preferences.refreshSeconds * 1000);
-    return () => clearInterval(timer);
-  }, [
-    workspace.preferences.refreshSeconds,
-    ready,
-    run,
-    isVisible,
-    ownsRequest,
-  ]);
-
-  useEffect(() => {
     if (!ready) return;
     for (const tab of workspace.tabs) {
       if (isVisible(tab.id)) {

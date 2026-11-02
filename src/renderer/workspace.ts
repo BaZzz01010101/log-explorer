@@ -1,3 +1,4 @@
+import { DEFAULT_SHORTCUTS } from "./shortcut-definitions";
 import type {
   Connection,
   Favorite,
@@ -145,30 +146,11 @@ const DEFAULT_PREFERENCES: Preferences = {
   recentSearchesLimit: DEFAULT_RECENT_SEARCHES_LIMIT,
   fontSize: 12,
   maxEvents: 10000,
-  refreshSeconds: 0,
+  sourceDetailsHeight: 220,
   timezone: "local",
   highlightText: "",
   autoExpandFilterMatches: true,
-  shortcuts: {
-    newTab: "Control+T",
-    openSettings: "Control+,",
-    toggleTheme: "Control+Shift+L",
-    closeTab: "Control+W",
-    reopenTab: "Control+Shift+T",
-    nextTab: "Control+PageDown",
-    previousTab: "Control+PageUp",
-    recentTab: "Control+Tab",
-    previousRecentTab: "Control+Shift+Tab",
-    splitPane: "Control+\\",
-    toggleSidebar: "Control+B",
-    runQuery: "Control+Enter",
-    explorerRegex: "Alt+E",
-    explorerCaseSensitive: "Alt+C",
-    highlightRegex: "Alt+E",
-    highlightCaseSensitive: "Alt+C",
-    localFilterRegex: "Alt+E",
-    localFilterCaseSensitive: "Alt+C",
-  },
+  shortcuts: { ...DEFAULT_SHORTCUTS },
 };
 const record = (value: unknown): Record<string, unknown> =>
   value !== null && typeof value === "object" && !Array.isArray(value)
@@ -482,10 +464,7 @@ function parsePreferences(value: unknown): Preferences {
     ),
     fontSize: number(raw.fontSize, 12, 10, 20),
     maxEvents: Math.round(number(raw.maxEvents, 10000, 100, 100000)),
-    refreshSeconds:
-      raw.refreshSeconds === 0
-        ? 0
-        : Math.round(number(raw.refreshSeconds, 30, 5, 3600)),
+    sourceDetailsHeight: number(raw.sourceDetailsHeight, 220, 80, 1000),
     timezone: raw.timezone === "utc" ? "utc" : "local",
     highlightText: string(raw.highlightText, "", 1000),
     autoExpandFilterMatches: raw.autoExpandFilterMatches !== false,

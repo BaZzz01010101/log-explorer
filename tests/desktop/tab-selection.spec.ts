@@ -1,3 +1,4 @@
+import { openSettingsWindow } from "./settings-panel";
 import { desktopExecutablePath } from "./desktop-app";
 import {
   _electron as electron,
@@ -7,8 +8,7 @@ import {
   type Page,
 } from "@playwright/test";
 import { execFileSync } from "node:child_process";
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { join, resolve, sep } from "node:path";
 
 let app: ElectronApplication;
@@ -16,10 +16,12 @@ let child: ReturnType<ElectronApplication["process"]>;
 let page: Page;
 let directory: string;
 let errors: string[];
+const temporaryRoot = resolve(".tmp/desktop-tab-selection");
 const packaged = process.env.EXPLORER_DESKTOP_PACKAGED === "1";
 
 test.beforeEach(async () => {
-  directory = await mkdtemp(join(tmpdir(), "aws-log-explorer-tab-selection-"));
+  await mkdir(temporaryRoot, { recursive: true });
+  directory = await mkdtemp(join(temporaryRoot, "case-"));
   const env: Record<string, string> = {};
   for (const name of [
     "PATH",
@@ -35,6 +37,9 @@ test.beforeEach(async () => {
     if (process.env[name]) env[name] = process.env[name]!;
   Object.assign(env, {
     EXPLORER_TEST_USER_DATA: directory,
+    USERPROFILE: directory,
+    APPDATA: directory,
+    LOCALAPPDATA: directory,
     AWS_CONFIG_FILE: join(directory, "absent-config"),
     AWS_SHARED_CREDENTIALS_FILE: join(directory, "absent-credentials"),
     AWS_EC2_METADATA_DISABLED: "true",
@@ -92,11 +97,7 @@ test.afterEach(async () => {
       } else child.kill();
     }
   }
-  if (
-    !resolve(directory).startsWith(
-      resolve(tmpdir()) + sep + "aws-log-explorer-tab-selection-",
-    )
-  )
+  if (!resolve(directory).startsWith(temporaryRoot + sep + "case-"))
     throw new Error("Unsafe tab-selection cleanup path");
   await rm(directory, {
     recursive: true,
@@ -176,3 +177,66 @@ test("duplicating a middle tab inserts its independent copy immediately after th
   await page.locator(`[data-tab-id="${sourceId}"]`).getByRole("tab").click();
   await expect(page.getByLabel("Local filter loaded events")).toHaveValue("");
 });
+
+for (const theme of ["light", "dark"] as const) {
+  test(`${theme} tab context menus preserve active view, multiselection and range anchor`, async () => {
+    await openSettingsWindow(page);
+    await page.getByRole("tab", { name: "Preferences", exact: true }).click();
+    await page.getByRole("combobox", { name: "Theme", exact: true }).click();
+    await page
+      .getByRole("option", {
+        name: theme === "dark" ? "Dark" : "Light",
+        exact: true,
+      })
+      .click();
+    await page.keyboard.press("Escape");
+    await openFourTabs();
+    const tab = (name: string) => page.getByRole("tab", { name, exact: true });
+    const selected = () =>
+      page
+        .locator(
+          ".workspace-tab.is-selected .workspace-tab-label > span:first-of-type",
+        )
+        .allTextContents();
+    await tab("orders-api").click();
+    await tab("payments-worker").click({ button: "right" });
+    await expect(tab("orders-api")).toHaveAttribute("aria-selected", "true");
+    expect(await selected()).toEqual([]);
+    await expect(
+      page.getByRole("menuitem", { name: "Show in split mode", exact: true }),
+    ).toBeDisabled();
+    await page.keyboard.press("Escape");
+    await tab("media-pipeline").click({ modifiers: ["Control"] });
+    expect(await selected()).toEqual(["orders-api", "media-pipeline"]);
+    await tab("notifications").click({ button: "right" });
+    await expect(tab("orders-api")).toHaveAttribute("aria-selected", "true");
+    expect(await selected()).toEqual(["orders-api", "media-pipeline"]);
+    // An unselected target's menu acts only on that target, preserving the
+    // selection elsewhere. The existing selection still supports split menus.
+    await expect(
+      page.getByRole("menuitem", { name: "Show in split mode", exact: true }),
+    ).toBeDisabled();
+    await page.getByRole("menuitem", { name: "Pin tab", exact: true }).click();
+    await expect(tab("notifications").locator("..")).toHaveAttribute(
+      "data-pinned",
+      "true",
+    );
+    expect(await selected()).toEqual(["orders-api", "media-pipeline"]);
+    await expect(tab("orders-api")).toHaveAttribute("aria-selected", "true");
+    await tab("media-pipeline").click({ button: "right" });
+    await expect(
+      page.getByRole("menuitem", { name: "Show in split mode", exact: true }),
+    ).toBeEnabled();
+    await page.keyboard.press("Escape");
+    await tab("payments-worker").click({ modifiers: ["Shift"] });
+    expect(await selected()).toEqual(["payments-worker", "media-pipeline"]);
+    await tab("media-pipeline").focus();
+    await page.keyboard.press("Shift+F10");
+    await expect(
+      page.getByRole("menuitem", { name: "Pin tab", exact: true }),
+    ).toBeVisible();
+    expect(await selected()).toEqual(["payments-worker", "media-pipeline"]);
+    await expect(tab("orders-api")).toHaveAttribute("aria-selected", "true");
+    await page.keyboard.press("Escape");
+  });
+}

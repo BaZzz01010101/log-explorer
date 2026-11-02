@@ -122,7 +122,6 @@ export default function App() {
     "explorer",
   );
   const [windowControlsVisible, setWindowControlsVisible] = useState(false);
-  const [saveState, setSaveState] = useState("Loading workspace");
   const [contextOrigins, setContextOrigins] = useState<
     Record<string, LogEvent>
   >({});
@@ -285,19 +284,14 @@ export default function App() {
   }, []);
   useEffect(() => {
     if (!ready) return;
-    setSaveState("Saving");
     const timer = setTimeout(() => {
-      void window.explorer
-        .saveWorkspace(workspace)
-        .then(() => setSaveState("Saved locally"))
-        .catch((error) => {
-          setSaveState("Save failed");
-          notifications.show({
-            color: "red",
-            title: "Workspace save failed",
-            message: String(error),
-          });
+      void window.explorer.saveWorkspace(workspace).catch((error) => {
+        notifications.show({
+          color: "red",
+          title: "Could not save changes",
+          message: String(error),
         });
+      });
     }, 400);
     return () => clearTimeout(timer);
   }, [workspace, ready]);
@@ -399,6 +393,12 @@ export default function App() {
   };
   useEffect(() => {
     const keydown = (event: KeyboardEvent) => {
+      if (
+        document.querySelector('[data-shortcut-recording="true"]') ||
+        (event.target instanceof Element &&
+          event.target.closest("[data-shortcut-editor]"))
+      )
+        return;
       // Removing the native menu must retain its standard window shortcuts.
       const nativeAction =
         event.key === "F11"
@@ -421,6 +421,12 @@ export default function App() {
   }, []);
   useEffect(() => {
     const keydown = (event: KeyboardEvent) => {
+      if (
+        document.querySelector('[data-shortcut-recording="true"]') ||
+        (event.target instanceof Element &&
+          event.target.closest("[data-shortcut-editor]"))
+      )
+        return;
       const isInput =
         event.target instanceof HTMLElement &&
         !!event.target.closest('input,textarea,[contenteditable="true"]');
@@ -522,6 +528,12 @@ export default function App() {
       tabNavigation.current = finishRecentTabCycle(tabNavigation.current);
     };
     const keyup = (event: KeyboardEvent) => {
+      if (
+        document.querySelector('[data-shortcut-recording="true"]') ||
+        (event.target instanceof Element &&
+          event.target.closest("[data-shortcut-editor]"))
+      )
+        return;
       if (
         ["Control", "Meta", "Alt"].includes(event.key) ||
         (!event.ctrlKey && !event.metaKey && !event.altKey)
@@ -646,6 +658,12 @@ export default function App() {
               <div className="explorer-host" hidden={sidePanel !== "explorer"}>
                 <ResourceSidebar
                   preferences={workspace.preferences}
+                  onSourceDetailsHeightChange={(sourceDetailsHeight) =>
+                    dispatch({
+                      type: "preferences/update",
+                      patch: { sourceDetailsHeight },
+                    })
+                  }
                   connections={workspace.connections}
                   activeConnectionId={activeConnectionId}
                   onConnectionChange={(connectionId) =>
@@ -1000,30 +1018,6 @@ export default function App() {
               </RetainedViews>
             </main>
           </div>
-          <footer className="app-footer">
-            <Group gap={12}>
-              <span className="status-dot" />
-              <Text size="xs">
-                {environment?.awsEnabled
-                  ? "Connected workspace"
-                  : "Isolated local development"}
-              </Text>
-              <Text size="xs" c="dimmed">
-                {entries.length} tabs · {workspace.panes.length} panes
-              </Text>
-            </Group>
-            <Group gap={14}>
-              <Text
-                size="xs"
-                c={saveState === "Save failed" ? "red" : "dimmed"}
-              >
-                {saveState}
-              </Text>
-              <Text size="xs" c="dimmed">
-                v{environment?.version ?? "0.1.0"}
-              </Text>
-            </Group>
-          </footer>
         </div>
       </WorkspaceDragSurface>
     </MantineProvider>

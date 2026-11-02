@@ -242,30 +242,27 @@ test("desktop vertical slice stays isolated and supports investigation", async (
     page.getByRole("menuitem", { name: "Reopen closed tab", exact: true }),
   ).toBeVisible();
   await key("Escape");
-  await expect(page.getByText("Saved locally", { exact: true })).toBeVisible();
+  await expect(page.locator(".app-footer")).toHaveCount(0);
   expect(errors).toEqual([]);
 });
 
 test("saves the final edit before immediate quit and restores it on restart", async () => {
   await openSettingsWindow(page);
-  await click(page.getByRole("tab", { name: "Workspace", exact: true }));
-  await input(
-    page.getByLabel("Workspace name"),
-    "Desktop restoration verified",
-  );
+  await click(page.getByRole("tab", { name: "Preferences", exact: true }));
+  await input(page.getByLabel("Log font size", { exact: true }), "15");
   // Close immediately, before the 400ms persistence debounce expires.
   await close();
   const saved = JSON.parse(
     await readFile(join(directory, "workspace.json"), "utf8"),
   );
-  expect(saved.name).toBe("Desktop restoration verified");
+  expect(saved.preferences.fontSize).toBe(15);
   expect(JSON.stringify(saved)).not.toContain("secretAccessKey");
   expect(saved).not.toHaveProperty("events");
   await launch();
   await openSettingsWindow(page);
-  await click(page.getByRole("tab", { name: "Workspace", exact: true }));
-  await expect(page.getByLabel("Workspace name", { exact: true })).toHaveValue(
-    "Desktop restoration verified",
+  await click(page.getByRole("tab", { name: "Preferences", exact: true }));
+  await expect(page.getByLabel("Log font size", { exact: true })).toHaveValue(
+    "15",
   );
   await key("Escape");
   expect(
@@ -298,8 +295,8 @@ test("native window close exits naturally after saving, including the discard-sa
   await close();
   await launch();
   await openSettingsWindow(page);
-  await click(page.getByRole("tab", { name: "Workspace", exact: true }));
-  await input(page.getByLabel("Workspace name"), "Native close verified");
+  await click(page.getByRole("tab", { name: "Preferences", exact: true }));
+  await input(page.getByLabel("Log font size", { exact: true }), "16");
   let exited = app.waitForEvent("close", { timeout: 10000 });
   let processExit = new Promise<number | null>((resolve) =>
     childProcess!.once("exit", resolve),
@@ -310,8 +307,9 @@ test("native window close exits naturally after saving, including the discard-sa
   await exited;
   expect(await processExit).toBe(0);
   expect(
-    JSON.parse(await readFile(join(directory, "workspace.json"), "utf8")).name,
-  ).toBe("Native close verified");
+    JSON.parse(await readFile(join(directory, "workspace.json"), "utf8"))
+      .preferences.fontSize,
+  ).toBe(16);
 
   await launch();
   await app.evaluate(({ ipcMain, dialog }) => {

@@ -71,19 +71,6 @@
   font-size: 11px;
   padding: 3px;
 }
-.favorite-delete-confirmation button {
-  flex-shrink: 0;
-  min-height: 24px;
-  min-width: 48px;
-  padding: 2px 7px;
-  border: 1px solid var(--line);
-  border-radius: 4px;
-  background: var(--surface-alt);
-  color: var(--mantine-color-text);
-  font: inherit;
-  font-size: 11px;
-  cursor: pointer;
-}
 .favorite-delete-trigger {
   display: flex;
   align-items: center;
@@ -96,25 +83,9 @@
   opacity: 1;
   pointer-events: auto;
 }
-.favorite-delete-trigger:hover,
-.favorite-delete-confirmation button:hover {
+.favorite-delete-trigger:hover {
   background: var(--favorite-hover-bg);
 }
 .favorite-delete-trigger {
   color: var(--mantine-color-red-text);
-}
-.favorite-delete-confirmation .favorite-confirm-delete {
-  background: var(--mantine-color-red-9);
-  border-color: var(--mantine-color-red-9);
-  color: #fff;
-}
-.favorite-delete-confirmation .favorite-confirm-delete:hover {
-  background: var(--mantine-color-red-8);
-}
-.favorite-delete-confirmation {
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  gap: 3px;
-  padding-right: 2px;
 }

@@ -3,6 +3,10 @@ import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { RelativeTimeTemplatesEditor } from "../src/renderer/components/RelativeTimeTemplatesEditor";
 import { normalizeRelativeTimeTemplates } from "../src/shared/relative-time-templates";
+vi.mock("../src/renderer/components/SettingLabel", () => ({
+  SettingLabel: ({ label }: { label: ReactNode }) =>
+    createElement("span", null, label),
+}));
 
 vi.mock("@mantine/core", async () => {
   const { forwardRef } = await import("react");

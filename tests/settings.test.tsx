@@ -3,9 +3,29 @@ import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { Settings } from "../src/renderer/components/Settings";
 import { createWorkspace } from "../src/renderer/workspace";
+vi.mock("../src/renderer/components/AppMenu", () => ({
+  MENU_OPEN_EVENT: "explorer:menu-open",
+}));
 vi.mock("../src/renderer/components/HighlightTreeEditor", () => ({
   createHighlightTreeEditorState: () => ({}),
-  HighlightTreeEditor: () => null,
+  HighlightTreeEditor: ({ onChange }: { onChange(value: unknown[]): void }) =>
+    createElement("button", {
+      "aria-label": "Update highlight profiles",
+      onClick: () => onChange([]),
+    }),
+}));
+vi.mock("../src/renderer/components/ProfileConnectionsEditor", () => ({
+  createProfileConnectionsEditorState: () => ({}),
+  ProfileConnectionsEditor: () => null,
+}));
+vi.mock("../src/renderer/components/ShortcutsEditor", () => ({
+  ShortcutsEditor: ({
+    shortcuts,
+    onChange,
+  }: {
+    shortcuts: Record<string, string>;
+    onChange(value: Record<string, string>): void;
+  }) => createElement("div", { "data-shortcuts": shortcuts, onChange }),
 }));
 
 vi.mock("@mantine/core", () => {
@@ -58,23 +78,6 @@ vi.mock("../src/renderer/components/EventMessage", () => ({
 vi.mock("../src/renderer/components/HighlightEventsPreview", () => ({
   HighlightEventsPreview: () => null,
 }));
-vi.mock(
-  "../src/renderer/components/HighlightProfilesEditor",
-  async (importOriginal) => ({
-    ...(await importOriginal<
-      typeof import("../src/renderer/components/HighlightProfilesEditor")
-    >()),
-    HighlightProfilesEditor: ({
-      onChange,
-    }: {
-      onChange(value: unknown[]): void;
-    }) =>
-      createElement("button", {
-        "aria-label": "Update highlight profiles",
-        onClick: () => onChange([]),
-      }),
-  }),
-);
 
 let renderer: ReactTestRenderer;
 const workspace = createWorkspace();
@@ -92,7 +95,9 @@ const props = {
 };
 const control = (label: string) =>
   renderer.root.findAll(
-    (node) => node.type === "div" && node.props.label === label,
+    (node) =>
+      node.type === "div" &&
+      (node.props.label === label || node.props["aria-label"] === label),
   )[0];
 const paneButton = () =>
   renderer.root.findAll(
@@ -120,16 +125,16 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-it("commits the recent-search count only after the preference edit is finished", async () => {
+it("commits the search history limit only after the preference edit is finished", async () => {
   await act(async () => {
     renderer = create(<Settings {...props} presentation="pane" />);
   });
-  expect(control("Recent searches to keep")).toBeDefined();
-  expect(control("Recent searches to keep").props.min).toBe(1);
-  expect(control("Recent searches to keep").props.max).toBe(100);
-  await act(async () => control("Recent searches to keep").props.onChange(23));
+  expect(control("Search history limit")).toBeDefined();
+  expect(control("Search history limit").props.min).toBe(1);
+  expect(control("Search history limit").props.max).toBe(100);
+  await act(async () => control("Search history limit").props.onChange(23));
   expect(dispatch).not.toHaveBeenCalled();
-  await act(async () => control("Recent searches to keep").props.onBlur());
+  await act(async () => control("Search history limit").props.onBlur());
   expect(dispatch).toHaveBeenCalledExactlyOnceWith({
     type: "preferences/update",
     patch: { recentSearchesLimit: 23 },
@@ -140,15 +145,22 @@ it("exposes independent configurable shortcuts for local filtering and highlight
   await act(async () => {
     renderer = create(<Settings {...props} presentation="pane" />);
   });
-  for (const [action, label, initial] of [
-    ["localFilterRegex", "Local filter regex", "Alt+E"],
-    ["localFilterCaseSensitive", "Local filter match case", "Alt+C"],
-    ["highlightRegex", "Highlight regex", "Alt+E"],
-    ["highlightCaseSensitive", "Highlight match case", "Alt+C"],
+  await act(async () => tabs().props.onChange("shortcuts"));
+  for (const [action, initial] of [
+    ["localFilterRegex", "Alt+E"],
+    ["localFilterCaseSensitive", "Alt+C"],
+    ["highlightRegex", "Alt+E"],
+    ["highlightCaseSensitive", "Alt+C"],
   ] as const) {
-    expect(control(label).props.value).toBe(initial);
+    const editor = renderer.root.findAll(
+      (node) => node.type === "div" && node.props["data-shortcuts"],
+    )[0];
+    expect(editor.props["data-shortcuts"][action]).toBe(initial);
     await act(async () =>
-      control(label).props.onChange({ currentTarget: { value: "Alt+R" } }),
+      editor.props.onChange({
+        ...workspace.preferences.shortcuts,
+        [action]: "Alt+R",
+      }),
     );
     expect(dispatch).toHaveBeenLastCalledWith({
       type: "preferences/update",
@@ -160,7 +172,7 @@ it("exposes independent configurable shortcuts for local filtering and highlight
 });
 
 it.each(["pane", "modal"] as const)(
-  "edits the same preferences, connections and workspace in %s presentation",
+  "edits preferences, fixture visibility and the sole Highlights editor in %s presentation",
   async (presentation) => {
     await act(async () => {
       renderer = create(<Settings {...props} presentation={presentation} />);
@@ -184,20 +196,9 @@ it.each(["pane", "modal"] as const)(
       type: "preferences/update",
       patch: { maxEvents: 1000 },
     });
-    await act(async () =>
-      control("Workspace name").props.onChange({
-        currentTarget: { value: "Investigation" },
-      }),
-    );
-    expect(dispatch).toHaveBeenLastCalledWith({
-      type: "workspace/update",
-      patch: { name: "Investigation" },
-    });
     const fixture = renderer.root.findAll(
       (node) =>
-        node.type === "div" &&
-        node.props["aria-label"] ===
-          `Show fixture connection ${workspace.connections[0].id}`,
+        node.type === "div" && node.props["aria-label"] === "Offline fixtures",
     )[0];
     await act(async () =>
       fixture.props.onChange({ currentTarget: { checked: false } }),
@@ -211,7 +212,11 @@ it.each(["pane", "modal"] as const)(
         }),
       ]),
     });
-    await act(async () => renderer.root.findByType("button").props.onClick());
+    await act(async () =>
+      renderer.root
+        .findByProps({ "aria-label": "Update highlight profiles" })
+        .props.onClick(),
+    );
     expect(dispatch).toHaveBeenLastCalledWith({
       type: "preferences/update",
       patch: { highlightProfiles: [] },
@@ -220,7 +225,7 @@ it.each(["pane", "modal"] as const)(
   },
 );
 
-it("opens the modal from the pane header and retains the category and import draft when presentation changes", async () => {
+it("opens the modal from the pane header and retains the selected category when presentation changes", async () => {
   await act(async () => {
     renderer = create(<Settings {...props} presentation="pane" />);
   });
@@ -228,26 +233,19 @@ it("opens the modal from the pane header and retains the category and import dra
     renderer.root.findAllByProps({ "data-tooltip": "Open settings in window" })
       .length,
   ).toBeGreaterThan(0);
-  await act(async () => tabs().props.onChange("workspace"));
-  await act(async () =>
-    control("Import workspace JSON").props.onChange({
-      currentTarget: { value: '{"unfinished":' },
-    }),
-  );
+  await act(async () => tabs().props.onChange("highlights"));
   await act(async () => paneButton()[0].props.onClick());
   expect(onOpenModal).toHaveBeenCalledOnce();
   expect(onClose).not.toHaveBeenCalled();
   await act(async () =>
     renderer.update(<Settings {...props} presentation="modal" />),
   );
-  expect(tabs().props.value).toBe("workspace");
-  expect(control("Import workspace JSON").props.value).toBe('{"unfinished":');
+  expect(tabs().props.value).toBe("highlights");
   expect(renderer.root.findAllByProps({ role: "dialog" })).toHaveLength(1);
   await act(async () =>
     renderer.update(<Settings {...props} presentation="pane" />),
   );
-  expect(tabs().props.value).toBe("workspace");
-  expect(control("Import workspace JSON").props.value).toBe('{"unfinished":');
+  expect(tabs().props.value).toBe("highlights");
 });
 
 it("defaults to the existing modal and hides an inactive pane", async () => {
@@ -334,9 +332,13 @@ it("renders only fixed numeric slots and synchronously cascades dropdown collisi
     (node) => node.type === "div" && node.props.allowDecimal === false,
   );
   expect(numericInputs).toHaveLength(27);
+  const actions = editor.findAll(
+    (node) => typeof node.props.onClick === "function",
+  );
+  expect(actions).toHaveLength(2);
   expect(
-    editor.findAll((node) => typeof node.props.onClick === "function"),
-  ).toHaveLength(0);
+    actions.every((node) => node.props.className === "settings-label-help"),
+  ).toBe(true);
   expect(editor.findAll((node) => node.props.data !== undefined)).toHaveLength(
     0,
   );
@@ -383,8 +385,6 @@ it.each(["pane", "modal"] as const)(
       max: 365,
       allowDecimal: false,
       allowNegative: false,
-      description:
-        "Closed tabs are kept for at most this many days after closing.",
     });
     await act(async () => history().props.onChange(14));
     expect(dispatch).not.toHaveBeenCalled();

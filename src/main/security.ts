@@ -267,7 +267,7 @@ export const workspaceSchema = z
       density: z.enum(["compact", "comfortable"]),
       fontSize: z.number().min(10).max(20),
       maxEvents: z.number().int().min(100).max(100000),
-      refreshSeconds: z.number().int().min(0).max(3600),
+      sourceDetailsHeight: z.number().min(80).max(1000).optional(),
       timezone: z.enum(["local", "utc"]),
       tabBarLayout: z.enum(["scroll", "wrap"]).optional(),
       pinnedTabsSeparateRow: z.boolean().optional(),

@@ -119,19 +119,22 @@ async function settings() {
 }
 const dialog = () => page.getByRole("dialog", { name: "Settings" });
 async function editFirstHighlightRule() {
-  const expand = dialog().getByRole("button", {
-    name: "Expand rule 1",
-    exact: true,
-  });
-  if (await expand.count()) await expand.click();
+  const selected = dialog()
+    .locator('[role="treeitem"][aria-selected="true"]')
+    .first();
+  const id = await selected.getAttribute("data-tree-profile");
+  const profile = dialog().locator(
+    `[role="treeitem"][data-tree-profile="${id}"]:not([data-tree-rule])`,
+  );
+  if ((await profile.getAttribute("aria-expanded")) === "false")
+    await profile.getByRole("button").first().click();
   await dialog()
-    .getByRole("button", { name: "Edit rule 1", exact: true })
+    .locator(`[role="treeitem"][data-tree-profile="${id}"][data-tree-rule]`)
+    .first()
     .click();
 }
 async function saveHighlightRule() {
-  await dialog()
-    .getByRole("button", { name: "Save rule", exact: true })
-    .click();
+  await dialog().getByLabel("Match regex", { exact: true }).press("Tab");
 }
 async function capture(filename: string) {
   let image = "";
@@ -187,7 +190,7 @@ async function dragResource(source: ReturnType<Page["locator"]>) {
 test("highlight profiles edit, scope, color rows and structured text, and persist across restart", async () => {
   await settings();
   await dialog()
-    .getByRole("button", { name: "Add profile", exact: true })
+    .getByRole("button", { name: "Add highlight profile", exact: true })
     .click();
   await dialog()
     .getByLabel("Profile name", { exact: true })
@@ -195,9 +198,6 @@ test("highlight profiles edit, scope, color rows and structured text, and persis
   await dialog()
     .getByLabel("Log group regex", { exact: true })
     .fill("orders-api$");
-  await dialog()
-    .getByRole("button", { name: "Save profile", exact: true })
-    .click();
   await editFirstHighlightRule();
   await dialog().getByLabel("Match regex", { exact: true }).fill("ERROR");
   await dialog()
@@ -266,7 +266,7 @@ test("highlight profiles edit, scope, color rows and structured text, and persis
   await settings();
   await dialog().getByRole("tab", { name: "Preferences", exact: true }).click();
   await dialog().getByRole("combobox", { name: "Theme", exact: true }).click();
-  await page.getByRole("option", { name: "light", exact: true }).click();
+  await page.getByRole("option", { name: "Light", exact: true }).click();
   await dialog().locator(".mantine-Modal-close").click();
   await expect(
     errorRow.locator(".json-value .profile-highlight-text"),
@@ -275,33 +275,22 @@ test("highlight profiles edit, scope, color rows and structured text, and persis
   await close();
   await launch();
   await settings();
-  await expect(dialog().locator("[data-profile-id]")).toContainText(
-    "Payment investigation",
-  );
-  const expand = dialog().getByRole("button", {
-    name: "Expand rule 1",
+  const profileRow = dialog().getByRole("treeitem", {
+    name: "Select profile Payment investigation",
     exact: true,
   });
-  if (await expand.count()) await expand.click();
+  await expect(profileRow).toBeVisible();
+  await profileRow.click();
+  await editFirstHighlightRule();
   await expect(
-    dialog()
-      .getByRole("table", { name: "Highlight rules", exact: true })
-      .locator(".highlight-item-detail")
-      .getByLabel("JSON Pointer path", { exact: true }),
+    dialog().getByLabel("JSON Pointer path", { exact: true }),
   ).toHaveValue("/level");
-  await dialog()
-    .getByRole("switch", {
-      name: "Profile Payment investigation enabled",
-      exact: true,
-    })
-    .locator("..")
-    .click();
-  await expect(
-    dialog().getByRole("switch", {
-      name: "Profile Payment investigation enabled",
-      exact: true,
-    }),
-  ).not.toBeChecked();
+  await profileRow.click();
+  const enabled = dialog()
+    .locator(".highlight-tree-detail")
+    .getByRole("switch", { name: "Enabled", exact: true });
+  await enabled.locator("..").click();
+  await expect(enabled).not.toBeChecked();
   await dialog().locator(".mantine-Modal-close").click();
   await expect(page.locator(".profile-highlight-text")).toHaveCount(0);
 });
@@ -336,10 +325,7 @@ test("catastrophic captured-log regex times out in preview workers and recovers"
   ).toHaveAttribute("aria-rowcount", "1");
   await settings();
   await dialog()
-    .getByRole("button", { name: "Add profile", exact: true })
-    .click();
-  await dialog()
-    .getByRole("button", { name: "Save profile", exact: true })
+    .getByRole("button", { name: "Add highlight profile", exact: true })
     .click();
   await editFirstHighlightRule();
   await dialog().getByLabel("Match regex", { exact: true }).fill("(a+)+$");
@@ -495,7 +481,7 @@ test("source-strip drops cancel with Escape and query another region", async () 
     .getByRole("menuitem", { name: "Surrounding context", exact: true })
     .hover();
   await page
-    .getByRole("menuitem", { name: "Before and after", exact: true })
+    .getByRole("menuitem", { name: "Both directions", exact: true })
     .hover();
   await page.getByRole("menuitem", { name: "1 minute", exact: true }).click();
   await expect(

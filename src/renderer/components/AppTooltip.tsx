@@ -20,14 +20,17 @@ export function Tooltip({
   openDelay = 450,
   closeDelay = 350,
   opened,
+  onDismiss,
   ...props
-}: TooltipProps) {
+}: TooltipProps & { onDismiss?(): void }) {
   const id = useId();
   const [visible, setVisible] = useState(false);
   const [suppressed, setSuppressed] = useState(false);
   const owner = useRef<HTMLElement | null>(null);
   const latest = useRef({ label: props.label, disabled });
   latest.current = { label: props.label, disabled };
+  const dismissal = useRef(onDismiss);
+  dismissal.current = onDismiss;
   const timers = useRef<{
     open?: ReturnType<typeof setTimeout>;
     close?: ReturnType<typeof setTimeout>;
@@ -98,12 +101,18 @@ export function Tooltip({
       ) {
         clear();
         setVisible(false);
+        if (
+          !(event.target instanceof Element) ||
+          !owner.current?.contains(event.target)
+        )
+          dismissal.current?.();
       }
     };
     const key = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         clear();
         setVisible(false);
+        dismissal.current?.();
       }
     };
     window.addEventListener(MENU_OPEN_EVENT, hide);

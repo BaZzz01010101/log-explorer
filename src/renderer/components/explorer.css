@@ -47,11 +47,44 @@
 .source-details {
   display: flex;
   flex-direction: column;
-  flex: 0 1 auto;
-  min-height: 31px;
-  max-height: min(42%, 340px);
+  flex: 0 0 auto;
+  min-height: 0;
+  overflow: hidden;
+  box-sizing: border-box;
   border-top: 1px solid var(--line);
   background: var(--surface-alt);
+}
+.resource-sidebar > .resource-tree {
+  min-height: 0;
+}
+.source-details-resizer {
+  position: relative;
+  flex: 0 0 8px;
+  cursor: row-resize;
+  user-select: none;
+  touch-action: none;
+  outline: none;
+  background: var(--surface);
+}
+.source-details-resizer::before {
+  content: "";
+  position: absolute;
+  width: 48px;
+  height: 2px;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  border-radius: 2px;
+  background: var(--mantine-color-default-border);
+}
+.source-details-resizer:is(
+    :hover,
+    :focus-visible,
+    [data-resizing="true"]
+  )::before {
+  width: 64px;
+  height: 3px;
+  background: var(--mantine-color-indigo-5);
 }
 .source-details-heading {
   flex: 0 0 30px;
@@ -76,16 +109,8 @@
     var(--pane-header)
   );
 }
-.source-details-kind {
-  margin-left: auto;
-  padding: 1px 5px;
-  border: 1px solid var(--line);
-  border-radius: 3px;
-  color: var(--pane-header-secondary);
-  font-size: 10px;
-  font-weight: 400;
-}
 .source-details-body {
+  flex: 1;
   min-height: 0;
   overflow: auto;
   overscroll-behavior: contain;

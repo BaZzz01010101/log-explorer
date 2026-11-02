@@ -279,7 +279,7 @@ async function loadTab(title: string, marker?: string) {
 }
 
 for (const theme of ["light", "dark"]) {
-  test(`${theme} Settings centers single-column forms and gives Workspace JSON the resized space`, async () => {
+  test(`${theme} Settings centers single-column forms and preserves shortcut search while resizing`, async () => {
     await openWindow();
     await resizeSettings(1100, 650);
     for (const category of ["Shortcuts", "Preferences", "Connections"]) {
@@ -287,7 +287,7 @@ for (const theme of ["light", "dark"]) {
       if (category !== "Connections") {
         const fields = panel.locator(
           category === "Shortcuts"
-            ? ".settings-shortcuts-grid > .mantine-TextInput-root"
+            ? ".shortcut-editor-row"
             : ".settings-preferences-form .mantine-InputWrapper-root",
         );
         const first = await bounds(fields.nth(0)),
@@ -299,7 +299,11 @@ for (const theme of ["light", "dark"]) {
         expect(Math.abs(first.left - second.left)).toBeLessThanOrEqual(1);
         expect(Math.abs(first.width - second.width)).toBeLessThanOrEqual(1);
       }
-      const content = panel.locator(".settings-form-content");
+      const content = panel.locator(
+        category === "Shortcuts"
+          ? ".shortcut-editor"
+          : ".settings-form-content",
+      );
       await centered(panel, content, 720);
       const notes = panel.locator(
         ".mantine-Text-root, .mantine-InputWrapper-description",
@@ -327,49 +331,34 @@ for (const theme of ["light", "dark"]) {
     }
     const timePanel = await choose("Time ranges");
     await centered(timePanel, timePanel.locator(".time-template-editor"), 840);
-    const workspace = await choose("Workspace");
-    const input = workspace.getByLabel("Import workspace JSON", {
+    const shortcuts = await choose("Shortcuts");
+    const search = shortcuts.getByRole("searchbox", {
+      name: "Search commands",
       exact: true,
     });
-    await input.fill('{"draft":');
-    const small = await bounds(input),
-      panel = await bounds(workspace);
-    expect(small.width).toBeGreaterThan(panel.width - 40);
+    await search.fill("highlight");
     await resizeSettings(1100, 1000);
-    await expect
-      .poll(async () => (await bounds(input)).height)
-      .toBeGreaterThan(small.height + 250);
-    await expect(input).toHaveValue('{"draft":');
-    const overflow = await workspace.evaluate((el) => ({
-      horizontal: el.scrollWidth - el.clientWidth,
-      vertical: el.scrollHeight - el.clientHeight,
-    }));
-    expect(overflow.horizontal).toBeLessThanOrEqual(1);
-    expect(overflow.vertical).toBeLessThanOrEqual(1);
+    await expect(search).toHaveValue("highlight");
+    await expect(shortcuts.locator(".shortcut-editor-row")).toHaveCount(2);
   });
 
-  test(`${theme} Highlights grows both table viewports and keeps scrolling inside the tables across preview folds`, async () => {
+  test(`${theme} Highlights grows the tree and editor and keeps their scrolling separate from preview`, async () => {
     await openWindow();
     await resizeSettings(1100, 700);
     const panel = await choose("Highlights");
-    const profiles = panel.locator(
-      ".highlight-profile-list .highlight-items-scroll",
-    );
-    const rules = panel.locator(".highlight-rule-list .highlight-items-scroll");
+    const profiles = panel.locator(".highlight-tree-scroll");
+    const rules = panel.locator(".highlight-tree-editor-scroll");
     const small = await bounds(rules);
-    await rules.evaluate((el) => {
-      el.scrollTop = el.scrollHeight;
+    await profiles.evaluate((element) => {
+      element.scrollTop = element.scrollHeight;
     });
-    expect(await rules.evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
+    expect(
+      await profiles.evaluate((element) => element.scrollTop),
+    ).toBeGreaterThan(0);
     await panel
-      .getByRole("button", { name: "Expand rule 20", exact: true })
+      .getByRole("treeitem", { name: /^Select rule/ })
+      .last()
       .click();
-    const detail = panel
-      .getByRole("table", { name: "Highlight rules", exact: true })
-      .locator(".highlight-item-detail");
-    await expect(
-      panel.getByRole("button", { name: "Edit rule 20", exact: true }),
-    ).toBeVisible();
     await resizeSettings(1100, 1300);
     await expect
       .poll(async () => (await bounds(rules)).height)
@@ -432,7 +421,7 @@ for (const theme of ["light", "dark"]) {
     }
     expect(
       new Set(gutters).size,
-      "Both tables reserve the same scrollbar gutter folded or expanded",
+      "Tree and editor scrollbar gutters remain stable across preview folds",
     ).toBe(1);
   });
 

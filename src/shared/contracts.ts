@@ -184,9 +184,9 @@ export interface Preferences {
   pinnedTabsSeparateRow?: boolean;
   closedTabHistoryDays?: number;
   recentSearchesLimit?: number;
+  sourceDetailsHeight?: number;
   fontSize: number;
   maxEvents: number;
-  refreshSeconds: number;
   timezone: "local" | "utc";
   highlightText: string;
   autoExpandFilterMatches?: boolean;

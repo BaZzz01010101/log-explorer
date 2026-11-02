@@ -224,18 +224,20 @@ it("keeps all visible split panes live even when another pane has focus", async 
   );
   expect(liveRequests).toHaveLength(4);
 });
-it("defers hidden Live starts and historical refresh ticks until the tab is visible", async () => {
+it("defers hidden Live starts and ignores obsolete historical refresh configuration", async () => {
   vi.useFakeTimers();
   const { first, second } = twoTabs();
-  workspace.preferences.refreshSeconds = 1;
+  Object.assign(workspace.preferences, { refreshSeconds: 1 });
   await mount();
   for (const request of requests)
     await emit({ requestId: request.requestId, state: "complete" });
+  const queried = requests.length;
   await act(async () => jobs.run(second, true));
   expect(liveRequests).toHaveLength(0);
   await act(async () => {
-    await vi.advanceTimersByTimeAsync(2000);
+    await vi.advanceTimersByTimeAsync(30000);
   });
+  expect(requests).toHaveLength(queried);
   expect(
     requests
       .slice(2)
@@ -453,9 +455,9 @@ it("Live clears history that belongs to a different filter and reports a stopped
   });
 });
 
-it("does not let automatic history refresh supersede Live startup after an empty result", async () => {
+it("keeps Live startup after an empty result independent of obsolete refresh configuration", async () => {
   vi.useFakeTimers();
-  workspace.preferences.refreshSeconds = 1;
+  Object.assign(workspace.preferences, { refreshSeconds: 1 });
   workspace.tabs[0]!.timePreset = "5m";
   await mount();
   const tab = workspace.tabs[0]!;
@@ -570,9 +572,9 @@ it("continues a current empty historical page once and preserves its query time 
   expect(jobs.runtimes[tab.id].events).toEqual([logEvent]);
 });
 
-it("Stop Live retains events and stays stopped even when historical automatic refresh is enabled", async () => {
+it("Stop Live retains events and stays stopped with obsolete refresh configuration present", async () => {
   vi.useFakeTimers();
-  workspace.preferences.refreshSeconds = 1;
+  Object.assign(workspace.preferences, { refreshSeconds: 1 });
   await mount();
   const tab = workspace.tabs[0]!;
   await act(async () => jobs.run(tab, true));
@@ -601,7 +603,7 @@ it("Stop Live retains events and stays stopped even when historical automatic re
 
 it("a failed Live session stays stopped and an explicit Live retry rejects late packets from the failed session", async () => {
   vi.useFakeTimers();
-  workspace.preferences.refreshSeconds = 1;
+  Object.assign(workspace.preferences, { refreshSeconds: 1 });
   await mount();
   const tab = workspace.tabs[0]!;
   await act(async () => jobs.run(tab, true));
@@ -643,7 +645,6 @@ it("a failed Live session stays stopped and an explicit Live retry rejects late 
 
 beforeEach(() => {
   workspace = createWorkspace();
-  workspace.preferences.refreshSeconds = 0;
   requests = [];
   cancellations = [];
   liveRequests = [];
@@ -1052,9 +1053,9 @@ describe("source and connection ownership", () => {
       events: [],
     });
   });
-  it("queries changed sources once and does not duplicate that active request on refresh ticks", async () => {
+  it("queries changed sources once and does not repeat that active request over time", async () => {
     vi.useFakeTimers();
-    workspace.preferences.refreshSeconds = 1;
+    Object.assign(workspace.preferences, { refreshSeconds: 1 });
     await mount();
     await replaceWorkspace({
       ...workspace,

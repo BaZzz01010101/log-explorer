@@ -14,6 +14,7 @@ import type {
   HighlightRule,
 } from "../../shared/highlights";
 import { regexError } from "../../shared/highlights";
+import { SettingLabel } from "./SettingLabel";
 
 export type ProfileDraft = Pick<
   HighlightProfile,
@@ -163,7 +164,13 @@ export function ProfileFields({
       />
       <TextInput
         size="xs"
-        label="Log group regex"
+        label={
+          <SettingLabel
+            label="Log group regex"
+            help="Apply this profile to log groups whose names match this regular expression. Leave empty to apply to all groups."
+          />
+        }
+        aria-label="Log group regex"
         spellCheck={false}
         autoCorrect="off"
         autoCapitalize="off"
@@ -254,13 +261,18 @@ export function RuleFields({
       {draft.scope === "structured" && (
         <TextInput
           size="xs"
-          label="JSON Pointer path"
+          label={
+            <SettingLabel
+              label="JSON Pointer path"
+              help="Use a path such as /request/status. Leave empty for the root value. In property names, escape / as ~1 and ~ as ~0."
+            />
+          }
+          aria-label="JSON Pointer path"
           spellCheck={false}
           autoCorrect="off"
           autoCapitalize="off"
           readOnly={readOnly}
           placeholder="/request/status"
-          description="Empty = root. Escape / as ~1 and ~ as ~0."
           maxLength={512}
           value={draft.path}
           error={pointerError(draft.path)}

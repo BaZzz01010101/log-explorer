@@ -116,6 +116,14 @@ const control = (label: string) =>
   )[0];
 const click = (label: string) =>
   act(async () => control(label).props.onClick());
+const confirm = (label: string, choice: "Delete" | "Cancel") =>
+  act(async () =>
+    control(label)
+      .findAll(
+        (node) => node.type === "button" && node.props.children === choice,
+      )[0]
+      .props.onClick({ stopPropagation: vi.fn() }),
+  );
 const type = (label: string, value: string) =>
   act(async () => control(label).props.onChange({ currentTarget: { value } }));
 beforeEach(async () => {
@@ -181,24 +189,24 @@ it("offers profile and rule additions at the proper context and reorders only si
   expect(changes).toBe(3);
 });
 
-it("confirms deletion in a modal with item details and leaves items intact on Cancel", async () => {
+it("confirms profile deletion inline and leaves items intact on Cancel", async () => {
   await click("Delete profile Alpha");
-  const modal = control("Confirm highlight deletion");
-  expect(modal.props.opened).toBe(true);
+  const row = control("Select profile Alpha");
+  expect(row.props["data-confirming-delete"]).toBe(true);
+  const confirmation = control("Delete highlight profile Alpha");
+  expect(confirmation.props.role).toBe("group");
   expect(
-    modal.findAll(
-      (node) =>
-        node.type === "div" &&
-        typeof node.props.children === "string" &&
-        node.props.children.includes("Alpha"),
-    ).length,
-  ).toBeGreaterThan(0);
-  expect(control("Delete highlight item").props.children).toBe("Delete");
+    confirmation.findAllByType("button").map((node) => node.props.children),
+  ).toEqual(["Delete", "Cancel"]);
+  expect(renderer.root.findAllByType("dialog")).toHaveLength(0);
   expect(current).toHaveLength(2);
-  await click("Cancel highlight deletion");
+  await confirm("Delete highlight profile Alpha", "Cancel");
   expect(current).toHaveLength(2);
+  expect(
+    control("Select profile Alpha").props["data-confirming-delete"],
+  ).toBeUndefined();
   await click("Delete profile Alpha");
-  await click("Delete highlight item");
+  await confirm("Delete highlight profile Alpha", "Delete");
   expect(current.map((p) => p.name)).toEqual(["Beta"]);
   expect(control("Profile name").props.value).toBe("Beta");
 });
@@ -206,9 +214,30 @@ it("confirms deletion in a modal with item details and leaves items intact on Ca
 it("deletes only the chosen rule and selects its surviving neighbor", async () => {
   await click("Select rule ERROR1");
   await click("Delete rule ERROR1");
-  await click("Delete highlight item");
+  await confirm("Delete highlight rule ERROR1", "Delete");
   expect(current[0].rules.map((r) => r.id)).toEqual(["Alpha-2"]);
   expect(current[1].rules).toHaveLength(2);
+  expect(control("Match regex").props.value).toBe("ERROR2");
+});
+
+it("keeps each confirmation attached to its item while selection and sibling order change", async () => {
+  await click("Delete rule ERROR1");
+  await click("Delete profile Beta");
+  await click("Select rule ERROR2");
+  await click("Move profile Alpha down");
+  expect(control("Select rule ERROR1").props["data-confirming-delete"]).toBe(
+    true,
+  );
+  expect(control("Select profile Beta").props["data-confirming-delete"]).toBe(
+    true,
+  );
+  await confirm("Delete highlight rule ERROR1", "Cancel");
+  expect(control("Select profile Beta").props["data-confirming-delete"]).toBe(
+    true,
+  );
+  await confirm("Delete highlight profile Beta", "Delete");
+  expect(current.map((profile) => profile.id)).toEqual(["Alpha"]);
+  expect(current[0].rules).toHaveLength(2);
   expect(control("Match regex").props.value).toBe("ERROR2");
 });
 

@@ -316,13 +316,13 @@ test("narrow Settings remains reachable after resize, zoom and keyboard adjustme
     .toBe(true);
   await contained();
   await settingsDialog()
-    .getByRole("tab", { name: "Workspace", exact: true })
+    .getByRole("tab", { name: "Preferences", exact: true })
     .click();
-  const field = settingsDialog().getByLabel("Import workspace JSON", {
+  const field = settingsDialog().getByLabel("Log font size", {
     exact: true,
   });
-  await field.fill('{"draft":');
-  await expect(field).toHaveValue('{"draft":');
+  await field.fill("14");
+  await expect(field).toHaveValue("14");
   await page.keyboard.press("Control+a");
   await expect(settingsDialog()).toBeVisible();
 });

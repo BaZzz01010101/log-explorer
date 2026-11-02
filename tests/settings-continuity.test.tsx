@@ -1,38 +1,21 @@
-import { createContext, createElement, type ReactNode } from "react";
+import { createElement, type ReactNode } from "react";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { Settings } from "../src/renderer/components/Settings";
 import { createWorkspace } from "../src/renderer/workspace";
-import type { HighlightProfile } from "../src/shared/highlights";
-vi.mock("../src/renderer/components/HighlightTreeEditor", () => ({
-  createHighlightTreeEditorState: () => ({}),
-  HighlightTreeEditor: () => null,
+vi.mock("../src/renderer/components/AppMenu", () => ({
+  MENU_OPEN_EVENT: "explorer:menu-open",
 }));
 
 vi.mock("@mantine/core", () => {
   const component = ({ children, ...props }: Record<string, unknown>) =>
     createElement("div", props, children as ReactNode);
   return {
-    ...Object.fromEntries(
-      [
-        "ActionIcon",
-        "Alert",
-        "Badge",
-        "Button",
-        "Checkbox",
-        "Collapse",
-        "ColorInput",
-        "Group",
-        "NumberInput",
-        "Paper",
-        "Select",
-        "Stack",
-        "Switch",
-        "Text",
-        "Textarea",
-        "TextInput",
-      ].map((name) => [name, component]),
-    ),
+    ActionIcon: component,
+    Group: component,
+    Stack: component,
+    Switch: component,
+    Text: component,
     Tabs: Object.assign(component, {
       List: component,
       Tab: component,
@@ -46,111 +29,49 @@ vi.mock("@mantine/notifications", () => ({ notifications: { show: vi.fn() } }));
 vi.mock("../src/renderer/components/AppTooltip", () => ({
   Tooltip: ({ children }: { children: ReactNode }) => children,
 }));
-vi.mock("@dnd-kit/core", () => ({
-  DndContext: ({ children }: { children: ReactNode }) => children,
-  closestCenter: vi.fn(),
-  KeyboardSensor: class {},
-  PointerSensor: class {},
-  useSensor: vi.fn(),
-  useSensors: vi.fn(),
+vi.mock("../src/renderer/components/PreferencesEditor", () => ({
+  PreferencesEditor: () => null,
 }));
-vi.mock("@dnd-kit/sortable", () => ({
-  SortableContext: ({ children }: { children: ReactNode }) => children,
-  sortableKeyboardCoordinates: vi.fn(),
-  verticalListSortingStrategy: "vertical",
-  useSortable: () => ({
-    attributes: {},
-    listeners: {},
-    setNodeRef: vi.fn(),
-    setActivatorNodeRef: vi.fn(),
+vi.mock("../src/renderer/components/RelativeTimeTemplatesEditor", () => ({
+  RelativeTimeTemplatesEditor: () => null,
+}));
+vi.mock("../src/renderer/components/ShortcutsEditor", () => ({
+  ShortcutsEditor: () => createElement("div", { "data-shortcut-editor": true }),
+}));
+vi.mock("../src/renderer/components/ProfileConnectionsEditor", () => ({
+  createProfileConnectionsEditorState: () => ({ error: "" }),
+  ProfileConnectionsEditor: (props: Record<string, unknown>) =>
+    createElement("div", { ...props, "data-connection-editor": true }),
+}));
+vi.mock("../src/renderer/components/HighlightTreeEditor", () => ({
+  createHighlightTreeEditorState: (id: string) => ({
+    selected: { profileId: id },
+    expanded: [id],
+    previewOpened: false,
+    widthRatio: 0.33,
+    heightRatio: 0.4,
+    tablesRatio: 0.5,
   }),
+  HighlightTreeEditor: (props: Record<string, unknown>) =>
+    createElement("div", { ...props, "data-highlight-editor": true }),
 }));
-vi.mock("../src/renderer/useEventHighlights", () => ({
-  EventHighlightContext: createContext(undefined),
-  useEventHighlights: () => ({ results: new Map() }),
-}));
-vi.mock("../src/renderer/components/EventMessage", () => ({
-  MessageContent: () => null,
-}));
-vi.mock("../src/renderer/components/HighlightEventsPreview", () => ({
-  HighlightEventsPreview: ({ profile }: { profile: HighlightProfile }) =>
-    createElement("div", { "data-preview-profile": profile.id }),
-}));
-
 let renderer: ReactTestRenderer;
-const dispatch = vi.fn();
-const base = createWorkspace();
-const profile = (id: string): HighlightProfile => ({
-  id,
-  name: id,
-  enabled: true,
-  groupPattern: "",
-  groupIgnoreCase: false,
-  rules: [1, 2].map((index) => ({
-    id: `${id}-${index}`,
-    enabled: true,
-    scope: "text",
-    path: "",
-    pattern: `${id}-${index}`,
-    ignoreCase: false,
-    target: "row",
-    colors: {},
-    separateThemeColors: false,
-  })),
-});
-const workspace = {
-  ...base,
-  connections: [
-    {
-      ...base.connections[0],
-      mode: "aws" as const,
-      profile: "production",
-      region: "eu-west-1",
-    },
-  ],
-  preferences: {
-    ...base.preferences,
-    highlightProfiles: [profile("first"), profile("second")],
-    profileVisibility: { production: true, staging: false },
-  },
-};
+const workspace = createWorkspace();
 const props = {
   opened: true,
   onClose: vi.fn(),
   workspace,
-  dispatch,
+  dispatch: vi.fn(),
   environment: null,
   onEnvironment: vi.fn(),
   onOpenModal: vi.fn(),
 };
-const control = (label: string) =>
-  renderer.root.findAll(
-    (node) => node.type === "div" && node.props.label === label,
-  )[0];
-const ariaControl = (label: string) =>
-  renderer.root.findAll(
-    (node) => node.type === "div" && node.props["aria-label"] === label,
-  )[0];
-const previewToggle = () =>
-  renderer.root.findAll(
-    (node) =>
-      node.type === "button" &&
-      node.props.className === "highlight-preview-toggle",
-  )[0];
-async function expand() {
-  await act(async () => ariaControl("Open settings in window").props.onClick());
-  await act(async () =>
-    renderer.update(<Settings {...props} presentation="modal" />),
-  );
-}
+const node = (attribute: string) =>
+  renderer.root.findAll((n) => n.type === "div" && n.props[attribute])[0];
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-  const original = console.error.bind(console);
-  vi.spyOn(console, "error").mockImplementation((...args) => {
-    if (!String(args[0]).includes("react-test-renderer is deprecated"))
-      original(...args);
-  });
   vi.clearAllMocks();
+  vi.spyOn(console, "error").mockImplementation(() => {});
 });
 afterEach(async () => {
   await act(async () => renderer?.unmount());
@@ -158,73 +79,67 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-it("keeps the selected highlight profile, rule and modal preview state across docking", async () => {
+it("retains tree selection, expansion, preview and pane ratios across docking", async () => {
   await act(async () => {
-    renderer = create(<Settings {...props} presentation="pane" />);
+    renderer = create(
+      <Settings {...props} presentation="pane" requestedTab="highlights" />,
+    );
   });
+  const state = {
+    selected: { profileId: "second", ruleId: "second-rule" },
+    expanded: ["first", "second"],
+    previewOpened: true,
+    widthRatio: 0.41,
+    heightRatio: 0.57,
+    tablesRatio: 0.5,
+  };
   await act(async () =>
-    renderer.root.findByProps({ "data-profile-id": "second" }).props.onClick(),
+    node("data-highlight-editor").props.onUiStateChange(state),
   );
+  expect(node("data-highlight-editor").props.previewEnabled).toBe(false);
   await act(async () =>
-    renderer.root.findByProps({ "data-rule-id": "second-2" }).props.onClick(),
+    renderer.update(<Settings {...props} presentation="modal" />),
   );
-  await act(async () =>
-    ariaControl("Expand rule 2").props.onClick({ shiftKey: false }),
-  );
-  await act(async () =>
-    ariaControl("Edit rule 2").props.onClick({ shiftKey: false }),
-  );
-  await act(async () =>
-    control("Match regex").props.onChange({
-      currentTarget: { value: "unsaved second rule" },
-    }),
-  );
-  expect(
-    renderer.root.findAllByProps({ className: "highlight-preview-toggle" }),
-  ).toHaveLength(0);
-  await expand();
-  expect(
-    renderer.root.findByProps({ "data-profile-id": "second" }).props[
-      "aria-selected"
-    ],
-  ).toBe(true);
-  expect(control("Match regex").props.value).toBe("unsaved second rule");
-  expect(
-    renderer.root.findByProps({ "data-rule-id": "second-2" }).props[
-      "aria-selected"
-    ],
-  ).toBe(true);
-  expect(previewToggle().props["aria-expanded"]).toBe(false);
-  await act(async () => previewToggle().props.onClick());
-  expect(
-    renderer.root.findAllByProps({ "data-preview-profile": "second" }),
-  ).toHaveLength(1);
-  expect(dispatch).not.toHaveBeenCalled();
+  expect(node("data-highlight-editor").props.uiState).toEqual(state);
+  expect(node("data-highlight-editor").props.previewEnabled).toBe(true);
   await act(async () =>
     renderer.update(<Settings {...props} presentation="pane" />),
   );
-  expect(control("Match regex").props.value).toBe("unsaved second rule");
-  expect(
-    renderer.root.findAllByProps({ className: "highlight-preview-toggle" }),
-  ).toHaveLength(0);
-  await expand();
-  expect(previewToggle().props["aria-expanded"]).toBe(true);
+  expect(node("data-highlight-editor").props.uiState).toEqual(state);
+  expect(node("data-highlight-editor").props.previewEnabled).toBe(false);
+  expect(props.dispatch).not.toHaveBeenCalled();
 });
-
-it("keeps pending connection profile and region choices when expanding settings", async () => {
+it("retains connection editor feedback and unmounts shortcut capture when hidden or leaving its category", async () => {
   await act(async () => {
     renderer = create(<Settings {...props} presentation="pane" />);
   });
   await act(async () =>
-    ariaControl("Known profile to add").props.onChange("staging"),
+    node("data-connection-editor").props.onUiStateChange({
+      error: "Cannot add another profile",
+    }),
   );
   await act(async () =>
-    ariaControl("Add region for production").props.onChange("us-west-2"),
+    renderer.update(
+      <Settings {...props} presentation="modal" requestedTab="shortcuts" />,
+    ),
   );
-  await expand();
-  expect(ariaControl("Known profile to add").props.value).toBe("staging");
-  expect(ariaControl("Add region for production").props.value).toBe(
-    "us-west-2",
+  expect(node("data-connection-editor").props.uiState.error).toBe(
+    "Cannot add another profile",
   );
-  expect(dispatch).not.toHaveBeenCalled();
+  expect(node("data-shortcut-editor")).toBeDefined();
+  await act(async () =>
+    renderer.update(
+      <Settings {...props} opened={false} requestedTab="shortcuts" />,
+    ),
+  );
+  expect(node("data-shortcut-editor")).toBeUndefined();
+  await act(async () =>
+    renderer.update(<Settings {...props} requestedTab="highlights-tree" />),
+  );
+  expect(node("data-shortcut-editor")).toBeUndefined();
+  expect(
+    renderer.root.findAll(
+      (n) => n.type === "div" && n.props.className === "settings-tabs",
+    )[0].props.value,
+  ).toBe("highlights");
 });
