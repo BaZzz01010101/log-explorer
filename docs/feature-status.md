@@ -1,5 +1,29 @@
 # Feature status
 
+## Inspector, calendar and native selection (0.1.70)
+
+The tab-wide inspector fold control remains available for plain events and Raw message display. Flat JSON uses the same initial folded tab state; changing the selected event cannot infer a different global choice. Today is larger and semibold, and the current date has a persistent bold/dot marker and `aria-current="date"`, independently of range endpoints and selection. Calendar cells retain their own range styling rather than the shared toggle-button treatment. All row-menu copy commands use the same Copy icon.
+
+Expanding Hybrid rows now retains TanStack cell component identities and their existing text nodes, preserving browser double-click word selection and double-click-drag word selection while row expansion remains available. Multi-source ordering was traced through adapters, pagination, the renderer merge and local filtering. New unit/native tests verify unordered initial pages, late pages/arrivals and explicit descending sorting; no chronological-order defect was found, and sorting production code is unchanged.
+
+Evidence is in `.tmp/unit-0.1.70-final2.json` and `.tmp/desktop-verification-0.1.70.json`, which records both package manifests and the final inspector followup. All artifacts and hidden/offline test results remain under `release/0.1.70/` and `.tmp`. The safe handoff waits for natural app exit before promotion; state is `.tmp/standard-build-update-0.1.70.json`.
+
+## Toggle hover and message folding (0.1.69)
+
+Pressed buttons keep their active tint on hover, while inactive toggles use a neutral hover surface. This shared treatment covers filter options, display controls, activity-bar buttons, time shortcuts and column toggles; Follow Live retains its teal color. The inspector Copy action uses a transparent background.
+
+Inspector folding keeps the root open with first-level fields visible; unfolding expands nested objects within the existing inspection limits. The choice is persisted separately in each tab's view, retained when changing events and copied with saved/duplicated views. An explicit folded choice takes precedence over automatic match expansion, while individual branches remain interactive.
+
+Fold/unfold all messages expands row details in Hybrid mode, switches Table message cells between their normal preview and full multiline/structured content, and folds/unfolds JSON branches recursively with first-level fields retained. Per-mode choices and manual branches are retained through virtual row recycling; another global command clears branch exceptions. Preview themes retain their shared expansion state. Verification reports and the hash-checked natural-exit update state are under `.tmp/*0.1.69*`; the user's working app is never closed or relaunched by the handoff.
+
+Verification passes 1,120 unit tests and 30 distinct hidden/offline packaged desktop scenarios, covering both themes, pointer hover, per-tab inspector choices, JSON virtualization, Ctrl expansion, preview synchronization, copying and Live text selection. Two stale preview-edit locators were updated to the current tree editor and all three preview checks pass in the followup. Evidence: `.tmp/desktop-verification-0.1.69.json` and its linked raw reports.
+
+## Selected event text copy (0.1.68)
+
+Copy selected text is available in the event-row context menu in Table, Hybrid and JSON modes. It is enabled only for nonempty native text selected wholly inside that event. The exact text is captured when opening the menu and copied through the existing validated clipboard IPC, so menu focus cannot erase it. Inspector selections, selections in other events and cross-event ranges leave it disabled. Message and record copy commands retain their existing behavior. Pointer-anchored row menus no longer retain a stale off-screen hidden state after dismissal/reopening.
+
+Verification covers actual forward/backward mouse text selection and scoped selection cases, together with existing multi-row messages/records and Live text-selection regressions. Hidden offline test instances use isolated user data and unavailable AWS credentials; clipboard probes replace only the final native write. Reports remain in `.tmp`. See `.tmp/desktop-verification-0.1.68.json` for the completed packaged-check summary and `.tmp/standard-build-update-0.1.68.json` for natural-exit handoff state.
+
 ## Calendar and context navigation (0.1.67)
 
 The absolute calendar replaces its instructional text with a link-style Today button. It returns the visible calendar to the current month in the selected local/UTC timezone, retaining draft dates/times and an unfinished range anchor without querying. Vertical wheel gestures navigate backward/forward through months inside the calendar; small trackpad packets accumulate, zoom/horizontal gestures remain available, and the existing date bounds are respected. Date/time and relative-duration wheel editing remains unchanged.

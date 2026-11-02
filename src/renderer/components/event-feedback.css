@@ -10,6 +10,8 @@
   color: var(--mantine-color-teal-light-color);
 }
 .event-follow-live {
+  --toggle-active-bg: var(--mantine-color-teal-light);
+  --toggle-active-color: var(--mantine-color-teal-light-color);
   display: inline-flex;
   align-items: center;
   gap: 4px;

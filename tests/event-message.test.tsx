@@ -1,4 +1,5 @@
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
+import { useState } from "react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import {
   JsonTree,
@@ -143,7 +144,7 @@ it("an explicit row expansion request opens nested JSON once and leaves later ma
   expect(button("Collapse /nested/list/0")).toBeDefined();
 });
 
-it("unfolds nested structured values and folds the entire object", async () => {
+it("unfolds nested structured values and folds back to first-level fields", async () => {
   await act(async () => {
     renderer = create(
       <JsonTree value={{ request: { ids: [7, 8] } }} highlight="" controls />,
@@ -151,6 +152,7 @@ it("unfolds nested structured values and folds the entire object", async () => {
   });
   expect(button("Unfold structured object")).toBeDefined();
   expect(button("Fold structured object")).toBeUndefined();
+  expect(button("Unfold structured object")).toBeDefined();
   expect(button("Unfold structured object")!.props["aria-pressed"]).toBe(false);
   expect(button("Unfold structured object")!.props["data-tooltip"]).toBe(
     "Unfold structured object",
@@ -163,10 +165,106 @@ it("unfolds nested structured values and folds the entire object", async () => {
     renderer.root.findAll((node) => node.props.className === "json-key"),
   ).toHaveLength(5);
   await act(async () => button("Fold structured object")!.props.onClick());
-  expect(button("Expand root")).toBeDefined();
+  expect(button("Collapse root")).toBeDefined();
+  expect(button("Expand /request")).toBeDefined();
   expect(
     renderer.root.findAll((node) => node.props.className === "json-key"),
-  ).toHaveLength(1);
+  ).toHaveLength(2);
+});
+
+it("retains the inspector expansion preference across selected event changes", async () => {
+  function Inspector({ eventId }: { eventId: string }) {
+    const [expanded, setExpanded] = useState(false);
+    return (
+      <JsonTree
+        key={eventId}
+        value={{ nested: { leaf: { value: 1 } } }}
+        highlight=""
+        controls
+        defaultExpanded={expanded}
+        onToggleAll={setExpanded}
+      />
+    );
+  }
+  await act(async () => {
+    renderer = create(<Inspector eventId="first" />);
+  });
+  expect(button("Expand /nested")).toBeDefined();
+  await act(async () => button("Unfold structured object")!.props.onClick());
+  expect(button("Collapse /nested/leaf")).toBeDefined();
+  await act(async () => renderer.update(<Inspector eventId="second" />));
+  expect(button("Collapse /nested/leaf")).toBeDefined();
+  await act(async () => button("Fold structured object")!.props.onClick());
+  await act(async () => renderer.update(<Inspector eventId="third" />));
+  expect(button("Collapse root")).toBeDefined();
+  expect(button("Expand /nested")).toBeDefined();
+  expect(button("Collapse /nested/leaf")).toBeUndefined();
+});
+
+it("shows the saved folded state even when an object has only first-level values", async () => {
+  await act(async () => {
+    renderer = create(
+      <JsonTree
+        value={{ message: "flat" }}
+        highlight=""
+        controls
+        defaultExpanded={false}
+      />,
+    );
+  });
+  expect(button("Unfold structured object")!.props["aria-pressed"]).toBe(false);
+  expect(button("Collapse root")).toBeDefined();
+});
+
+it("keeps the tab folding control available for plain messages", async () => {
+  const change = vi.fn();
+  const row = {
+    event: {
+      id: "plain-control",
+      timestamp: 1,
+      message: "plain text",
+      logGroup: "/test",
+      logStream: "test",
+    },
+    parsed: { kind: "text" as const },
+    level: "info" as const,
+  };
+  const render = (expanded: boolean) => (
+    <MessageContent
+      row={row}
+      highlight=""
+      controls
+      defaultExpanded={expanded}
+      onToggleAll={change}
+    />
+  );
+  await act(async () => {
+    renderer = create(render(false));
+  });
+  expect(button("Unfold structured object")).toBeDefined();
+  await act(async () => button("Unfold structured object")!.props.onClick());
+  expect(change).toHaveBeenLastCalledWith(true);
+  await act(async () => renderer.update(render(true)));
+  expect(button("Fold structured object")!.props["aria-pressed"]).toBe(true);
+  await act(async () => button("Fold structured object")!.props.onClick());
+  expect(change).toHaveBeenLastCalledWith(false);
+});
+
+it("uses the tab's folded default for flat JSON rather than inferring a different tab state", async () => {
+  const change = vi.fn();
+  await act(async () => {
+    renderer = create(
+      <JsonTree
+        value={{ msg: "flat" }}
+        highlight=""
+        controls
+        onToggleAll={change}
+      />,
+    );
+  });
+  expect(button("Unfold structured object")!.props["aria-pressed"]).toBe(false);
+  await act(async () => button("Unfold structured object")!.props.onClick());
+  expect(change).toHaveBeenCalledExactlyOnceWith(true);
 });
 
 it("renders inspector actions in a toolbar slot without resetting expanded branches", async () => {
@@ -210,7 +308,8 @@ it("renders inspector actions in a toolbar slot without resetting expanded branc
   expect(button("Collapse /request/ids")).toBeDefined();
   expect(toolbar.findAllByType("button")).toHaveLength(2);
   await act(async () => button("Fold structured object")!.props.onClick());
-  expect(button("Expand root")).toBeDefined();
+  expect(button("Collapse root")).toBeDefined();
+  expect(button("Expand /request")).toBeDefined();
 });
 
 it("places raw-message wrapping in the inspector toolbar slot without structured folding", async () => {

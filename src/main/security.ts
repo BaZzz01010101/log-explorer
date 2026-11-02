@@ -43,6 +43,7 @@ export const querySchema = z
   .refine((v) => v.endTime > v.startTime, "End time must be after start time");
 const viewSchema = z.object({
   inspectorWrap: z.boolean().optional(),
+  inspectorExpanded: z.boolean().optional(),
   highlightText: z.string().max(200).optional(),
   highlightRegex: z.boolean().optional(),
   highlightCaseSensitive: z.boolean().optional(),

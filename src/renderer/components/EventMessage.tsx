@@ -265,6 +265,30 @@ function JsonFieldMenu({
   );
 }
 
+function MessageFoldControl({
+  expanded,
+  onToggle,
+}: {
+  expanded: boolean;
+  onToggle(): void;
+}) {
+  const label = expanded
+    ? "Fold structured object"
+    : "Unfold structured object";
+  return (
+    <button
+      type="button"
+      className="message-action"
+      aria-label={label}
+      aria-pressed={expanded}
+      data-tooltip={label}
+      onClick={onToggle}
+    >
+      {expanded ? <IconFold size={16} /> : <IconArrowsVertical size={16} />}
+    </button>
+  );
+}
+
 function MessageWrapControl({
   enabled,
   onToggle,
@@ -288,7 +312,7 @@ function MessageWrapControl({
   );
 }
 
-function objectExpansionPaths(value: JsonValue, maxDepth = 24) {
+export function objectExpansionPaths(value: JsonValue, maxDepth = 24) {
   const paths = new Set([""]);
   for (let depth = 0; depth < maxDepth; depth++) {
     const before = paths.size;
@@ -319,6 +343,8 @@ export function JsonTree({
   expandRequest,
   expansionState,
   onExpansionApplied,
+  defaultExpanded,
+  onToggleAll,
 }: {
   value: JsonValue;
   highlight: string;
@@ -337,6 +363,8 @@ export function JsonTree({
   expandRequest?: number;
   expansionState?: JsonExpansionState;
   onExpansionApplied?(): void;
+  defaultExpanded?: boolean;
+  onToggleAll?(expanded: boolean): void;
 }) {
   const match = useContext(EventHighlightContext);
   const matchPaths = match?.paths ?? {};
@@ -344,7 +372,9 @@ export function JsonTree({
   const processedMatch = useRef<{ paths: string; enabled: boolean } | null>(
     null,
   );
-  const [privateExpanded, setPrivateExpanded] = useState(() => new Set([""]));
+  const [privateExpanded, setPrivateExpanded] = useState(() =>
+    defaultExpanded ? objectExpansionPaths(value) : new Set([""]),
+  );
   const sharedExpansion = useContext(JsonTreeExpansionContext);
   const expanded =
     (expansionKey === undefined
@@ -358,6 +388,13 @@ export function JsonTree({
           sharedExpansion.onChange(expansionKey, update)
       : (expansionState?.onChange ?? setPrivateExpanded);
   const appliedExpansion = useRef<number | undefined>(undefined);
+  const expandMatches = autoExpandMatches && defaultExpanded !== false;
+  useLayoutEffect(() => {
+    if (defaultExpanded !== undefined)
+      setExpanded(
+        defaultExpanded ? objectExpansionPaths(value) : new Set([""]),
+      );
+  }, [defaultExpanded, value]);
   useLayoutEffect(() => {
     if (
       expandRequest === undefined ||
@@ -371,11 +408,11 @@ export function JsonTree({
   useEffect(() => {
     if (
       processedMatch.current?.paths === pathKey &&
-      processedMatch.current.enabled === autoExpandMatches
+      processedMatch.current.enabled === expandMatches
     )
       return;
-    processedMatch.current = { paths: pathKey, enabled: autoExpandMatches };
-    if (!autoExpandMatches) return;
+    processedMatch.current = { paths: pathKey, enabled: expandMatches };
+    if (!expandMatches) return;
     const ancestors = new Set<string>();
     for (const path of Object.keys(matchPaths)) {
       if (!path.startsWith("/")) continue;
@@ -394,7 +431,7 @@ export function JsonTree({
         ? previous
         : new Set([...previous, ...ancestors]),
     );
-  }, [autoExpandMatches, pathKey]);
+  }, [expandMatches, pathKey]);
   const model = useMemo(
     () => inspectionRows(value, expanded, { maxNodes: compact ? 120 : 800 }),
     [value, expanded, compact],
@@ -425,34 +462,22 @@ export function JsonTree({
       return next;
     });
   const allExpanded =
-    model.rows.some((row) => row.childCount > 0) &&
-    model.rows.every(
-      (row) => row.childCount === 0 || row.depthLimited || row.expanded,
-    );
-  const foldLabel = allExpanded
-    ? "Fold structured object"
-    : "Unfold structured object";
-  const unfoldAll = () => {
-    setExpanded(objectExpansionPaths(value));
+    defaultExpanded ??
+    (!onToggleAll &&
+      model.rows.some((row) => row.childCount > 0) &&
+      model.rows.every(
+        (row) => row.childCount === 0 || row.depthLimited || row.expanded,
+      ));
+  const toggleAll = () => {
+    const next = !allExpanded;
+    setExpanded(next ? objectExpansionPaths(value) : new Set([""]));
+    onToggleAll?.(next);
   };
   const actions = (controls || lineWrap) && (
     <div className="structured-actions">
       {lineWrap && <MessageWrapControl {...lineWrap} />}
       {controls && (
-        <button
-          type="button"
-          className="message-action"
-          aria-label={foldLabel}
-          aria-pressed={allExpanded}
-          data-tooltip={foldLabel}
-          onClick={() => (allExpanded ? setExpanded(new Set()) : unfoldAll())}
-        >
-          {allExpanded ? (
-            <IconFold size={16} />
-          ) : (
-            <IconArrowsVertical size={16} />
-          )}
-        </button>
+        <MessageFoldControl expanded={allExpanded} onToggle={toggleAll} />
       )}
     </div>
   );
@@ -609,6 +634,8 @@ export function MessageContent({
   expandRequest,
   expansionState,
   onExpansionApplied,
+  defaultExpanded,
+  onToggleAll,
 }: {
   row: EventRow;
   highlight: string;
@@ -626,6 +653,8 @@ export function MessageContent({
   expandRequest?: number;
   expansionState?: JsonExpansionState;
   onExpansionApplied?(): void;
+  defaultExpanded?: boolean;
+  onToggleAll?(expanded: boolean): void;
 }) {
   if (row.parsed.kind === "json")
     return (
@@ -647,12 +676,20 @@ export function MessageContent({
         expandRequest={expandRequest}
         expansionState={expansionState}
         onExpansionApplied={onExpansionApplied}
+        defaultExpanded={defaultExpanded}
+        onToggleAll={onToggleAll}
       />
     );
   const displayLimit = compact ? 6000 : 200_000;
-  const actions = lineWrap && (
+  const actions = (lineWrap || (controls && onToggleAll)) && (
     <div className="structured-actions">
-      <MessageWrapControl {...lineWrap} />
+      {lineWrap && <MessageWrapControl {...lineWrap} />}
+      {controls && onToggleAll && (
+        <MessageFoldControl
+          expanded={defaultExpanded ?? false}
+          onToggle={() => onToggleAll(!(defaultExpanded ?? false))}
+        />
+      )}
     </div>
   );
   return (

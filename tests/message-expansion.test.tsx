@@ -28,9 +28,9 @@ async function mode(value: ViewConfig["mode"], initial = false) {
     else renderer.update(<Harness mode={value} />);
   });
 }
-it("retains expanded JSON and collapsed Table and Hybrid defaults", async () => {
+it("starts JSON at first-level fields and Table and Hybrid at their collapsed defaults", async () => {
   await mode("json", true);
-  expect(expansion.isExpanded("event-1")).toBe(true);
+  expect(expansion.isExpanded("event-1")).toBe(false);
   await mode("table");
   expect(expansion.isExpanded("event-1")).toBe(false);
   await mode("hybrid");
@@ -47,6 +47,7 @@ it("unfolds all current and future messages, then folds them all", async () => {
 });
 it("keeps individual exceptions and clears them on an all-message choice", async () => {
   await mode("json", true);
+  await act(async () => expansion.toggleAll());
   await act(async () => expansion.toggle("event-1"));
   expect(expansion.isExpanded("event-1")).toBe(false);
   expect(expansion.isExpanded("event-2")).toBe(true);
@@ -71,5 +72,5 @@ it("preserves each mode's expansion choice and exceptions while switching", asyn
   expect(expansion.isExpanded("event-1")).toBe(false);
   expect(expansion.isExpanded("event-2")).toBe(true);
   await mode("json");
-  expect(expansion.isExpanded("event-2")).toBe(false);
+  expect(expansion.isExpanded("event-2")).toBe(true);
 });

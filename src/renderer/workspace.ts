@@ -276,6 +276,9 @@ function parseView(value: unknown): ViewConfig {
       : {}),
     inspectorInfoCollapsed: raw.inspectorInfoCollapsed === true,
     inspectorWrap: raw.inspectorWrap !== false,
+    ...(typeof raw.inspectorExpanded === "boolean"
+      ? { inspectorExpanded: raw.inspectorExpanded }
+      : {}),
     ...(typeof raw.highlightText === "string"
       ? { highlightText: string(raw.highlightText, "", 200) }
       : {}),

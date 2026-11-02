@@ -95,14 +95,15 @@
   cursor: default;
 }
 .calendar-today-button {
-  min-height: 28px;
-  padding: 2px 6px;
+  min-height: 30px;
+  padding: 4px 10px;
   border: 0;
   border-radius: 3px;
   background: transparent;
   color: var(--mantine-color-indigo-7);
   font: inherit;
-  font-size: 12px;
+  font-size: 14px;
+  font-weight: 600;
   cursor: pointer;
 }
 .calendar-today-button:hover {
@@ -156,6 +157,21 @@
 }
 .calendar-day:hover {
   background: var(--mantine-primary-color-light-hover);
+}
+.calendar-day.is-today {
+  position: relative;
+  font-weight: 700;
+}
+.calendar-day.is-today::after {
+  content: "";
+  position: absolute;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: currentColor;
+  bottom: 2px;
+  left: calc(50% - 2px);
+  pointer-events: none;
 }
 .calendar-day.is-in-range {
   background: var(--mantine-primary-color-light);

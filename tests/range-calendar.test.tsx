@@ -130,6 +130,37 @@ it("Today returns to the current month without selecting or resetting an unfinis
   );
 });
 
+it("marks the current date independently of selected endpoints, ranges and timezone", async () => {
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date("2026-09-20T12:00:00Z"));
+  const render = (start: string, end: string) => (
+    <RangeCalendar
+      month="2026-09-01"
+      start={start}
+      end={end}
+      anchor={null}
+      timezone="utc"
+      onMonthChange={() => {}}
+      onSelect={select}
+    />
+  );
+  await act(async () => {
+    renderer = create(render("2026-09-10", "2026-09-13"));
+  });
+  expect(day("2026-09-20").props["aria-current"]).toBe("date");
+  expect(day("2026-09-10").props["aria-current"]).toBeUndefined();
+  await act(async () => renderer!.update(render("2026-09-15", "2026-09-25")));
+  expect(day("2026-09-20").props.className).toContain("is-today");
+  expect(day("2026-09-20").props.className).toContain("is-in-range");
+  await act(async () => renderer!.update(render("2026-09-20", "2026-09-20")));
+  expect(day("2026-09-20").props["aria-current"]).toBe("date");
+  expect(day("2026-09-20").props["aria-pressed"]).toBe(true);
+  vi.setSystemTime(new Date("2026-09-21T12:00:00Z"));
+  await act(async () => renderer!.update(render("2026-09-20", "2026-09-20")));
+  expect(day("2026-09-20").props["aria-current"]).toBeUndefined();
+  expect(day("2026-09-21").props["aria-current"]).toBe("date");
+});
+
 it("wheel navigates months in both directions without scrolling or selecting, and ignores zoom and horizontal gestures", async () => {
   await act(async () => {
     renderer = create(<Harness />, {

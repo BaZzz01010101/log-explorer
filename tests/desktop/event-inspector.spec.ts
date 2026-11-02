@@ -327,7 +327,7 @@ test("structured inspector folds nested objects and adds columns and local filte
   expect(Math.abs(copyBox.y - foldBox.y)).toBeLessThanOrEqual(1);
   await fold.press("Space");
   await expect(
-    inspector().getByRole("button", { name: "Expand root", exact: true }),
+    inspector().getByRole("button", { name: "Collapse root", exact: true }),
   ).toBeVisible();
   await expect(requestId).toHaveCount(0);
   await inspector()

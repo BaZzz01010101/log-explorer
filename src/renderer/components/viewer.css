@@ -366,6 +366,19 @@ body.resizing-columns * {
   overflow-wrap: anywhere;
   max-height: 120px;
 }
+.inspect-cell:has(> .table-message-expanded) {
+  white-space: normal;
+  max-height: none;
+  overflow: visible;
+}
+.table-message-expanded .raw-content pre {
+  white-space: pre;
+  margin: 0;
+}
+.viewer-wrap .table-message-expanded .raw-content pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
 .event-scroll-layout:not(.viewer-wrap)
   .log-table-row:has(> .hybrid-gutter)
   .inspect-cell {

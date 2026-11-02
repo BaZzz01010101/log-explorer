@@ -78,6 +78,7 @@ export interface ColumnConfig {
 }
 export interface ViewConfig {
   inspectorWrap?: boolean;
+  inspectorExpanded?: boolean;
   highlightText?: string;
   highlightRegex?: boolean;
   highlightCaseSensitive?: boolean;

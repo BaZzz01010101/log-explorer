@@ -38,6 +38,29 @@ const evidence = {
   },
 };
 
+it("keeps explicitly folded inspector branches closed even when automatic match expansion is enabled", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  vi.spyOn(console, "error").mockImplementation(() => {});
+  await act(async () => {
+    renderer = create(
+      <EventHighlightContext.Provider value={evidence as any}>
+        <JsonTree
+          value={{ outer: { deep: { value: "needle" } } }}
+          highlight=""
+          autoExpandMatches
+          defaultExpanded={false}
+        />
+      </EventHighlightContext.Provider>,
+    );
+  });
+  expect(
+    renderer!.root.findAllByProps({ "data-json-path": "/outer/deep/value" }),
+  ).toHaveLength(0);
+  expect(
+    renderer!.root.findAllByProps({ "aria-label": "Expand /outer" }),
+  ).toHaveLength(1);
+});
+
 it("combines distinct server, local and manual text match layers without changing text", () => {
   const markup = renderToStaticMarkup(
     <EventHighlightContext.Provider value={evidence as any}>

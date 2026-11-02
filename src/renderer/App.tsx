@@ -66,6 +66,7 @@ import {
 import "./components/workspace-tabs.css";
 import "./app.css";
 import "./floating-surfaces.css";
+import "./toggle-buttons.css";
 import { TextTooltips } from "./components/AppTooltip";
 import { shortcutMatches } from "./shortcuts";
 import {

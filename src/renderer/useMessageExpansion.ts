@@ -1,14 +1,14 @@
 import { useMemo, useState } from "react";
 import type { ViewConfig } from "../shared/contracts";
 
-type Expansion = { all: boolean; exceptions: Set<string> };
+type Expansion = { all: boolean; revision: number; exceptions: Set<string> };
 
 export function useMessageExpansionState() {
   const [modes, setModes] = useState<Record<ViewConfig["mode"], Expansion>>(
     () => ({
-      json: { all: true, exceptions: new Set() },
-      table: { all: false, exceptions: new Set() },
-      hybrid: { all: false, exceptions: new Set() },
+      json: { all: false, revision: 0, exceptions: new Set() },
+      table: { all: false, revision: 0, exceptions: new Set() },
+      hybrid: { all: false, revision: 0, exceptions: new Set() },
     }),
   );
   return { modes, setModes };
@@ -26,6 +26,7 @@ export function useMessageExpansion(
   return useMemo(
     () => ({
       all: current.all,
+      revision: current.revision,
       isExpanded: (id: string) =>
         current.exceptions.has(id) ? !current.all : current.all,
       toggle: (id: string) =>
@@ -41,7 +42,11 @@ export function useMessageExpansion(
       toggleAll: () =>
         setModes((previous) => ({
           ...previous,
-          [mode]: { all: !previous[mode].all, exceptions: new Set() },
+          [mode]: {
+            all: !previous[mode].all,
+            revision: previous[mode].revision + 1,
+            exceptions: new Set(),
+          },
         })),
     }),
     [current, mode],

@@ -142,6 +142,17 @@ const inspector = () =>
 const rows = () => page.locator(".virtual-event");
 const viewer = () => page.locator(".viewer-scroll");
 
+async function paintHiddenWindow() {
+  await app!.evaluate(async ({ BrowserWindow }) => {
+    const window = BrowserWindow.getAllWindows()[0];
+    if (window.isVisible()) throw new Error("Verification became visible");
+    await window.webContents.capturePage(undefined, {
+      stayHidden: true,
+      stayAwake: true,
+    });
+  });
+}
+
 type CopyProbe = typeof globalThis & { selectedMessageCopies: string[] };
 
 async function capturedCopies() {
@@ -258,7 +269,10 @@ test("context copy preserves multiple selected rows and opens at the pointer", a
     exact: true,
   });
   await expect(copy).toBeVisible();
-  const menu = (await copy.boundingBox())!;
+  const menu = (await page
+    .getByRole("menu")
+    .filter({ has: copy })
+    .boundingBox())!;
   expect(Math.abs(menu.x - (bounds.x + 24))).toBeLessThan(24);
   expect(Math.abs(menu.y - (bounds.y + 12))).toBeLessThan(40);
   await expect(
@@ -267,6 +281,154 @@ test("context copy preserves multiple selected rows and opens at the pointer", a
   await copy.click();
   await expect.poll(capturedCopies).toEqual([messages[1] + "\n" + messages[3]]);
 });
+
+for (const mode of ["Table", "Hybrid", "JSON"])
+  test(`${mode} row menu copies only text selected inside the right-clicked event`, async () => {
+    await installClipboardProbe();
+    await page
+      .locator("label")
+      .filter({ hasText: new RegExp(`^${mode}$`) })
+      .click();
+    const first = rows().nth(1);
+    const second = rows().nth(2);
+    const firstTarget = first
+      .locator(mode === "JSON" ? ".event-timestamp" : ".inspect-cell")
+      .first();
+    const secondTarget = second
+      .locator(mode === "JSON" ? ".event-timestamp" : ".inspect-cell")
+      .first();
+    const command = page.getByRole("menuitem", {
+      name: "Copy selected text",
+      exact: true,
+    });
+    const selectText = async () =>
+      first.evaluate((element) => {
+        const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
+        let node: Node | null;
+        while ((node = walker.nextNode())) {
+          if ((node.textContent?.length ?? 0) < 6) continue;
+          const range = document.createRange();
+          range.setStart(node, 1);
+          range.setEnd(node, 5);
+          const selection = window.getSelection()!;
+          selection.removeAllRanges();
+          selection.addRange(range);
+          return selection.toString();
+        }
+        throw new Error("No row text available");
+      });
+    await page.evaluate(() => window.getSelection()?.removeAllRanges());
+    await firstTarget.click({ button: "right", position: { x: 50, y: 12 } });
+    await expect(command).toBeVisible();
+    await expect(command).toBeDisabled();
+    await page.keyboard.press("Escape");
+    await expect(command).toHaveCount(0);
+    await paintHiddenWindow();
+
+    const selected = await selectText();
+    await firstTarget.click({ button: "right", position: { x: 50, y: 12 } });
+    await paintHiddenWindow();
+    await expect(command).toBeEnabled();
+    const targetBounds = (await firstTarget.boundingBox())!;
+    const menuBounds = (await page
+      .getByRole("menu")
+      .filter({ has: command })
+      .boundingBox())!;
+    expect(Math.abs(menuBounds.x - (targetBounds.x + 50))).toBeLessThan(24);
+    expect(Math.abs(menuBounds.y - (targetBounds.y + 12))).toBeLessThan(40);
+    // Menu focus or a Live update must not change the captured copy payload.
+    await page.evaluate(() => window.getSelection()?.removeAllRanges());
+    await command.click();
+    await expect.poll(capturedCopies).toEqual([selected]);
+    await expect(command).toHaveCount(0);
+    await paintHiddenWindow();
+
+    await selectText();
+    await secondTarget.click({ button: "right", position: { x: 50, y: 12 } });
+    await expect(command).toBeDisabled();
+    await page.keyboard.press("Escape");
+    await expect(command).toHaveCount(0);
+    await paintHiddenWindow();
+    await page.evaluate(() => {
+      const events = document.querySelectorAll(".virtual-event");
+      const range = document.createRange();
+      range.setStartBefore(events[1]);
+      range.setEndAfter(events[2]);
+      const selection = window.getSelection()!;
+      selection.removeAllRanges();
+      selection.addRange(range);
+    });
+    await firstTarget.click({ button: "right", position: { x: 50, y: 12 } });
+    await expect(command).toBeDisabled();
+    await page.keyboard.press("Escape");
+    await expect(command).toHaveCount(0);
+    await paintHiddenWindow();
+
+    await inspector().evaluate((element) => {
+      const range = document.createRange();
+      range.selectNodeContents(element);
+      const selection = window.getSelection()!;
+      selection.removeAllRanges();
+      selection.addRange(range);
+    });
+    await firstTarget.click({ button: "right", position: { x: 50, y: 12 } });
+    await expect(command).toBeDisabled();
+    expect(await capturedCopies()).toEqual([selected]);
+  });
+
+for (const mode of ["Table", "Hybrid"])
+  test(`${mode} row menu copies forward and backward mouse text selections`, async () => {
+    await installClipboardProbe();
+    await page
+      .locator("label")
+      .filter({ hasText: new RegExp(`^${mode}$`) })
+      .click();
+    await page
+      .getByRole("textbox", { name: "Local filter loaded events", exact: true })
+      .fill("Request processed");
+    const text = rows().first().getByText("Request processed", { exact: true });
+    await expect(text).toBeVisible();
+    for (const backwards of [false, true]) {
+      await paintHiddenWindow();
+      const points = await text.evaluate((element) => {
+        const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
+        const nodes: Text[] = [];
+        while (walker.nextNode()) nodes.push(walker.currentNode as Text);
+        const at = (offset: number) => {
+          const node = nodes.find((candidate) => {
+            if (offset <= candidate.length) return true;
+            offset -= candidate.length;
+            return false;
+          })!;
+          const range = document.createRange();
+          range.setStart(node, offset);
+          range.collapse(true);
+          const rect = range.getBoundingClientRect();
+          return { x: rect.x, y: rect.y + rect.height / 2 };
+        };
+        return { start: at(2), end: at(13) };
+      });
+      const from = backwards ? points.end : points.start;
+      const to = backwards ? points.start : points.end;
+      await page.mouse.move(from.x, from.y);
+      await page.mouse.down();
+      await page.mouse.move(to.x, to.y, { steps: 12 });
+      await page.mouse.up();
+      expect(await page.evaluate(() => window.getSelection()?.toString())).toBe(
+        "quest proce",
+      );
+      await page.mouse.click((from.x + to.x) / 2, from.y, { button: "right" });
+      const command = page.getByRole("menuitem", {
+        name: "Copy selected text",
+        exact: true,
+      });
+      await expect(command).toBeEnabled();
+      await command.click();
+      await expect
+        .poll(capturedCopies)
+        .toEqual(Array(backwards ? 2 : 1).fill("quest proce"));
+    }
+  });
 
 test("keyboard ranges and select-all stay scoped to displayed filtered events without stealing text copy", async () => {
   await installClipboardProbe();

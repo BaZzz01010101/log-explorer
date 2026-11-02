@@ -33,6 +33,10 @@ export function RangeCalendar({
   current.current = { month, onMonthChange };
   const focusRequested = useRef(false);
   const secondMonth = shiftCalendarMonth(month, 1);
+  const today = rangeInputFields(
+    new Date().toISOString(),
+    timezone,
+  ).date.replaceAll("/", "-");
   const preview = anchor
     ? [anchor, hover ?? anchor].sort()
     : [start, end].sort();
@@ -201,6 +205,7 @@ export function RangeCalendar({
                           <button
                             type="button"
                             data-calendar-day={day}
+                            aria-current={day === today ? "date" : undefined}
                             aria-label={day}
                             aria-pressed={
                               day === preview[0] || day === preview[1]
@@ -214,7 +219,8 @@ export function RangeCalendar({
                                 ? " is-in-range"
                                 : "") +
                               (day === preview[0] ? " is-range-start" : "") +
-                              (day === preview[1] ? " is-range-end" : "")
+                              (day === preview[1] ? " is-range-end" : "") +
+                              (day === today ? " is-today" : "")
                             }
                             onFocus={() => setFocused(day)}
                             onMouseEnter={() => anchor && setHover(day)}

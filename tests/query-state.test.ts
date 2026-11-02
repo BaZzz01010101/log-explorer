@@ -32,6 +32,46 @@ it("deduplicates overlapping pages and bounds live memory", () => {
     mergeEvents([event("1"), event("2")], [event("2"), event("3")], 2),
   ).toEqual({ events: [event("2"), event("3")], evicted: 1 });
 });
+
+it("keeps interleaved multi-source history, late pages and Live arrivals in timestamp order", () => {
+  const sourceEvent = (
+    id: string,
+    timestamp: number,
+    connectionId: string,
+    logGroup: string,
+  ) => ({ ...event(id, timestamp), connectionId, logGroup });
+  const first = mergeEvents(
+    [],
+    [
+      sourceEvent("a", 40, "west", "/one"),
+      sourceEvent("b", 20, "east", "/two"),
+      sourceEvent("c", 30, "west", "/one"),
+    ],
+    100,
+  );
+  expect(first.events.map((row) => row.timestamp)).toEqual([20, 30, 40]);
+  const next = mergeEvents(
+    first.events,
+    [
+      sourceEvent("d", 50, "east", "/two"),
+      sourceEvent("e", 10, "west", "/one"),
+      sourceEvent("c", 30, "west", "/one"),
+    ],
+    100,
+  );
+  expect(next.events.map((row) => row.timestamp)).toEqual([10, 20, 30, 40, 50]);
+  const live = mergeEvents(
+    next.events,
+    [
+      sourceEvent("f", 35, "east", "/two"),
+      sourceEvent("g", 60, "west", "/one"),
+    ],
+    100,
+  );
+  expect(live.events.map((row) => row.timestamp)).toEqual([
+    10, 20, 30, 35, 40, 50, 60,
+  ]);
+});
 it("never silently accepts an invalid custom time range", () => {
   expect(() =>
     resolveTimeRange("custom", "2026-10-13T10:00", "2026-10-12T10:00"),

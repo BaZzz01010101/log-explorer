@@ -1,0 +1,17 @@
+/* Hover must retain the distinction between an enabled and disabled toggle. */
+button[aria-pressed="true"]:not(:disabled):not(.calendar-day) {
+  background-color: var(--toggle-active-bg, var(--mantine-primary-color-light));
+  color: var(--toggle-active-color, var(--mantine-primary-color-light-color));
+}
+
+button[aria-pressed="true"]:not(:disabled):not(.calendar-day):hover {
+  background-color: color-mix(
+    in srgb,
+    var(--toggle-active-bg, var(--mantine-primary-color-light)) 78%,
+    var(--toggle-active-color, var(--mantine-primary-color-light-color))
+  );
+}
+
+button[aria-pressed="false"]:not(:disabled):not(.calendar-day):hover {
+  background-color: var(--mantine-color-default-hover);
+}

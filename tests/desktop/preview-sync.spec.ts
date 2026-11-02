@@ -7,7 +7,7 @@ import {
   type Locator,
 } from "@playwright/test";
 import { execFileSync } from "node:child_process";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join, resolve, sep } from "node:path";
 import { createWorkspace } from "../../src/renderer/workspace";
 import { desktopExecutablePath } from "./desktop-app";
@@ -117,6 +117,25 @@ const scroll = (region: Locator) =>
     left: element.scrollLeft,
   }));
 
+async function editPreviewRule() {
+  const panel = page.getByRole("tabpanel", { name: "Highlights", exact: true });
+  const expand = panel.getByRole("button", {
+    name: "Expand profile Preview",
+    exact: true,
+  });
+  if (await expand.count()) await expand.click();
+  await panel.locator('[role="treeitem"][data-tree-rule="rule"]').click();
+  await panel.getByLabel("Match regex", { exact: true }).fill("WARN|ERROR");
+  await expect
+    .poll(async () => {
+      const saved = JSON.parse(
+        await readFile(join(directory, "workspace.json"), "utf8"),
+      );
+      return saved.preferences.highlightProfiles[0].rules[0].pattern;
+    })
+    .toBe("WARN|ERROR");
+}
+
 test("hybrid preview synchronizes scrolling, modifier selection and structured folds while retaining edits", async () => {
   const light = theme("Light"),
     dark = theme("Dark");
@@ -191,20 +210,7 @@ test("hybrid preview synchronizes scrolling, modifier selection and structured f
     structured.locator('[data-json-path="/service/name"]'),
   ).toHaveCount(0);
   const before = await selected(light);
-  const ruleList = page
-    .getByRole("tabpanel", { name: "Highlights", exact: true })
-    .locator(".highlight-rule-list");
-  const expandRule = ruleList.getByRole("button", {
-    name: "Expand rule 1",
-    exact: true,
-  });
-  if (await expandRule.isVisible()) await expandRule.click();
-  await ruleList
-    .getByRole("button", { name: "Edit rule 1", exact: true })
-    .first()
-    .click();
-  await page.getByLabel("Match regex", { exact: true }).fill("WARN|ERROR");
-  await page.getByRole("button", { name: "Save rule", exact: true }).click();
+  await editPreviewRule();
   await expect.poll(() => selected(dark)).toEqual(before);
   await expect(
     structured.getByRole("button", {
@@ -304,20 +310,7 @@ test("expanded content mirrors inner scrolling and chosen heights while profile 
   await expect
     .poll(() => position(darkContent))
     .toEqual({ top: 60, left: 180 });
-  const ruleList = page
-    .getByRole("tabpanel", { name: "Highlights", exact: true })
-    .locator(".highlight-rule-list");
-  const expandRule = ruleList.getByRole("button", {
-    name: "Expand rule 1",
-    exact: true,
-  });
-  if (await expandRule.isVisible()) await expandRule.click();
-  await ruleList
-    .getByRole("button", { name: "Edit rule 1", exact: true })
-    .first()
-    .click();
-  await page.getByLabel("Match regex", { exact: true }).fill("WARN|ERROR");
-  await page.getByRole("button", { name: "Save rule", exact: true }).click();
+  await editPreviewRule();
   await expect
     .poll(() => position(lightContent))
     .toEqual({ top: 60, left: 180 });

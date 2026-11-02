@@ -1,5 +1,6 @@
 import {
   useCallback,
+  useContext,
   useDeferredValue,
   useId,
   useLayoutEffect,
@@ -108,6 +109,8 @@ import {
 import {
   HighlightText,
   MessageContent,
+  objectExpansionPaths,
+  JsonTreeExpansionContext,
   type JsonExpansionState,
 } from "./EventMessage";
 import { EventInspector } from "./EventInspector";
@@ -141,6 +144,14 @@ interface EventRow {
   event: LogEvent;
   parsed: ParsedMessage;
   level: LogLevel;
+}
+interface StructuredRowState {
+  expanded: Set<string>;
+  applied?: number;
+  full?: boolean;
+  revision?: number;
+  choice?: boolean;
+  value?: JsonValue;
 }
 export interface LogViewerInteractionState {
   selection: EventSelectionState;
@@ -331,23 +342,51 @@ export function LogViewer({
   const recursiveRequests = useRef(new WeakMap<LogEvent, number>());
   const fittedRequests = useRef(new WeakMap<LogEvent, number>());
   const rowJsonState = useRef(
-    new WeakMap<
-      LogEvent,
-      { expanded: Set<string>; applied?: number; full?: boolean }
-    >(),
+    new WeakMap<LogEvent, Map<ViewConfig["mode"], StructuredRowState>>(),
   );
   const recursiveSequence = useRef(0);
+  const expansion = useMessageExpansion(view.mode, interactionState?.expansion);
+  const sharedJsonExpansion = useContext(JsonTreeExpansionContext);
   const [, redrawExpansion] = useState(0);
-  const structuredState = (event: LogEvent) => {
-    let state = rowJsonState.current.get(event);
+  const structuredState = (event: LogEvent, parsed?: ParsedMessage) => {
+    let modes = rowJsonState.current.get(event);
+    if (!modes) {
+      modes = new Map();
+      rowJsonState.current.set(event, modes);
+    }
+    let state = modes.get(view.mode);
     if (!state) {
       state = { expanded: new Set([""]) };
-      rowJsonState.current.set(event, state);
+      modes.set(view.mode, state);
+    }
+    // Global commands apply lazily, including to rows arriving later or outside
+    // the virtual window. Keep manual branches until another explicit command.
+    if (view.mode !== "hybrid") {
+      const choice = expansion.isExpanded(event.id);
+      const value = (parsed ?? deserialized.parsedFor(event)).value;
+      if (
+        state.revision !== expansion.revision ||
+        state.choice !== choice ||
+        (choice && state.value !== value)
+      ) {
+        state.expanded =
+          choice && value !== undefined
+            ? objectExpansionPaths(value)
+            : new Set([""]);
+        state.revision = expansion.revision;
+        state.choice = choice;
+        state.value = value;
+        state.full = choice;
+        state.applied = recursiveRequests.current.get(event);
+      }
     }
     return state;
   };
-  const messageExpansionState = (event: LogEvent): JsonExpansionState => ({
-    expanded: structuredState(event).expanded,
+  const messageExpansionState = (
+    event: LogEvent,
+    parsed?: ParsedMessage,
+  ): JsonExpansionState => ({
+    expanded: structuredState(event, parsed).expanded,
     onChange(update) {
       const state = structuredState(event);
       state.expanded =
@@ -364,6 +403,7 @@ export function LogViewer({
     redrawExpansion((previous) => previous + 1);
   };
   const [contextEventId, setContextEventId] = useState<string | undefined>();
+  const [contextSelectedText, setContextSelectedText] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
   const setScrollElement = useCallback(
     (element: HTMLDivElement | null) => {
@@ -378,7 +418,6 @@ export function LogViewer({
       ? [{ key: pagination.pageKey, load: pagination.onLoad }]
       : [],
   });
-  const expansion = useMessageExpansion(view.mode, interactionState?.expansion);
   const detailHeights = useRef(new WeakMap<LogEvent, number>());
   const [inspectorMode, setInspectorMode] = useState("structured");
   const [inspectorActionsTarget, setInspectorActionsTarget] =
@@ -537,6 +576,9 @@ export function LogViewer({
     setColumnInput("");
     setNotice(`Column ${titleFor(path)} is visible.`);
   };
+  // Retain cell text nodes while row details open, preserving word selection.
+  const cellExpansion = useRef({ expansion, messageExpansionState });
+  cellExpansion.current = { expansion, messageExpansionState };
   const defs = useMemo<ColumnDef<EventRow>[]>(
     () =>
       config.map((column) => ({
@@ -556,6 +598,23 @@ export function LogViewer({
           const row = context.row.original;
           const value = context.getValue<JsonValue | undefined>();
           const automatic = !column.format || column.format === "auto";
+          if (
+            column.path === "@message" &&
+            view.mode === "table" &&
+            cellExpansion.current.expansion.isExpanded(row.event.id)
+          )
+            return (
+              <div className="table-message-expanded">
+                <MessageContent
+                  row={row}
+                  highlight={highlightText}
+                  expansionState={cellExpansion.current.messageExpansionState(
+                    row.event,
+                    row.parsed,
+                  )}
+                />
+              </div>
+            );
           if (column.path === "@source" && automatic) {
             const source = eventSourceDisplay(
               row.event,
@@ -598,7 +657,7 @@ export function LogViewer({
           );
         },
       })),
-    [config, preferences.timezone, highlightText, sourceContext],
+    [config, preferences.timezone, highlightText, sourceContext, view.mode],
   );
   // TanStack's sorted row model resets pagination when sorting changes.
   // Keep its reference stable so that reset cannot schedule another render loop.
@@ -672,13 +731,13 @@ export function LogViewer({
     // detail separator at display scales where borders are subpixel-sized.
     measureElement: (element) => element.getBoundingClientRect().height,
     estimateSize: (index) =>
-      expansion.isExpanded(rows[index]!.id)
-        ? view.mode === "json"
-          ? 180
-          : 260
-        : preferences.density === "compact"
-          ? 34
-          : 44,
+      view.mode === "json"
+        ? 180
+        : expansion.isExpanded(rows[index]!.id)
+          ? 260
+          : preferences.density === "compact"
+            ? 34
+            : 44,
     getItemKey: (index) => rows[index]!.id,
     overscan: 7,
   });
@@ -1083,7 +1142,20 @@ export function LogViewer({
               }
               aria-pressed={expansion.all}
               variant={expansion.all ? "light" : "subtle"}
-              onClick={expansion.toggleAll}
+              onClick={() => {
+                const next = !expansion.all;
+                expansion.toggleAll();
+                // Preview themes share JSON branches as well as row expansion.
+                if (sharedJsonExpansion && view.mode !== "hybrid")
+                  for (const row of allRows)
+                    if (row.parsed.kind === "json")
+                      sharedJsonExpansion.onChange(
+                        row.event.id,
+                        next
+                          ? objectExpansionPaths(row.parsed.value!)
+                          : new Set([""]),
+                      );
+              }}
               disabled={events.length === 0}
             >
               {expansion.all ? (
@@ -1254,6 +1326,25 @@ export function LogViewer({
                 const id = row?.dataset.eventId;
                 if (!id) return;
                 event.preventDefault();
+                // Snapshot before menu focus can collapse the native selection.
+                // Reject selections from the inspector or spanning other rows.
+                const textSelection = window.getSelection();
+                const ranges = textSelection
+                  ? Array.from(
+                      { length: textSelection.rangeCount },
+                      (_, index) => textSelection.getRangeAt(index),
+                    )
+                  : [];
+                setContextSelectedText(
+                  ranges.length > 0 &&
+                    ranges.every(
+                      (range) =>
+                        row.contains(range.startContainer) &&
+                        row.contains(range.endContainer),
+                    )
+                    ? textSelection!.toString()
+                    : "",
+                );
                 if (id && !selectedEventIds.has(id)) selection.select(id);
                 setContextEventId(id);
                 setColumnMenu(null);
@@ -1785,53 +1876,40 @@ export function LogViewer({
                                     <IconCopy size={13} />
                                   </button>
                                 </div>
-                                {expanded ? (
-                                  <div className="event-message-details">
-                                    <MessageContent
-                                      row={row}
-                                      highlight={highlightText}
-                                      expandRequest={jsonExpandRequest(
+                                <div className="event-message-details">
+                                  <MessageContent
+                                    row={row}
+                                    highlight={highlightText}
+                                    expandRequest={jsonExpandRequest(row.event)}
+                                    expansionState={messageExpansionState(
+                                      row.event,
+                                    )}
+                                    onExpansionApplied={() =>
+                                      appliedJsonExpansion(row.event)
+                                    }
+                                    compact={
+                                      !structuredState(row.event).full &&
+                                      !interactionState?.details.recursive?.has(
+                                        row.event.id,
+                                      )
+                                    }
+                                    onAddColumn={addColumn}
+                                    onAddFilter={addFilter}
+                                    onDeserialize={(path, encoding) =>
+                                      deserialized.deserialize(
                                         row.event,
-                                      )}
-                                      expansionState={messageExpansionState(
-                                        row.event,
-                                      )}
-                                      onExpansionApplied={() =>
-                                        appliedJsonExpansion(row.event)
-                                      }
-                                      compact={
-                                        !structuredState(row.event).full &&
-                                        !interactionState?.details.recursive?.has(
-                                          row.event.id,
-                                        )
-                                      }
-                                      onAddColumn={addColumn}
-                                      onAddFilter={addFilter}
-                                      onDeserialize={(path, encoding) =>
-                                        deserialized.deserialize(
-                                          row.event,
-                                          path,
-                                          encoding,
-                                        )
-                                      }
-                                      decodedLabels={deserialized.labelsFor(
-                                        row.event,
-                                      )}
-                                      deserializedPaths={deserialized.pathsFor(
-                                        row.event,
-                                      )}
-                                    />
-                                  </div>
-                                ) : (
-                                  <div className="message-summary">
-                                    <HighlightText
-                                      text={row.event.message
-                                        .slice(0, 600)
-                                        .replace(/\s+/g, " ")}
-                                      needle={highlightText}
-                                    />
-                                  </div>
-                                )}
+                                        path,
+                                        encoding,
+                                      )
+                                    }
+                                    decodedLabels={deserialized.labelsFor(
+                                      row.event,
+                                    )}
+                                    deserializedPaths={deserialized.pathsFor(
+                                      row.event,
+                                    )}
+                                  />
+                                </div>
                               </>
                             ) : (
                               <>
@@ -1891,7 +1969,7 @@ export function LogViewer({
                                     </div>
                                   ))}
                                 </div>
-                                {expanded && (
+                                {view.mode === "hybrid" && expanded && (
                                   <ExpandedEventDetails
                                     eventId={row.event.id}
                                     autoFitRequest={
@@ -2038,6 +2116,7 @@ export function LogViewer({
             <Menu
               withinPortal
               position="bottom-start"
+              hideDetached={false}
               opened={contextPosition !== null}
               onChange={(opened) => {
                 if (!opened) setContextPosition(null);
@@ -2060,13 +2139,20 @@ export function LogViewer({
               <Menu.Dropdown>
                 <Menu.Item
                   leftSection={<IconCopy size={14} />}
+                  disabled={contextSelectedText.length === 0}
+                  onClick={() => void copy(contextSelectedText)}
+                >
+                  Copy selected text
+                </Menu.Item>
+                <Menu.Item
+                  leftSection={<IconCopy size={14} />}
                   disabled={selection.selectedIds.length === 0 || filtering}
                   onClick={() => void copySelected("messages")}
                 >
                   Copy selected messages
                 </Menu.Item>
                 <Menu.Item
-                  leftSection={<IconBraces size={14} />}
+                  leftSection={<IconCopy size={14} />}
                   disabled={selection.selectedIds.length === 0 || filtering}
                   onClick={() => void copySelected("records")}
                 >
@@ -2252,7 +2338,7 @@ export function LogViewer({
                         <Menu.Target>
                           <ActionIcon
                             size={28}
-                            variant="light"
+                            variant="subtle"
                             aria-label="Copy"
                             data-tooltip="Copy event message or metadata"
                           >
@@ -2318,6 +2404,10 @@ export function LogViewer({
                         )}
                         onAddFilter={addFilter}
                         controls
+                        defaultExpanded={view.inspectorExpanded}
+                        onToggleAll={(expanded) =>
+                          onViewChange({ ...view, inspectorExpanded: expanded })
+                        }
                         renderActions={(actions) =>
                           inspectorActionsTarget
                             ? createPortal(actions, inspectorActionsTarget)
@@ -2339,6 +2429,11 @@ export function LogViewer({
                     ) : (
                       <MessageContent
                         row={{ ...inspected, parsed: { kind: "text" } }}
+                        controls
+                        defaultExpanded={view.inspectorExpanded}
+                        onToggleAll={(expanded) =>
+                          onViewChange({ ...view, inspectorExpanded: expanded })
+                        }
                         renderActions={(actions) =>
                           inspectorActionsTarget
                             ? createPortal(actions, inspectorActionsTarget)
@@ -2474,6 +2569,7 @@ export function LogViewer({
                 <Tooltip label={column.pinned ? "Unpin" : "Pin to left"}>
                   <ActionIcon
                     aria-label={`${column.pinned ? "Unpin" : "Pin"} ${titleFor(column.path)}`}
+                    aria-pressed={column.pinned ?? false}
                     variant={column.pinned ? "light" : "subtle"}
                     onClick={() =>
                       applyColumns(

@@ -1,5 +1,25 @@
 # Building and releasing
 
+## Build 0.1.70
+
+This update retains the inspector fold control for plain/raw events, makes Today more prominent, marks the current calendar date independently of selected ranges and unifies row-menu copy icons. Stable cell component identities fix native double-click and word-drag selection loss during Hybrid expansion. Default multi-source ordering was investigated and tested without changing its production logic.
+
+Evidence: `.tmp/unit-0.1.70-final2.json`, `.tmp/desktop-verification-0.1.70.json` and `release/0.1.70/artifact-manifest.json`. The desktop aggregate records 32 distinct scenarios and retains both manifests: four affected inspector-state scenarios are repeated on the final package after an isolated flat-JSON default-state adjustment; the remaining 28 unchanged checks retain their initial-package verification. The hash-checked handoff retains a backup and waits for natural app exit, with eleven hidden/offline checks queued against the exact standard path after promotion. The user's app is never closed or relaunched by these helpers. No real AWS requests or installer installation were exercised.
+
+## Build 0.1.69
+
+Toggle buttons retain a distinct active hover color. Inspector folding retains first-level fields and saves its choice per tab; Copy is visually neutral. All-message folding now applies the appropriate Hybrid row, Table message or recursive JSON behavior, retaining virtualized branch state and preview synchronization.
+
+The package and artifact hashes are under `release/0.1.69/`. Verification evidence is `.tmp/unit-0.1.69-final.json`, `.tmp/desktop-verification-0.1.69.json` and `.tmp/test-results-0.1.69-final/`. Promotion waits for natural app exit and retains the previous standard build; inspect `.tmp/standard-build-update-0.1.69.json` for its state. Ten hidden/offline checks run against the exact standard launch path after promotion. Any superseded waiting helper is identified by its exact command before stopping it; the user's app is never stopped or relaunched.
+
+Verification: 1,120 unit tests and 30 distinct targeted packaged desktop scenarios pass. The preview followup resolves two tests that still addressed the removed legacy Highlights editor, using the current tree and automatic persistence; raw reports are retained. This is targeted desktop coverage, not the full desktop suite. The waiting 0.1.68 helpers were superseded by 0.1.69 without stopping any application process.
+
+## Build 0.1.68
+
+The event-row context menu adds Copy selected text. It captures the exact native selection in the clicked event, including whitespace, before menu focus can change it. The command is disabled for an empty selection, another row, the inspector or a range spanning events. Existing message/record copy remains separate. The row menu also avoids stale off-screen hiding when reopened at its pointer anchor.
+
+Verification artifacts are under `.tmp/unit-0.1.68-final.json`, `.tmp/test-results-0.1.68-final/` and `.tmp/desktop-verification-0.1.68.json`. The versioned package is under `release/0.1.68/`. The hash-checked natural-exit handoff retains the previous standard build and never closes or relaunches the user's app. Check `.tmp/standard-build-update-0.1.68.json` for promotion state and `.tmp/final-verification-0.1.68.json` for completed standard-path verification.
+
 ## Verified build 0.1.67
 
 Calendar Today/wheel navigation, non-selecting tab context menus and the surrounding-context labels Back, Forward and Both directions are packaged under `release/0.1.67/`. Verification: 1,116 unit tests and 16 targeted hidden/offline packaged desktop checks pass. Test proof is `.tmp/desktop-verification-0.1.67.json`; artifact hashes are in `release/0.1.67/artifact-manifest.json`.
