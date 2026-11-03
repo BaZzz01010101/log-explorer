@@ -1,3 +1,4 @@
+import { copiedMessage, messagePayloads } from "./copied-rows";
 import { desktopExecutablePath } from "./desktop-app";
 import {
   _electron as electron,
@@ -161,6 +162,10 @@ async function capturedCopies() {
   );
 }
 
+async function capturedMessageCopies() {
+  return (await capturedCopies()).map(messagePayloads);
+}
+
 async function installClipboardProbe() {
   // Exercise the renderer, preload and validated main-process IPC handler while
   // replacing only the final OS clipboard write, preserving the user's clipboard.
@@ -184,7 +189,9 @@ async function rawMessages(count: number) {
     await row.locator(".inspect-cell").first().click();
     await expect(inspector()).toHaveAttribute("data-event-id", id);
     messages.push(
-      (await inspector().locator(".raw-content pre").textContent())!,
+      copiedMessage(
+        (await inspector().locator(".raw-content pre").textContent())!,
+      ),
     );
   }
   return messages;
@@ -219,7 +226,9 @@ test("modifier clicks select multiple rows and copy raw messages in displayed or
     (await rows().nth(3).getAttribute("data-event-id"))!,
   );
   await viewer().press("Control+c");
-  await expect.poll(capturedCopies).toEqual([messages[1] + "\n" + messages[3]]);
+  await expect
+    .poll(capturedMessageCopies)
+    .toEqual([messages[1] + "\n" + messages[3]]);
   await rows()
     .nth(4)
     .locator(".inspect-cell")
@@ -230,7 +239,7 @@ test("modifier clicks select multiple rows and copy raw messages in displayed or
   ).toHaveCount(2);
   await viewer().press("Control+c");
   await expect
-    .poll(capturedCopies)
+    .poll(capturedMessageCopies)
     .toEqual([
       messages[1] + "\n" + messages[3],
       messages[3] + "\n" + messages[4],
@@ -244,7 +253,7 @@ test("modifier clicks select multiple rows and copy raw messages in displayed or
   await expect(timestamp).toHaveAttribute("aria-sort", "descending");
   await viewer().press("Control+c");
   await expect
-    .poll(capturedCopies)
+    .poll(capturedMessageCopies)
     .toEqual([
       messages[1] + "\n" + messages[3],
       messages[3] + "\n" + messages[4],
@@ -279,7 +288,9 @@ test("context copy preserves multiple selected rows and opens at the pointer", a
     page.locator('.virtual-event[data-selected="true"]'),
   ).toHaveCount(2);
   await copy.click();
-  await expect.poll(capturedCopies).toEqual([messages[1] + "\n" + messages[3]]);
+  await expect
+    .poll(capturedMessageCopies)
+    .toEqual([messages[1] + "\n" + messages[3]]);
 });
 
 for (const mode of ["Table", "Hybrid", "JSON"])
@@ -329,6 +340,21 @@ for (const mode of ["Table", "Hybrid", "JSON"])
     await firstTarget.click({ button: "right", position: { x: 50, y: 12 } });
     await paintHiddenWindow();
     await expect(command).toBeEnabled();
+    await expect(
+      page.getByRole("menuitem", {
+        name: "Copy selected messages",
+        exact: true,
+      }),
+    ).toBeDisabled();
+    if (mode !== "JSON")
+      await expect(
+        page.getByRole("menuitem", { name: "Copy selected rows", exact: true }),
+      ).toBeDisabled();
+    else
+      await expect(
+        page.getByRole("menuitem", { name: "Copy selected rows", exact: true }),
+      ).toHaveCount(0);
+
     const targetBounds = (await firstTarget.boundingBox())!;
     const menuBounds = (await page
       .getByRole("menu")
@@ -482,11 +508,10 @@ test("keyboard ranges and select-all stay scoped to displayed filtered events wi
   ).toHaveCount(0);
   await viewer().press("Control+c");
   await expect
-    .poll(capturedCopies)
+    .poll(capturedMessageCopies)
     .toEqual([
-      Array.from(
-        { length: count },
-        () => "Unexpected upstream response: { invalid JSON",
+      Array.from({ length: count }, () =>
+        JSON.stringify("Unexpected upstream response: { invalid JSON"),
       ).join("\n"),
     ]);
   await viewer().press("End");

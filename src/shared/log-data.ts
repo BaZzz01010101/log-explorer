@@ -21,6 +21,7 @@ export const LOG_LEVELS: readonly LogLevel[] = [
 export const MESSAGE_LIMIT = 524_288;
 export const INSPECTION_LIMIT = 800;
 export const EXPORT_LIMIT = 20_000_000;
+export const DEFAULT_TIMESTAMP_COLUMN_WIDTH = 260;
 export const META_COLUMNS = [
   "@timestamp",
   "@level",
@@ -147,19 +148,20 @@ export function formatColumnValue(
   value: JsonValue | undefined,
   format: ColumnConfig["format"] = "auto",
   timezone: Preferences["timezone"] = "local",
+  maxLength = 1500,
 ): string {
   if (value === undefined) return "";
   const raw =
     typeof value === "number" && !Number.isFinite(value)
       ? String(value)
-      : summarizeValue(value, 1500);
+      : summarizeValue(value, maxLength);
   if (format === "auto" || !format) return raw;
   if (format === "json") {
     // String fields can be larger than the bounded structured-message parser limit.
     const text = JSON.stringify(
-      typeof value === "string" ? value.slice(0, 1501) : value,
+      typeof value === "string" ? value.slice(0, maxLength + 1) : value,
     );
-    return text.length > 1500 ? text.slice(0, 1500) + "…" : text;
+    return text.length > maxLength ? text.slice(0, maxLength) + "…" : text;
   }
   const text = typeof value === "string" ? value.trim() : "";
   const number =

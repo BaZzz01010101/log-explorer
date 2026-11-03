@@ -565,6 +565,11 @@ body.resizing-columns * {
 }
 .json-key {
   color: light-dark(#37577f, #93afd8);
+  flex: 0 0 auto;
+  max-width: calc(100% - 50px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .log-viewer {
   --filter-match-server: light-dark(#b7d9ff, #24588b);
@@ -671,6 +676,8 @@ body.resizing-columns * {
 }
 .viewer-wrap .json-value,
 .inspector-wrap .json-value {
+  flex: 1 1 auto;
+  min-width: 0;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }

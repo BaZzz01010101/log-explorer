@@ -1,3 +1,9 @@
+import {
+  copiedRows,
+  copiedMessage,
+  copiedMessages,
+  messagePayloads,
+} from "./copied-rows";
 import { createWorkspace } from "../../src/renderer/workspace";
 import { desktopExecutablePath } from "./desktop-app";
 import {
@@ -28,6 +34,8 @@ test.beforeEach(async ({}, testInfo) => {
   state.preferences.theme = testInfo.title.includes("light") ? "light" : "dark";
   state.preferences.timezone = "utc";
   state.tabs[0].filterPattern = "";
+  if (testInfo.title.includes("multi-source copy"))
+    state.tabs[0].sources.push({ logGroup: "/aws/lambda/payments-worker" });
   state.tabs[0].view.columns = [
     { path: "@timestamp", width: 210, pinned: true },
     { path: "@level", width: 84 },
@@ -202,30 +210,8 @@ async function rawMessages(count: number) {
   return messages;
 }
 
-const fields = [
-  "@timestamp",
-  "/request/id",
-  "@level",
-  "/request/durationMs",
-  "/items",
-  "/items/1/metadata/enabled",
-  "/missing",
-  "@message",
-];
 async function selectPair() {
   const messages = await rawMessages(4);
-  const timestamps = await rows().evaluateAll((elements) =>
-    elements
-      .slice(0, 4)
-      .map((element) =>
-        Date.parse(
-          element
-            .querySelector(".event-timestamp")!
-            .textContent!.replace(" UTC", "Z")
-            .replace(" ", "T"),
-        ),
-      ),
-  );
   await rows().nth(1).locator(".inspect-cell").first().click();
   await rows()
     .nth(3)
@@ -235,61 +221,82 @@ async function selectPair() {
   await expect(
     page.locator('.virtual-event[data-selected="true"]'),
   ).toHaveCount(2);
-  return { messages, timestamps };
+  const cells = await rows().evaluateAll((elements) =>
+    [elements[1], elements[3]].map((row) =>
+      Array.from(row.querySelectorAll<HTMLElement>(".log-cell")).map((cell) =>
+        cell.innerText === "—"
+          ? ""
+          : cell.innerText.replace(/[\t\r\n]+/g, " ").trim(),
+      ),
+    ),
+  );
+  return { messages, cells };
 }
-function recordsOf(text: string) {
-  return text.split("\n").map((line) => JSON.parse(line));
-}
-function expected(message: string, timestamp: number) {
-  const value = JSON.parse(message);
-  return {
-    "@timestamp": timestamp,
-    "/request/id": value.request.id,
-    "@level": value.level.toLowerCase(),
-    "/request/durationMs": value.request.durationMs,
-    "/items": value.items,
-    "/items/1/metadata/enabled": true,
-    "/missing": null,
-    "@message": message,
-  };
-}
+
 for (const mode of ["Table", "Hybrid", "JSON"])
-  test(`${mode} context menu copies typed records with visible pinned-column order and keyboard messages`, async () => {
+  test(`${mode} context copy uses message values and only tabular modes expose row copying`, async () => {
     await installClipboardProbe();
-    const { messages, timestamps } = await selectPair();
+    const { messages, cells } = await selectPair();
     await page
       .locator("label")
       .filter({ hasText: new RegExp(`^${mode}$`) })
       .click();
+    const open = async () =>
+      rows()
+        .nth(1)
+        .locator(".inspect-cell, .json-card-meta")
+        .first()
+        .click({ button: "right" });
+    await open();
     await expect(
-      page.getByRole("button", {
-        name: "Copy selected events as",
-        exact: true,
-      }),
-    ).toHaveCount(0);
-    await rows()
-      .nth(1)
-      .locator(".inspect-cell, .message-summary, .json-card-meta")
-      .first()
-      .click({ button: "right" });
+      page.getByRole("menuitem", { name: "Copy selected text", exact: true }),
+    ).toBeDisabled();
+    const copyRows = page.getByRole("menuitem", {
+      name: "Copy selected rows",
+      exact: true,
+    });
+    if (mode === "JSON") {
+      await expect(copyRows).toHaveCount(0);
+      await page.keyboard.press("Escape");
+      await viewer().press("Control+Shift+c");
+      expect(await capturedCopies()).toEqual([]);
+      await open();
+    } else {
+      await expect(copyRows).toBeEnabled();
+      await copyRows.click();
+      await expect.poll(async () => (await capturedCopies()).length).toBe(1);
+      expect(copiedRows((await capturedCopies())[0])).toEqual(cells);
+      const output = (await capturedCopies())[0].split("\n");
+      const titles = await page
+        .locator(".log-header-cell .column-sort")
+        .allTextContents();
+      expect(output[0].split(" | ").map((cell) => cell.trim())).toEqual(
+        titles.map((title) => title.trim()),
+      );
+      expect(output[1]).toMatch(/^[+-]+$/);
+      expect(output[1].length).toBe(output[0].length);
+      expect(new Set(output.map((line) => line.length)).size).toBe(1);
+      await expect(page.getByRole("menu")).toHaveCount(0);
+      await open();
+    }
     await page
-      .getByRole("menuitem", { name: /^Copy selected records(?:\s|$)/ })
+      .getByRole("menuitem", { name: "Copy selected messages", exact: true })
       .click();
-    await expect.poll(async () => (await capturedCopies()).length).toBe(1);
-    const copied = recordsOf((await capturedCopies())[0]);
-    expect(copied).toEqual([
-      expected(messages[1], timestamps[1]),
-      expected(messages[3], timestamps[3]),
-    ]);
-    expect(Object.keys(copied[0])).toEqual(fields);
-    expect(copied[0]).not.toHaveProperty("@logGroup");
+    const count = mode === "JSON" ? 1 : 2;
+    await expect.poll(async () => (await capturedCopies()).length).toBe(count);
+    expect(messagePayloads((await capturedCopies()).at(-1)!)).toBe(
+      [messages[1], messages[3]].map(copiedMessage).join("\n"),
+    );
     await viewer().press("Control+c");
     await expect
-      .poll(async () => (await capturedCopies())[1])
-      .toBe(messages[1] + "\n" + messages[3]);
+      .poll(async () => (await capturedCopies()).length)
+      .toBe(count + 1);
+    expect(messagePayloads((await capturedCopies()).at(-1)!)).toBe(
+      [messages[1], messages[3]].map(copiedMessage).join("\n"),
+    );
   });
 
-test("context records preserve multi-selection and copying follows changed sort order", async () => {
+test("row copying preserves multiple selection and follows changed sort order", async () => {
   await installClipboardProbe();
   const timestamp = page.locator(
     '.log-header-cell[data-column-path="@timestamp"]',
@@ -300,20 +307,17 @@ test("context records preserve multi-selection and copying follows changed sort 
     count++
   )
     await timestamp.locator(".column-sort").click();
-  const { messages, timestamps } = await selectPair();
+  const { cells } = await selectPair();
   await rows()
     .nth(1)
     .locator(".inspect-cell")
     .first()
     .click({ button: "right" });
   await page
-    .getByRole("menuitem", { name: /^Copy selected records(?:\s|$)/ })
+    .getByRole("menuitem", { name: "Copy selected rows", exact: true })
     .click();
   await expect.poll(async () => (await capturedCopies()).length).toBe(1);
-  expect(recordsOf((await capturedCopies())[0])).toEqual([
-    expected(messages[1], timestamps[1]),
-    expected(messages[3], timestamps[3]),
-  ]);
+  expect(copiedRows((await capturedCopies())[0])).toEqual(cells);
   for (
     let count = 0;
     count < 3 && (await timestamp.getAttribute("aria-sort")) !== "descending";
@@ -322,13 +326,10 @@ test("context records preserve multi-selection and copying follows changed sort 
     await timestamp.locator(".column-sort").click();
   await viewer().press("Control+Shift+c");
   await expect.poll(async () => (await capturedCopies()).length).toBe(2);
-  expect(recordsOf((await capturedCopies())[1])).toEqual([
-    expected(messages[3], timestamps[3]),
-    expected(messages[1], timestamps[1]),
-  ]);
+  expect(copiedRows((await capturedCopies())[1])).toEqual([...cells].reverse());
 });
 
-test("record shortcut respects text input and disabled empty selection", async () => {
+test("row shortcut respects edit controls and an empty selection", async () => {
   await installClipboardProbe();
   await selectPair();
   const search = page.getByRole("textbox", {
@@ -352,14 +353,164 @@ test("record shortcut respects text input and disabled empty selection", async (
   expect(await capturedCopies()).toEqual([]);
   await viewer().press("Control+Shift+c");
   await expect.poll(async () => (await capturedCopies()).length).toBe(1);
-  expect(recordsOf((await capturedCopies())[0])).toHaveLength(2);
+  expect(copiedRows((await capturedCopies())[0])).toHaveLength(2);
   await search.fill("no-such-copy-record-event");
   await expect(viewer()).toHaveAttribute("aria-rowcount", "0");
-  await expect(
-    page.getByRole("button", { name: "Copy selected events as", exact: true }),
-  ).toHaveCount(0);
   await viewer().press("Control+Shift+c");
   expect(await capturedCopies()).toHaveLength(1);
+});
+
+test("mixed events copy complete message and cell values with tabs, quotes and line breaks", async () => {
+  await installClipboardProbe();
+  const preferred = 'preferred\t"message"\n' + "full value ".repeat(180);
+  const fallback = "fallback\r\nmessage";
+  const plain = 'plain\t"event"\nsecond line';
+  const payloads = [
+    JSON.stringify({
+      msg: preferred,
+      message: "other",
+      request: { id: 'a\t"b"', durationMs: 42 },
+    }),
+    JSON.stringify({ msg: " ", message: fallback }),
+    plain,
+  ];
+  await app!.evaluate(({ ipcMain }, messages) => {
+    ipcMain.removeHandler("explorer:query");
+    ipcMain.handle("explorer:query", (event, request) => {
+      setImmediate(() =>
+        event.sender.send("explorer:update", {
+          requestId: request.requestId,
+          state: "complete",
+          replace: true,
+          events: messages.map((message, index) => ({
+            id: `copy-special-${index}`,
+            timestamp: 1700000000000 + index * 1000,
+            logGroup: "/aws/lambda/orders-api",
+            logStream: "copy-special-stream",
+            message,
+          })),
+        }),
+      );
+    });
+  }, payloads);
+  await page.getByTestId("run-query").click();
+  await expect(viewer()).toHaveAttribute("aria-rowcount", "3");
+  await rows().first().locator(".inspect-cell").first().click();
+  await viewer().press("Control+a");
+  await viewer().press("Control+c");
+  await expect
+    .poll(async () =>
+      copiedMessages((await capturedCopies())[0] ?? "").map(
+        (record) => record.message,
+      ),
+    )
+    .toEqual(payloads.map((raw) => JSON.parse(copiedMessage(raw))));
+  const records = copiedMessages((await capturedCopies())[0]);
+  expect(records.map((record) => Object.keys(record))).toEqual(
+    payloads.map(() => ["timestamp", "level", "message"]),
+  );
+  expect(records[0].timestamp).toBe("2023-11-14T22:13:20.000Z");
+  expect(records[0].level).toBe("UNKNOWN");
+  await viewer().press("Control+Shift+c");
+  await expect.poll(async () => (await capturedCopies()).length).toBe(2);
+  const cells = copiedRows((await capturedCopies())[1]);
+  const paths = await page
+    .locator(".log-header-cell")
+    .evaluateAll((elements) =>
+      elements.map((element) => element.getAttribute("data-column-path")),
+    );
+  expect(cells.map((row) => row[paths.indexOf("@message")])).toEqual([
+    preferred.replace(/[\t\r\n]+/g, " ").trim(),
+    "fallback message",
+    'plain "event" second line',
+  ]);
+  expect(cells[0][paths.indexOf("/request/id")]).toBe('a "b"');
+  expect(cells[0][paths.indexOf("/request/durationMs")]).toBe("42 ms");
+  expect(cells.every((row) => row.length === paths.length)).toBe(true);
+  const lines = (await capturedCopies())[1].split("\n");
+  expect(lines).toHaveLength(5);
+  expect(new Set(lines.map((line) => line.length)).size).toBe(1);
+  expect(
+    lines
+      .filter((_, index) => index !== 1)
+      .map((line) => [...line.matchAll(/ \| /g)].map((match) => match.index)),
+  ).toEqual(
+    Array.from({ length: 4 }, () =>
+      [...lines[0].matchAll(/ \| /g)].map((match) => match.index),
+    ),
+  );
+});
+
+test("multi-source copy messages retains all payload fields and readable sources without inspector metadata", async () => {
+  await installClipboardProbe();
+  await app!.evaluate(({ ipcMain }) => {
+    ipcMain.removeHandler("explorer:query");
+    ipcMain.handle("explorer:query", (event, request) => {
+      setImmediate(() =>
+        event.sender.send("explorer:update", {
+          requestId: request.requestId,
+          state: "complete",
+          replace: true,
+          events: [
+            {
+              id: "multi-copy-0",
+              timestamp: 1700000000000,
+              ingestionTime: 1700000000099,
+              logGroup: "/aws/lambda/orders-api",
+              logStream: "private-stream",
+              message: JSON.stringify({
+                level: "INFO",
+                msg: "visible",
+                request: { id: 7 },
+                extra: "retain",
+              }),
+            },
+            {
+              id: "multi-copy-1",
+              timestamp: 1700000001000,
+              ingestionTime: 1700000001099,
+              logGroup: "/aws/lambda/payments-worker",
+              logStream: "private-stream",
+              message: "ERROR payment failed\n",
+            },
+          ],
+        }),
+      );
+    });
+  });
+  await page.getByTestId("run-query").click();
+  await expect(viewer()).toHaveAttribute("aria-rowcount", "2");
+  await rows().first().locator(".inspect-cell").first().click();
+  await viewer().press("Control+a");
+  await viewer().press("Control+c");
+  await expect
+    .poll(async () => copiedMessages((await capturedCopies())[0] ?? ""))
+    .toEqual([
+      {
+        timestamp: "2023-11-14T22:13:20.000Z",
+        level: "INFO",
+        source: "orders-api",
+        message: {
+          level: "INFO",
+          msg: "visible",
+          request: { id: 7 },
+          extra: "retain",
+        },
+      },
+      {
+        timestamp: "2023-11-14T22:13:21.000Z",
+        level: "ERROR",
+        source: "payments-worker",
+        message: "ERROR payment failed\n",
+      },
+    ]);
+  await viewer().press("Control+Shift+c");
+  await expect.poll(async () => (await capturedCopies()).length).toBe(2);
+  const table = (await capturedCopies())[1];
+  expect(table.split("\n")).toHaveLength(4);
+  expect(table).toContain("orders-api");
+  expect(table).toContain("payments-worker");
+  expect(table).not.toContain('"ERROR payment failed');
 });
 
 for (const theme of ["light", "dark"])
@@ -437,11 +588,18 @@ for (const theme of ["light", "dark"])
     const message =
       "ERROR Request failed\nTypeError: Cannot read properties of undefined\n    at processOrder (src/orders.ts:142:18)\n    at async handler (src/handler.ts:31:5)";
     await viewer().press("Control+c");
-    await expect.poll(async () => (await capturedCopies())[0]).toBe(message);
+    await expect
+      .poll(
+        async () =>
+          copiedMessages((await capturedCopies())[0] ?? "")[0]?.message,
+      )
+      .toBe(message);
     await viewer().press("Control+Shift+c");
     await expect.poll(async () => (await capturedCopies()).length).toBe(2);
-    expect(recordsOf((await capturedCopies())[1])).toHaveLength(1);
-    expect(recordsOf((await capturedCopies())[1])[0]["@message"]).toBe(message);
+    expect(copiedRows((await capturedCopies())[1])).toHaveLength(1);
+    expect(copiedRows((await capturedCopies())[1])[0].at(-1)).toBe(
+      message.replaceAll("\n", " "),
+    );
     await first
       .getByRole("button", { name: "Expand event details", exact: true })
       .click();

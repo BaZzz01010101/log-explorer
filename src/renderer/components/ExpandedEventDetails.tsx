@@ -9,7 +9,7 @@ import {
 
 interface Props {
   children: ReactNode;
-  footer: ReactNode;
+  footer?: ReactNode;
   initialHeight?: number;
   height?: number | null;
   eventId?: string;

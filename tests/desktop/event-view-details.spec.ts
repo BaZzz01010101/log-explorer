@@ -1,3 +1,4 @@
+import { copiedRows, copiedMessages } from "./copied-rows";
 import { createWorkspace } from "../../src/renderer/workspace";
 import { desktopExecutablePath } from "./desktop-app";
 import {
@@ -410,7 +411,7 @@ for (const theme of ["light", "dark"]) {
     for (const name of [
       "Copy selected text",
       "Copy selected messages",
-      "Copy selected records",
+      "Copy selected rows",
     ])
       await expect(
         page.getByRole("menuitem", { name, exact: true }).locator("svg"),
@@ -426,17 +427,41 @@ test("multi-source default order stays chronological through unordered pages wit
   await expect(viewer).toHaveAttribute("aria-rowcount", "40");
   await expect(timestamp).toHaveAttribute("aria-sort", "none");
   const copyTimes = async () => {
+    const previous = (await capturedCopies()).length;
     await viewer.press("Control+a");
     await viewer.press("Control+Shift+c");
     await expect
       .poll(async () => (await capturedCopies()).length)
-      .toBeGreaterThan(0);
+      .toBe(previous + 1);
     const copies = await capturedCopies();
-    return copies
-      .at(-1)!
-      .split("\n")
-      .map((line) => JSON.parse(line)["@timestamp"] as number);
+    return copiedRows(copies.at(-1)!).map((cells) =>
+      Date.parse(
+        cells[0]
+          .replace(/ UTC([+-])/, "$1")
+          .replace(/ UTC$/, "Z")
+          .replace(" ", "T"),
+      ),
+    );
   };
+  await viewer.press("Control+a");
+  await viewer.press("Control+c");
+  await expect.poll(async () => (await capturedCopies()).length).toBe(1);
+  const records = copiedMessages((await capturedCopies())[0]);
+  expect(records).toHaveLength(40);
+  expect(
+    records.every((record) =>
+      ["orders-api", "payments-worker"].includes(record.source!),
+    ),
+  ).toBe(true);
+  expect(records.map((record) => Date.parse(record.timestamp))).toEqual(
+    records.map((record) => Date.parse(record.timestamp)).sort((a, b) => a - b),
+  );
+  expect(
+    records.every(
+      (record) =>
+        Object.keys(record).join(",") === "timestamp,level,source,message",
+    ),
+  ).toBe(true);
   const before = await copyTimes();
   expect(before).toHaveLength(40);
   expect(before).toEqual([...before].sort((a, b) => a - b));

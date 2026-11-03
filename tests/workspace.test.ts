@@ -303,6 +303,20 @@ describe("workspace state", () => {
     expect(columns[0].pinned).toBe(true);
   });
 
+  it("widens the old automatic timestamp default while retaining custom widths and formats", () => {
+    const state = createWorkspace();
+    state.tabs[0].view.columns[0].width = 194;
+    expect(restoreWorkspace(state).tabs[0].view.columns[0].width).toBe(260);
+    state.tabs[0].view.columns[0].width = 330;
+    expect(restoreWorkspace(state).tabs[0].view.columns[0].width).toBe(330);
+    state.tabs[0].view.columns[0] = {
+      ...state.tabs[0].view.columns[0],
+      width: 194,
+      format: "datetime",
+    };
+    expect(restoreWorkspace(state).tabs[0].view.columns[0].width).toBe(194);
+  });
+
   it("restores every column the viewer supports instead of silently dropping columns", () => {
     const state = createWorkspace();
     state.tabs[0].view.columns = Array.from({ length: 80 }, (_, index) => ({

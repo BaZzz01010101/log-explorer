@@ -80,6 +80,7 @@ import {
   inferLevel,
   messagePreview,
   META_COLUMNS,
+  DEFAULT_TIMESTAMP_COLUMN_WIDTH,
   parseLogMessage,
   propertyFilterTerm,
   serializeEvents,
@@ -91,6 +92,7 @@ import {
 import "./viewer.css";
 import {
   serializeSelectedEvents,
+  COPY_TEXT_LIMIT,
   type SelectedEventCopyFormat,
 } from "../../shared/event-copy";
 import { sourceColumnConfig } from "../source-column";
@@ -102,6 +104,7 @@ import {
 import { eventSourceDisplay, sourceCount } from "../../shared/source-labels";
 import { useColumnHeaderDrag } from "../useColumnHeaderDrag";
 import { useScrollPagination } from "../useScrollPagination";
+import { useMeasuredVirtualRows } from "../useMeasuredVirtualRows";
 import {
   useMessageExpansion,
   type MessageExpansionState,
@@ -207,7 +210,7 @@ const columnNames: Record<string, string> = {
   "@source": "Source",
 };
 const initialColumns: ColumnConfig[] = [
-  { path: "@timestamp", width: 194, pinned: true },
+  { path: "@timestamp", width: DEFAULT_TIMESTAMP_COLUMN_WIDTH, pinned: true },
   { path: "@level", width: 84 },
   { path: "@message", width: 560 },
   { path: "@logStream", width: 220, hidden: true },
@@ -361,24 +364,24 @@ export function LogViewer({
     }
     // Global commands apply lazily, including to rows arriving later or outside
     // the virtual window. Keep manual branches until another explicit command.
-    if (view.mode !== "hybrid") {
-      const choice = expansion.isExpanded(event.id);
-      const value = (parsed ?? deserialized.parsedFor(event)).value;
-      if (
-        state.revision !== expansion.revision ||
-        state.choice !== choice ||
-        (choice && state.value !== value)
-      ) {
-        state.expanded =
-          choice && value !== undefined
-            ? objectExpansionPaths(value)
-            : new Set([""]);
-        state.revision = expansion.revision;
-        state.choice = choice;
-        state.value = value;
-        state.full = choice;
-        state.applied = recursiveRequests.current.get(event);
-      }
+    const choice =
+      expansion.isExpanded(event.id) &&
+      (view.mode !== "hybrid" || expansion.all);
+    const value = (parsed ?? deserialized.parsedFor(event)).value;
+    if (
+      state.revision !== expansion.revision ||
+      (view.mode !== "hybrid" && state.choice !== choice) ||
+      (choice && state.value !== value)
+    ) {
+      state.expanded =
+        choice && value !== undefined
+          ? objectExpansionPaths(value)
+          : new Set([""]);
+      state.revision = expansion.revision;
+      state.choice = choice;
+      state.value = value;
+      state.full = choice;
+      state.applied = recursiveRequests.current.get(event);
     }
     return state;
   };
@@ -724,12 +727,12 @@ export function LogViewer({
   );
   const selectedEventIds = new Set(selection.selectedIds);
   const viewerId = useId();
-  const virtualizer = useVirtualizer({
+  const virtualizer = useVirtualizer<HTMLDivElement, HTMLDivElement>({
     count: rows.length,
     getScrollElement: () => scrollRef.current,
-    // Preserve fractional border heights so the following row cannot cover a
-    // detail separator at display scales where borders are subpixel-sized.
-    measureElement: (element) => element.getBoundingClientRect().height,
+    // Measurement publishes from layout effects; React batches these before
+    // paint without attempting flushSync inside a lifecycle method.
+    useFlushSync: false,
     estimateSize: (index) =>
       view.mode === "json"
         ? 180
@@ -741,21 +744,16 @@ export function LogViewer({
     getItemKey: (index) => rows[index]!.id,
     overscan: 7,
   });
-  useEffect(() => {
-    // Reset only global layout changes. A single expansion must retain other
-    // measured heights; ResizeObserver measures the row that actually changes.
-    virtualizer.measure();
-    scrollRef.current
-      ?.querySelectorAll<HTMLElement>(".virtual-event")
-      .forEach((element) => virtualizer.measureElement(element));
-  }, [
-    view.mode,
-    view.wrap,
-    preferences.density,
-    preferences.fontSize,
-    expansion.all,
+  const measureRow = useMeasuredVirtualRows(
     virtualizer,
-  ]);
+    [
+      view.mode,
+      view.wrap,
+      preferences.density,
+      preferences.fontSize,
+      expansion.all,
+    ].join(":"),
+  );
   const inspectedIndex = selection.index;
   useEffect(() => {
     if (!revealEvent) return;
@@ -879,7 +877,12 @@ export function LogViewer({
     }
   };
   const copySelected = async (format: SelectedEventCopyFormat = "messages") => {
-    if (filtering || selection.selectedIds.length === 0) return;
+    if (
+      filtering ||
+      selection.selectedIds.length === 0 ||
+      (format === "rows" && view.mode === "json")
+    )
+      return;
     try {
       const selected = rows
         .filter((row) => selectedEventIds.has(row.original.event.id))
@@ -889,12 +892,45 @@ export function LogViewer({
         ...table.getCenterVisibleLeafColumns(),
         ...table.getRightVisibleLeafColumns(),
       ].map((column) => columnPath(column.id));
+      const columnConfig = new Map(
+        config.map((column) => [column.path, column]),
+      );
+      const sourceLabel = (event: LogEvent) =>
+        eventSourceDisplay(
+          event,
+          sourceContext?.sources ?? [],
+          sourceContext?.connections ?? [],
+          sourceContext?.connectionId ?? "",
+        ).label;
       await copy(
         serializeSelectedEvents(
           selected,
           format,
           columns,
           deserialized.parsedFor,
+          (event, path, parsed) => {
+            const column = columnConfig.get(path);
+            const automatic = !column?.format || column.format === "auto";
+            if (automatic) {
+              if (path === "@timestamp")
+                return timeLabel(event.timestamp, preferences.timezone);
+              if (path === "@level")
+                return inferLevel(parsed, event.message).toUpperCase();
+              if (path === "@source") return sourceLabel(event);
+              if (path === "@message")
+                return messagePreview(parsed)?.value ?? event.message;
+            }
+            return formatColumnValue(
+              eventColumnValue(event, parsed, path),
+              column?.format,
+              preferences.timezone,
+              COPY_TEXT_LIMIT,
+            );
+          },
+          sourceContext && sourceCount(sourceContext.sources) > 1
+            ? sourceLabel
+            : undefined,
+          titleFor,
         ),
       );
     } catch (error) {
@@ -1146,7 +1182,7 @@ export function LogViewer({
                 const next = !expansion.all;
                 expansion.toggleAll();
                 // Preview themes share JSON branches as well as row expansion.
-                if (sharedJsonExpansion && view.mode !== "hybrid")
+                if (sharedJsonExpansion)
                   for (const row of allRows)
                     if (row.parsed.kind === "json")
                       sharedJsonExpansion.onChange(
@@ -1396,7 +1432,7 @@ export function LogViewer({
                     !window.getSelection()?.toString()
                   ) {
                     event.preventDefault();
-                    void copySelected(event.shiftKey ? "records" : "messages");
+                    void copySelected(event.shiftKey ? "rows" : "messages");
                     return;
                   }
                 }
@@ -1808,7 +1844,7 @@ export function LogViewer({
                               } else selection.inspect(row.event.id);
                             }}
                             data-index={virtualRow.index}
-                            ref={virtualizer.measureElement}
+                            ref={measureRow}
                             style={
                               {
                                 "--event-highlight-bg":
@@ -1859,22 +1895,6 @@ export function LogViewer({
                                   <span className="event-source">
                                     {row.event.logStream}
                                   </span>
-                                  <span className="toolbar-spacer" />
-                                  <button
-                                    className="event-inspect"
-                                    onClick={() =>
-                                      selection.inspect(row.event.id)
-                                    }
-                                  >
-                                    Inspect <IconArrowRight size={12} />
-                                  </button>
-                                  <button
-                                    className="event-action"
-                                    aria-label="Copy raw event"
-                                    onClick={() => copy(row.event.message)}
-                                  >
-                                    <IconCopy size={13} />
-                                  </button>
                                 </div>
                                 <div className="event-message-details">
                                   <MessageContent
@@ -2029,40 +2049,6 @@ export function LogViewer({
                                         );
                                       onPauseLiveFollow?.();
                                     }}
-                                    footer={
-                                      <Group gap="xs" mt={6}>
-                                        {view.mode === "hybrid" && (
-                                          <Button
-                                            size="compact-xs"
-                                            variant="subtle"
-                                            onClick={() =>
-                                              toggleExpand(row.event.id)
-                                            }
-                                          >
-                                            Fold message
-                                          </Button>
-                                        )}
-                                        <Button
-                                          size="compact-xs"
-                                          variant="subtle"
-                                          onClick={() =>
-                                            selection.inspect(row.event.id)
-                                          }
-                                        >
-                                          Open inspector
-                                        </Button>
-                                        <Button
-                                          size="compact-xs"
-                                          variant="subtle"
-                                          leftSection={<IconCopy size={12} />}
-                                          onClick={() =>
-                                            copy(row.event.message)
-                                          }
-                                        >
-                                          Copy raw
-                                        </Button>
-                                      </Group>
-                                    }
                                   >
                                     <MessageContent
                                       row={row}
@@ -2146,18 +2132,28 @@ export function LogViewer({
                 </Menu.Item>
                 <Menu.Item
                   leftSection={<IconCopy size={14} />}
-                  disabled={selection.selectedIds.length === 0 || filtering}
+                  disabled={
+                    contextSelectedText.length > 0 ||
+                    selection.selectedIds.length === 0 ||
+                    filtering
+                  }
                   onClick={() => void copySelected("messages")}
                 >
                   Copy selected messages
                 </Menu.Item>
-                <Menu.Item
-                  leftSection={<IconCopy size={14} />}
-                  disabled={selection.selectedIds.length === 0 || filtering}
-                  onClick={() => void copySelected("records")}
-                >
-                  Copy selected records
-                </Menu.Item>
+                {view.mode !== "json" && (
+                  <Menu.Item
+                    leftSection={<IconCopy size={14} />}
+                    disabled={
+                      contextSelectedText.length > 0 ||
+                      selection.selectedIds.length === 0 ||
+                      filtering
+                    }
+                    onClick={() => void copySelected("rows")}
+                  >
+                    Copy selected rows
+                  </Menu.Item>
+                )}
                 {onContext &&
                   (() => {
                     const event = allRows.find(

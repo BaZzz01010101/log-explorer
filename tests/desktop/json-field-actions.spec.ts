@@ -1,3 +1,4 @@
+import { copiedRows, copiedMessages } from "./copied-rows";
 import { openSettingsWindow } from "./settings-panel";
 import {
   _electron as electron,
@@ -307,16 +308,29 @@ test("field menus deserialize nested values temporarily, preserve raw records an
     () => (globalThis as any).__fieldEvents[0].message,
   );
   await page.locator(".viewer-scroll").press("Control+c");
-  expect(
+  const record = copiedMessages(
     (await app.evaluate(() => (globalThis as any).__fieldCopies)).at(-1),
-  ).toBe(original);
+  )[0];
+  expect(record.level).toBe("INFO");
+  expect(Object.keys(record)).toEqual(["timestamp", "level", "message"]);
+  expect(record.message).toEqual({
+    ...JSON.parse(original),
+    payload: { "a/b": { value: 7, inner: [1, { ok: true }] }, list: [10, 20] },
+    url: { message: "café +" },
+    base64: { value: 7 },
+  });
   await event.locator(".inspect-cell").first().click({ button: "right" });
-  await page.getByRole("menuitem", { name: /^Copy selected records/ }).click();
-  const records = JSON.parse(
+  await page.getByRole("menuitem", { name: /^Copy selected rows/ }).click();
+  const cells = copiedRows(
     (await app.evaluate(() => (globalThis as any).__fieldCopies)).at(-1),
-  );
-  expect(records["/payload/a~1b/value"]).toBe(7);
-  expect(records["@message"]).toBe(original);
+  )[0];
+  const paths = await page
+    .locator(".log-header-cell")
+    .evaluateAll((elements) =>
+      elements.map((element) => element.getAttribute("data-column-path")),
+    );
+  expect(cells[paths.indexOf("/payload/a~1b/value")]).toBe("7");
+  expect(cells[paths.indexOf("@message")]).toBe(original);
   await page
     .getByRole("button", { name: "Export loaded filtered events", exact: true })
     .click();
@@ -336,7 +350,12 @@ test("field menus deserialize nested values temporarily, preserve raw records an
     await openSettingsWindow(page);
     await page.getByRole("tab", { name: "Preferences", exact: true }).click();
     await page.getByRole("combobox", { name: "Theme", exact: true }).click();
-    await page.getByRole("option", { name: theme, exact: true }).click();
+    await page
+      .getByRole("option", {
+        name: theme === "light" ? "Light" : "Dark",
+        exact: true,
+      })
+      .click();
     await expect(page.locator("html")).toHaveAttribute(
       "data-mantine-color-scheme",
       theme,

@@ -17,7 +17,7 @@ import type {
 } from "../shared/contracts";
 import { tabTitle, sourceCount } from "../shared/source-labels";
 import { historyRetentionDays, recentClosedTabs } from "./closed-tab-history";
-import { LOG_LEVELS } from "../shared/log-data";
+import { LOG_LEVELS, DEFAULT_TIMESTAMP_COLUMN_WIDTH } from "../shared/log-data";
 import { parseHighlightProfiles } from "../shared/highlights";
 import {
   legacyLayout,
@@ -196,7 +196,11 @@ function defaultView(): ViewConfig {
   return {
     mode: "hybrid",
     columns: [
-      { path: "@timestamp", width: 194, pinned: true },
+      {
+        path: "@timestamp",
+        width: DEFAULT_TIMESTAMP_COLUMN_WIDTH,
+        pinned: true,
+      },
       { path: "@level", width: 84 },
       { path: "@message", width: 560 },
     ],
@@ -263,10 +267,18 @@ function parseView(value: unknown): ViewConfig {
             column.path !== "/service/name" && column.path !== "/request/id",
         )
       : columns
-    ).filter(
-      (column, index, current) =>
-        current.findIndex((other) => other.path === column.path) === index,
-    ),
+    )
+      .map((column) =>
+        column.path === "@timestamp" &&
+        column.width === 194 &&
+        (!column.format || column.format === "auto")
+          ? { ...column, width: DEFAULT_TIMESTAMP_COLUMN_WIDTH }
+          : column,
+      )
+      .filter(
+        (column, index, current) =>
+          current.findIndex((other) => other.path === column.path) === index,
+      ),
     localSearch: string(raw.localSearch),
     ...(typeof raw.localSearchRegex === "boolean"
       ? { localSearchRegex: raw.localSearchRegex }

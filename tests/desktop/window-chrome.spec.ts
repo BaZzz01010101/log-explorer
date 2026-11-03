@@ -416,7 +416,7 @@ test("narrow zoom keeps caption controls above content and clear of panel action
 test("native zoom shortcuts still work when a log-event menu owns keyboard focus", async () => {
   const event = page.locator(".virtual-event").first();
   await event.locator(".inspect-cell").first().click({ button: "right" });
-  await page.getByRole("menuitem", { name: /^Copy selected records/ }).focus();
+  await page.getByRole("menuitem", { name: /^Copy selected rows/ }).focus();
   await page.keyboard.press("Control+=");
   await expect
     .poll(() =>

@@ -1,5 +1,31 @@
 # Building and releasing
 
+## Build 0.1.74
+
+Unfolded and wrapped event views now measure unchanged rows after layout resets, preventing estimated-height gaps and overlapping rows. Hybrid bulk unfolding opens nested JSON branches. Field names retain their width before values wrap, automatic timestamps use a wider default, and redundant Hybrid/JSON row actions are removed. Existing detail resizing, native text selection and tab-state retention remain covered. See [layout diagnosis and verification](wrapped-events-0.1.74.md).
+
+Evidence: `.tmp/unit-0.1.74-final.json`, `.tmp/desktop-verification-0.1.74.json` and `release/0.1.74/artifact-manifest.json`. The natural-exit handoff retains the prior standard build; state is `.tmp/standard-build-update-0.1.74.json`. Six hidden regression checks run against the actual launch folder after promotion.
+
+## Build 0.1.73
+
+The row-menu label is **Copy selected messages**. Copied tables now start with the visible column headers and a horizontal `-`/`+` separator. Header and data widths share the same alignment, and both header lines are included in the clipboard size limit. Message JSON records and selected-text behavior retain their existing semantics.
+
+Evidence: `.tmp/unit-0.1.73-final.json`, `.tmp/desktop-verification-0.1.73.json` and `release/0.1.73/artifact-manifest.json`. The natural-exit handoff retains a backup and records its state in `.tmp/standard-build-update-0.1.73.json`. Two focused hidden checks verify the exact normal launch folder after promotion.
+
+## Build 0.1.72
+
+Row copying now produces a left aligned text table with `|` separators, fixed column widths, one physical line per event and no CSV quote wrappers. Message copying produces complete JSON event records with timestamp, level and full structured/plain payload, plus readable source labels for multisource views. Inspector transport metadata is omitted. Selected-text command exclusivity remains in place. See [copy formats and regression evidence](event-copy-0.1.72.md).
+
+Verification artifacts: `.tmp/unit-0.1.72-final.json`, `.tmp/desktop-verification-0.1.72.json` and `release/0.1.72/artifact-manifest.json`. Promotion uses the hash-checked natural-exit workflow with a retained backup; state is `.tmp/standard-build-update-0.1.72.json`. Nine hidden copy checks run against the normal launch folder after promotion. The user app is never closed or relaunched by these helpers.
+
+## Build 0.1.71
+
+Event copying separates selected text, message strings and displayed cell values. A native text selection disables the other two commands. Copy selected rows replaces record JSON with formatted tab-separated cells and is hidden in JSON mode. Structured message copying prefers `msg`, then `message`, with complete raw text as the fallback. See [copy behavior](event-copy-0.1.71.md).
+
+Verification: 1,130 unit tests and 21 distinct hidden/offline packaged scenarios pass. The initial package run passed 20 cases; the decoded-field test reached its theme check after passing the copy assertions, then failed on a stale lowercase theme label. Its corrected test passes on the identical package, and both reports are retained. Evidence: `.tmp/unit-0.1.71-final2.json`, `.tmp/desktop-verification-0.1.71.json` and `release/0.1.71/artifact-manifest.json`.
+
+The hash-checked handoff updated the normal launch folder while the app was closed and retained the previous standard build. State is `.tmp/standard-build-update-0.1.71.json`; eight hidden checks run against the standard launch folder after promotion. Helpers never close or relaunch the user's app.
+
 ## Build 0.1.70
 
 This update retains the inspector fold control for plain/raw events, makes Today more prominent, marks the current calendar date independently of selected ranges and unifies row-menu copy icons. Stable cell component identities fix native double-click and word-drag selection loss during Hybrid expansion. Default multi-source ordering was investigated and tested without changing its production logic.
