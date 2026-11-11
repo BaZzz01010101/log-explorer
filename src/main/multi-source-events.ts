@@ -27,6 +27,7 @@ export function scopedQueries(request: QueryRequest): QueryRequest[] {
     scoped.sources.push({
       logGroup: source.logGroup,
       ...(source.logStreams?.length ? { logStreams: source.logStreams } : {}),
+      ...(source.gcp ? { gcp: { ...source.gcp } } : {}),
     });
   }
   return [...groups.values()];
@@ -55,6 +56,7 @@ export function createMultiSourceEvents(
     async events(
       request: QueryRequest,
       signal: AbortSignal,
+      onProgress?: (update: QueryUpdate) => void,
     ): Promise<QueryUpdate> {
       try {
         const started = Date.now();
@@ -90,24 +92,26 @@ export function createMultiSourceEvents(
         let truncated = false;
         let messageCharacters = 0;
         let reads = 0;
+        let published = 0;
         while (events.length < request.limit) {
           throwIfAborted(signal);
-          // Sequential reads bound network concurrency under the parent query slot.
+          // Fetch independent heads concurrently, bounded under the parent query slot.
           let unresolved = false;
-          for (let index = 0; index < queries.length; index++) {
-            const partition = partitions[index],
-              query = queries[index];
-            if (partition.done || partition.events.length) continue;
-            if (reads >= 128) {
-              unresolved = true;
-              break;
-            }
-            reads++;
-            const result = await adapterFor(query.connection).events(
-              { ...query, cursor: partition.cursor, limit: chunk },
-              signal,
-            );
+          const needed = queries.map((_, index) => index).filter((index) => !partitions[index].done && !partitions[index].events.length);
+          for (let offset = 0; offset < needed.length; offset += 4) {
+            const batch = needed.slice(offset, offset + Math.min(4, 128 - reads));
+            if (!batch.length) { unresolved = true; break; }
+            reads += batch.length;
+            const results = await Promise.allSettled(batch.map((index) => {
+              const query = queries[index];
+              return adapterFor(query.connection).events({ ...query, cursor: partitions[index].cursor, limit: chunk }, signal);
+            }));
             throwIfAborted(signal);
+            const failure = results.find((result) => result.status === "rejected");
+            if (failure?.status === "rejected") throw failure.reason;
+            for (let position = 0; position < batch.length; position++) {
+            const index = batch[position], partition = partitions[index], query = queries[index];
+            const result = (results[position] as PromiseFulfilledResult<QueryUpdate>).value;
             if (result.state === "error")
               throw new Error(result.error ?? "A source query failed.");
             partition.events = (result.events ?? [])
@@ -123,6 +127,8 @@ export function createMultiSourceEvents(
             partition.cursor = result.cursor;
             truncated ||= !!result.truncated;
             if (!partition.done && !partition.events.length) unresolved = true;
+            }
+            if (batch.length < 4 && offset + batch.length < needed.length) { unresolved = true; break; }
           }
           // An adapter may pause a sparse scan with an empty continuation. Do not
           // emit another region's later events until that head becomes known.
@@ -151,6 +157,10 @@ export function createMultiSourceEvents(
           }
           messageCharacters += head.message.length;
           events.push(partitions[selected].events.shift()!);
+          if (onProgress && events.length - published >= 256) {
+            onProgress({ requestId: request.requestId, state: "running", events: events.slice(published), replace: !request.cursor && published === 0 });
+            published = events.length;
+          }
         }
         let cursor: string | undefined;
         if (
@@ -195,9 +205,9 @@ export function createMultiSourceEvents(
         return {
           requestId: request.requestId,
           state: "complete",
-          events,
+          events: events.slice(published),
           cursor,
-          replace: !request.cursor,
+          replace: !request.cursor && published === 0,
           truncated,
           stats: {
             recordsMatched: events.length,

@@ -40,6 +40,40 @@ const adapter = (events: LogAdapter["events"]): LogAdapter => ({
   destroy: vi.fn(),
 });
 
+it("starts independent source reads concurrently while keeping merged events chronological", async () => {
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  const started: string[] = [];
+  const merger = createMultiSourceEvents((connection) => adapter(async (input) => {
+    started.push(connection.id);
+    await gate;
+    return { requestId: input.requestId, state: "complete", events: [{ id: connection.id, timestamp: connection.id === "west" ? 2 : 1, message: connection.id, logGroup: "/same", logStream: "one" }] };
+  }));
+  const task = merger.events(request(), new AbortController().signal);
+  try { await vi.waitFor(() => expect(started).toHaveLength(2), { timeout: 200 }); }
+  finally { release(); }
+  const result = await task;
+  expect(result.events?.map((event) => event.timestamp)).toEqual([1, 2]);
+});
+
+it("publishes ordered batches before waiting for later source pages", async () => {
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  const progress = vi.fn();
+  const merger = createMultiSourceEvents((connection) => adapter(async (input) => {
+    if (input.cursor) { await gate; return { requestId: input.requestId, state: "complete", events: [] }; }
+    const base = connection.id === "west" ? 0 : 1000;
+    return { requestId: input.requestId, state: "complete", cursor: "next", events: Array.from({ length: 256 }, (_, i) => ({ id: String(i), timestamp: base + i, message: "x", logGroup: "/same", logStream: "one" })) };
+  }));
+  const task = merger.events(request({ limit: 800 }), new AbortController().signal, progress);
+  try { await vi.waitFor(() => expect(progress).toHaveBeenCalled(), { timeout: 300 }); }
+  finally { release(); }
+  const result = await task;
+  const combined = [...progress.mock.calls.flatMap(([update]) => update.events ?? []), ...(result.events ?? [])];
+  expect(combined).toHaveLength(512);
+  expect(combined.every((event, index) => index === 0 || event.timestamp >= combined[index - 1].timestamp)).toBe(true);
+});
+
 it("preserves ordering through sparse scans and binds continuation to exact regional selection", async () => {
   const calls: QueryRequest[] = [];
   const adapters = new Map(
@@ -121,7 +155,7 @@ it("cancels a regional request using its parent signal without emitting a comple
       ),
   });
   await service.query(request());
-  await expect.poll(() => started.mock.calls.length).toBe(1);
+  await expect.poll(() => started.mock.calls.length).toBeGreaterThanOrEqual(1);
   await service.cancel("q");
   expect(updates.at(-1)?.state).toBe("cancelled");
   expect(updates.some((update) => update.state === "complete")).toBe(false);

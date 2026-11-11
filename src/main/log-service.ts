@@ -14,11 +14,14 @@ import {
 } from "./aws-adapter";
 import { createMultiSourceEvents, scopedQueries } from "./multi-source-events";
 import { createOfflineAdapter } from "./offline-adapter";
+import { createGcpAdapter } from "./gcp-adapter";
 
 export interface LogServiceOptions {
   allowAws: () => boolean;
   awsAdapterFactory?: (connection: Connection) => LogAdapter;
   offlineAdapterFactory?: () => LogAdapter;
+  gcpAdapterFactory?: (connection: Connection) => LogAdapter;
+  allowGcp?: () => boolean;
 }
 interface Job {
   controller: AbortController;
@@ -81,6 +84,7 @@ function validateQuery(request: QueryRequest, live: boolean): void {
         JSON.stringify([
           source.connectionId ?? request.connection.id,
           source.logGroup,
+          source.gcp ?? null,
         ]),
       ),
     ).size !== request.sources.length
@@ -97,6 +101,8 @@ function validateQuery(request: QueryRequest, live: boolean): void {
       "Choose a valid log group and at most 100 streams per group",
     );
   const scoped = scopedQueries(request);
+  if (scoped.some((query) => query.sources.some((source) => (query.connection.mode === "gcp") !== !!source.gcp)))
+    throw new Error("A source does not match its cloud connection.");
   if (scoped.length > 1 && live)
     throw new Error(
       "Live Tail requires sources from one connection and region. Use Events for a combined cross-region view.",
@@ -126,6 +132,8 @@ export function createLogService(
       throw new Error(
         "AWS access is disabled. Enable it explicitly in a packaged application.",
       );
+    if (connection.mode === "gcp" && options.allowGcp && !options.allowGcp())
+      throw new Error("Google Cloud access is disabled in verification mode.");
   }
   function connectionKey(connection: Connection): string {
     return JSON.stringify([
@@ -133,6 +141,7 @@ export function createLogService(
       connection.mode,
       connection.profile,
       connection.region,
+      connection.gcpIdentity,
     ]);
   }
   function adapterFor(connection: Connection): LogAdapter {
@@ -145,7 +154,9 @@ export function createLogService(
           "Connection limit reached. Close and reopen the workspace to release unused connections.",
         );
       adapter =
-        connection.mode === "aws"
+        connection.mode === "gcp"
+          ? (options.gcpAdapterFactory?.(connection) ?? createGcpAdapter(connection))
+          : connection.mode === "aws"
           ? (options.awsAdapterFactory?.(connection) ??
             createAwsAdapter(connection, { allowAws: options.allowAws }))
           : (options.offlineAdapterFactory?.() ?? createOfflineAdapter());
@@ -268,8 +279,8 @@ export function createLogService(
         for (const query of scopedQueries(input)) gate(query.connection);
         update({ requestId: input.requestId, state: "running" });
         const queries = scopedQueries(input);
-        if (queries.length > 1) {
-          update(await multiSourceEvents.events(input, job.controller.signal));
+        if (queries.length > 1 || (!live && input.sources.length > 1 && queries.some((query) => query.connection.mode === "gcp"))) {
+          update(await multiSourceEvents.events(input, job.controller.signal, update));
         } else {
           const query = queries[0];
           const adapter = adapterFor(query.connection);
@@ -279,6 +290,9 @@ export function createLogService(
               events: value.events?.map((event) => ({
                 ...event,
                 connectionId: query.connection.id,
+                ...(live && query.connection.mode === "gcp" && input.sources.length > 1
+                  ? { id: JSON.stringify([query.connection.id, event.id]) }
+                  : {}),
               })),
             });
           if (live)

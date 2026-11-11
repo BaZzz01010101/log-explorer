@@ -2,6 +2,21 @@ import { contextBridge, ipcRenderer } from "electron";
 import type { ExplorerApi, QueryUpdate } from "../shared/contracts";
 
 const api: ExplorerApi = {
+  gcpProfiles: () => ipcRenderer.invoke("gcp:profiles"),
+  gcpProjects: (identity, cursor) =>
+    ipcRenderer.invoke("gcp:projects", identity, cursor),
+  gcpSignIn: () => ipcRenderer.invoke("gcp:signin"),
+  gcpInstallCli: () => ipcRenderer.invoke("gcp:install-cli"),
+  gcpLogs: (identity, project, cursor) =>
+    ipcRenderer.invoke("gcp:logs", identity, project, cursor),
+  gcpFunctions: (identity, project, generation, cursor) =>
+    ipcRenderer.invoke("gcp:functions", identity, project, generation, cursor),
+  gcpContexts: (identity, project) =>
+    ipcRenderer.invoke("gcp:contexts", identity, project),
+  gcpClusters: (identity, project) =>
+    ipcRenderer.invoke("gcp:clusters", identity, project),
+  gcpWorkloads: (identity, project, context) =>
+    ipcRenderer.invoke("gcp:workloads", identity, project, context),
   windowAction: (action) =>
     ipcRenderer.invoke("explorer:window-action", action),
   setWindowTheme: (theme) => ipcRenderer.invoke("explorer:window-theme", theme),

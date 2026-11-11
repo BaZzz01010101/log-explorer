@@ -29,7 +29,7 @@ export function serializeSelectedEvents(
       const parsed = parsedFor?.(event) ?? parseLogMessage(event.message);
       const line = JSON.stringify({
         timestamp: new Date(event.timestamp).toISOString(),
-        level: inferLevel(parsed, event.message).toUpperCase(),
+        level: inferLevel(parsed, event.message, event.severity).toUpperCase(),
         ...(sourceFor ? { source: sourceFor(event) } : {}),
         message: parsed.kind === "json" ? parsed.value : event.message,
       });

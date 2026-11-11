@@ -6,6 +6,7 @@ const source = z.object({
   connectionId: z.string().min(1).max(160).optional(),
   logGroup: z.string().min(1).max(512),
   logStreams: z.array(z.string().min(1).max(512)).min(1).max(100).optional(),
+  gcp: z.object({ kind: z.enum(["function", "kubernetes"]), project: z.string().min(1).max(30), region: z.string().min(1).max(40), functionName: z.string().min(1).max(253).optional(), generation: z.enum(["v1", "v2"]).optional(), service: z.string().min(1).max(253).optional(), cluster: z.string().min(1).max(253).optional(), namespace: z.string().min(1).max(253).optional(), container: z.string().min(1).max(253).optional() }).refine((value) => value.kind === "function" ? !!value.functionName && !!value.generation : !!value.cluster && !!value.namespace && !!value.container).optional(),
 });
 const payload = z.object({
   connectionId: z.string().min(1).max(160),
@@ -34,7 +35,7 @@ export function mergeSources(
     if (item.connectionId === defaultConnectionId) delete item.connectionId;
     if (!source.safeParse(item).success)
       throw new Error("Enter a valid group and stream name.");
-    const key = JSON.stringify([item.connectionId ?? "", item.logGroup]);
+    const key = JSON.stringify([item.connectionId ?? "", item.logGroup, item.gcp ?? null]);
     const existing = groups.get(key);
     if (!existing)
       groups.set(key, {
@@ -46,6 +47,7 @@ export function mergeSources(
     else if (!existing.logStreams?.length || !item.logStreams?.length)
       groups.set(key, {
         logGroup: item.logGroup,
+        ...(item.gcp ? { gcp: item.gcp } : {}),
         ...(item.connectionId ? { connectionId: item.connectionId } : {}),
       });
     else {

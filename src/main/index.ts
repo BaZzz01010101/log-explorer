@@ -6,6 +6,7 @@ import {
   ipcMain,
   Menu,
   screen,
+  shell,
 } from "electron";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -19,6 +20,14 @@ import {
   WINDOW_CHROME_HEIGHT,
 } from "../shared/window-chrome";
 import { createLogService } from "./log-service";
+import { createGoogleRequest, gcpExplorer } from "./gcp-explorer";
+import { gcloudAuth } from "./gcloud-auth";
+import { createSourceDiscovery, runKubectl } from "./gcp-sources";
+import {
+  cancelGoogleLogin,
+  createGcpSignIn,
+  launchGoogleLogin,
+} from "./gcp-signin";
 import { connectionSchema, querySchema, workspaceSchema } from "./security";
 import { AwsAccessPreference } from "./aws-access-preference";
 import { setAwsAccess } from "./aws-access-toggle";
@@ -61,7 +70,7 @@ const service = createLogService(
     if (window && !window.isDestroyed())
       window.webContents.send("explorer:update", update);
   },
-  { allowAws: () => gate.enabled },
+  { allowAws: () => gate.enabled, allowGcp: () => !process.argv.includes("--offline-verification") && !backgroundVerification },
 );
 const environment = () => ({
   version: app.getVersion(),
@@ -182,6 +191,78 @@ function handle(channel: string, operation: (...args: any[]) => unknown): void {
 }
 const boundedString = z.string().max(512);
 const cursorSchema = z.string().max(100000).optional();
+function allowGcpDiscovery() {
+  if (process.argv.includes("--offline-verification") || backgroundVerification)
+    throw new Error("Google Cloud access is disabled in verification mode.");
+}
+const signInToGoogle = createGcpSignIn(launchGoogleLogin, () => {});
+const gcpIdentity = z.object({
+  configuration: z.string().min(1).max(256),
+  account: z.string().min(1).max(256),
+  quotaProject: z.string().min(1).max(256).optional(),
+});
+handle("gcp:profiles", () => {
+  allowGcpDiscovery();
+  return gcloudAuth.profiles();
+});
+handle("gcp:signin", () => {
+  allowGcpDiscovery();
+  return signInToGoogle();
+});
+handle("gcp:install-cli", () => {
+  allowGcpDiscovery();
+  return shell.openExternal("https://cloud.google.com/sdk/docs/install");
+});
+handle("gcp:projects", (identity, cursor) => {
+  allowGcpDiscovery();
+  return gcpExplorer(gcpIdentity.parse(identity)).projects(
+    cursorSchema.parse(cursor),
+  );
+});
+handle("gcp:logs", (identity, project, cursor) => {
+  allowGcpDiscovery();
+  return gcpExplorer(gcpIdentity.parse(identity)).logs(
+    z.string().max(30).parse(project),
+    cursorSchema.parse(cursor),
+  );
+});
+const sourceRequest = createGoogleRequest(gcloudAuth.token);
+const gcpSourceDiscovery = (identity: z.infer<typeof gcpIdentity>) =>
+  createSourceDiscovery(
+    (options) => sourceRequest(options, identity),
+    runKubectl,
+  );
+handle("gcp:functions", (identity, project, generation, cursor) => {
+  allowGcpDiscovery();
+  return gcpSourceDiscovery(gcpIdentity.parse(identity)).functions(
+    z.string().max(30).parse(project),
+    z.enum(["v1", "v2"]).parse(generation),
+    cursorSchema.parse(cursor),
+  );
+});
+handle("gcp:contexts", (identity, project) => {
+  allowGcpDiscovery();
+  const selected = gcpIdentity.parse(identity);
+  return gcpSourceDiscovery(selected).contexts(
+    z.string().max(30).parse(project),
+    selected,
+  );
+});
+handle("gcp:clusters", (identity, project) => {
+  allowGcpDiscovery();
+  return gcpSourceDiscovery(gcpIdentity.parse(identity)).clusters(
+    z.string().max(30).parse(project),
+  );
+});
+handle("gcp:workloads", (identity, project, context) => {
+  allowGcpDiscovery();
+  const selected = gcpIdentity.parse(identity);
+  return gcpSourceDiscovery(selected).workloads(
+    z.string().max(30).parse(project),
+    z.string().max(256).parse(context),
+    selected,
+  );
+});
 handle("explorer:environment", environment);
 handle("explorer:window-theme", (theme) => {
   const mode = z.enum(["light", "dark"]).parse(theme);
@@ -417,6 +498,7 @@ app.on("second-instance", () => {
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();
 });
+app.on("will-quit", cancelGoogleLogin);
 app.on("before-quit", (event) => {
   if (quitting) return;
   event.preventDefault();

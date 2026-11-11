@@ -15,16 +15,15 @@ export const connectionSchema = z.object({
   id,
   name: z.string().min(1).max(120),
   profile: z.string().min(1).max(256),
-  region: z
-    .string()
-    .regex(/^[a-z]{2}(?:-[a-z]+)+-\d+$/)
-    .max(40),
-  mode: z.enum(["offline", "aws"]),
-});
+  region: z.string().regex(/^[a-z][a-z0-9-]{1,39}$/).max(40),
+  mode: z.enum(["offline", "aws", "gcp"]),
+  gcpIdentity: z.object({ configuration: z.string().min(1).max(256), account: z.string().min(1).max(256), quotaProject: z.string().min(1).max(256).optional() }).optional(),
+}).refine((connection) => connection.mode === "gcp" ? !!connection.gcpIdentity : /^[a-z]{2}(?:-[a-z]+)+-\d+$/.test(connection.region), "Invalid provider connection");
 export const sourceSchema = z.object({
   connectionId: id.optional(),
   logGroup: z.string().min(1).max(512),
   logStreams: z.array(z.string().min(1).max(512)).max(100).optional(),
+  gcp: z.object({ kind: z.enum(["function", "kubernetes"]), project: z.string().min(1).max(30), region: z.string().min(1).max(40), functionName: z.string().min(1).max(253).optional(), generation: z.enum(["v1", "v2"]).optional(), service: z.string().min(1).max(253).optional(), cluster: z.string().min(1).max(253).optional(), namespace: z.string().min(1).max(253).optional(), container: z.string().min(1).max(253).optional() }).refine((source) => source.kind === "function" ? !!source.functionName && !!source.generation : !!source.cluster && !!source.namespace && !!source.container).optional(),
 });
 export const querySchema = z
   .object({
@@ -36,6 +35,7 @@ export const querySchema = z
     endTime: z.number().int().nonnegative(),
     kind: z.literal("events"),
     filterPattern: text,
+    gcpFilterPattern: text.optional(),
     query: text,
     limit: z.number().int().min(1).max(10000),
     cursor: z.string().max(100000).optional(),
@@ -89,6 +89,7 @@ const tabSchema = z.object({
   kind: z.enum(["events", "insights"]),
   filterPattern: text,
   filterMode: z.enum(["plain", "pattern", "auto"]).optional(),
+  gcpLogType: z.enum(["all", "audit", "execution"]).optional(),
   query: text,
   timePreset: z.string().max(40),
   customStart: z.string().max(100).optional(),
@@ -230,6 +231,9 @@ export const workspaceSchema = z
       )
       .max(500),
     preferences: z.object({
+      gcpProjectId: z.string().max(30).optional(),
+      gcpConfiguration: z.string().max(256).optional(),
+      gcpAccount: z.string().max(256).optional(),
       settingsDetached: z.boolean().optional(),
       closedTabHistoryDays: z.number().int().min(1).max(365).optional(),
       recentSearchesLimit: z.number().int().min(1).max(100).optional(),

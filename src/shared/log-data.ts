@@ -271,7 +271,7 @@ export function compareLogValues(
   );
 }
 
-export function inferLevel(parsed: ParsedMessage, raw: string): LogLevel {
+export function inferLevel(parsed: ParsedMessage, raw: string, severity?: string): LogLevel {
   const numeric: Record<number, LogLevel> = {
     10: "trace",
     20: "debug",
@@ -291,7 +291,11 @@ export function inferLevel(parsed: ParsedMessage, raw: string): LogLevel {
     err: "error",
     fatal: "fatal",
     critical: "fatal",
+    notice: "info",
+    alert: "fatal",
+    emergency: "fatal",
   };
+  if (severity && Object.hasOwn(aliases, severity.toLowerCase())) return aliases[severity.toLowerCase()]!;
   if (parsed.kind === "json") {
     for (const path of ["/level", "/severity", "/severityText", "/log/level"]) {
       const value = getPointer(parsed.value, path);
@@ -434,8 +438,8 @@ export function matchesLocalFilter(
 ): boolean {
   if (
     Array.isArray(level)
-      ? !level.includes(inferLevel(parsed, event.message))
-      : level && level !== "all" && inferLevel(parsed, event.message) !== level
+      ? !level.includes(inferLevel(parsed, event.message, event.severity))
+      : level && level !== "all" && inferLevel(parsed, event.message, event.severity) !== level
   )
     return false;
   const stream = localFilterStream(event.logStream).text;
@@ -494,7 +498,7 @@ export function eventColumnValue(
         ? event.timestamp
         : null;
     case "@level":
-      return inferLevel(parsed, event.message);
+      return inferLevel(parsed, event.message, event.severity);
     case "@message":
       return event.message;
     case "@source":

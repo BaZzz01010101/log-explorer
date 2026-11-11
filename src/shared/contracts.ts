@@ -1,4 +1,4 @@
-export type DataMode = "offline" | "aws";
+export type DataMode = "offline" | "aws" | "gcp";
 export interface Connection {
   enabled?: boolean;
   id: string;
@@ -6,6 +6,7 @@ export interface Connection {
   profile: string;
   region: string;
   mode: DataMode;
+  gcpIdentity?: GcpIdentity;
 }
 export interface LogGroup {
   name: string;
@@ -22,10 +23,67 @@ export interface Page<T> {
   items: T[];
   cursor?: string;
 }
+export interface GcpProject {
+  id: string;
+  name: string;
+}
+export interface GcpLog {
+  name: string;
+  label: string;
+}
+export interface GcpSource {
+  name: string;
+  label: string;
+  kind: "function" | "kubernetes";
+  project: string;
+  region: string;
+  cluster?: string;
+  namespace?: string;
+  container?: string;
+  workloads?: string[];
+  generation?: "v1" | "v2";
+  service?: string;
+}
+export interface GcpContext {
+  name: string;
+  cluster: string;
+  location: string;
+}
+export interface GcpSourcePage extends Page<GcpSource> {
+  warnings?: string[];
+}
+export interface GcpConfiguration {
+  name: string;
+  active: boolean;
+  account?: string;
+  project?: string;
+  quotaProject?: string;
+}
+export interface GcpProfiles {
+  configurations: GcpConfiguration[];
+  accounts: string[];
+}
+export interface GcpIdentity {
+  configuration: string;
+  account: string;
+  quotaProject?: string;
+}
+export type GcpLogSource = {
+  kind: "function" | "kubernetes";
+  project: string;
+  region: string;
+  functionName?: string;
+  generation?: "v1" | "v2";
+  service?: string;
+  cluster?: string;
+  namespace?: string;
+  container?: string;
+};
 export interface LogSource {
   connectionId?: string;
   logGroup: string;
   logStreams?: string[];
+  gcp?: GcpLogSource;
 }
 export interface LogEvent {
   connectionId?: string;
@@ -35,6 +93,8 @@ export interface LogEvent {
   message: string;
   logGroup: string;
   logStream: string;
+  severity?: string;
+  gcpSource?: GcpLogSource;
 }
 export interface QueryRequest {
   requestId: string;
@@ -45,6 +105,7 @@ export interface QueryRequest {
   endTime: number;
   kind: "events" | "insights";
   filterPattern: string;
+  gcpFilterPattern?: string;
   query: string;
   limit: number;
   cursor?: string;
@@ -107,6 +168,7 @@ export interface LogTab {
   kind: "events" | "insights";
   filterPattern: string;
   filterMode?: "plain" | "pattern" | "auto";
+  gcpLogType?: "all" | "audit" | "execution";
   query: string;
   timePreset: string;
   customStart?: string;
@@ -172,6 +234,9 @@ export interface RelativeTimeTemplate {
   unit: "m" | "h" | "d" | "w";
 }
 export interface Preferences {
+  gcpProjectId?: string;
+  gcpConfiguration?: string;
+  gcpAccount?: string;
   settingsDetached?: boolean;
   relativeTimeTemplates?: {
     quick: RelativeTimeTemplate[];
@@ -228,6 +293,34 @@ export interface WorkspaceLoad {
   warning?: string;
 }
 export interface ExplorerApi {
+  gcpProfiles(): Promise<GcpProfiles>;
+  gcpSignIn(): Promise<void>;
+  gcpInstallCli(): Promise<void>;
+  gcpProjects(
+    identity: GcpIdentity,
+    cursor?: string,
+  ): Promise<Page<GcpProject>>;
+  gcpLogs(
+    identity: GcpIdentity,
+    project: string,
+    cursor?: string,
+  ): Promise<Page<GcpLog>>;
+  gcpFunctions(
+    identity: GcpIdentity,
+    project: string,
+    generation: "v1" | "v2",
+    cursor?: string,
+  ): Promise<GcpSourcePage>;
+  gcpContexts(identity: GcpIdentity, project: string): Promise<GcpContext[]>;
+  gcpClusters(
+    identity: GcpIdentity,
+    project: string,
+  ): Promise<Array<{ cluster: string; location: string }>>;
+  gcpWorkloads(
+    identity: GcpIdentity,
+    project: string,
+    context: string,
+  ): Promise<GcpSourcePage>;
   windowAction(action: import("./window-chrome").WindowAction): Promise<void>;
   setWindowTheme(theme: "light" | "dark"): Promise<void>;
   environment(): Promise<EnvironmentInfo>;

@@ -1,6 +1,6 @@
 {
   "name": "aws-log-explorer",
-  "version": "0.1.74",
+  "version": "0.1.80",
   "description": "A structured CloudWatch Logs desktop workspace",
   "main": "out/main/index.js",
   "author": "AWS Log Explorer contributors",
@@ -25,6 +25,7 @@
     "@dnd-kit/core": "^6.3.1",
     "@dnd-kit/sortable": "^10.0.0",
     "@dnd-kit/utilities": "^3.2.2",
+    "@google-cloud/logging": "^12.3.1",
     "@mantine/core": "^9.7.2",
     "@mantine/hooks": "^9.7.2",
     "@mantine/notifications": "^9.7.2",
@@ -32,6 +33,8 @@
     "@tabler/icons-react": "^3.49.0",
     "@tanstack/react-table": "^8.21.3",
     "@tanstack/react-virtual": "^3.14.18",
+    "google-auth-library": "^11.3.4",
+    "protobufjs": "^8.8.1",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "zod": "^4.6.7"
@@ -46,6 +49,7 @@
     "electron": "^44.7.0",
     "electron-builder": "^26.5.0",
     "electron-vite": "^5.0.0",
+    "google-proto-files": "^6.1.0",
     "prettier": "^3.9.10",
     "react-test-renderer": "^19.3.0",
     "typescript": "^7.0.2",

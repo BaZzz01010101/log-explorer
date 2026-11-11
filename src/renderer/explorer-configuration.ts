@@ -36,6 +36,7 @@ export function explorerProfiles(
 ): ExplorerProfile[] {
   const accounts = new Map<string, ExplorerProfile>();
   for (const connection of connections) {
+    if (connection.mode === "gcp") continue;
     if (
       connection.enabled === false ||
       (connection.mode === "aws" &&

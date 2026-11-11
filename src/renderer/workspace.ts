@@ -46,6 +46,7 @@ import {
 } from "../shared/query-history";
 
 export type WorkspaceAction =
+  | { type: "gcp/open-source"; connection: Connection; source: LogSource; mode: "preview" | "permanent" }
   | {
       type: "resources/apply";
       payload: ResourcePayload;
@@ -332,6 +333,19 @@ function parseSources(value: unknown): LogSource[] {
   const sources = list(value, 50)
     .map((value) => {
       const raw = record(value);
+      const google = record(raw.gcp);
+      const googleKind: "function" | "kubernetes" | undefined = google.kind === "function" || google.kind === "kubernetes" ? google.kind : undefined;
+      const gcp: LogSource["gcp"] = googleKind ? {
+        kind: googleKind,
+        project: string(google.project, "", 30),
+        region: string(google.region, "", 40),
+        ...(typeof google.functionName === "string" ? { functionName: string(google.functionName, "", 253) } : {}),
+        ...(google.generation === "v1" || google.generation === "v2" ? { generation: google.generation } : {}),
+        ...(typeof google.service === "string" ? { service: string(google.service, "", 253) } : {}),
+        ...(typeof google.cluster === "string" ? { cluster: string(google.cluster, "", 253) } : {}),
+        ...(typeof google.namespace === "string" ? { namespace: string(google.namespace, "", 253) } : {}),
+        ...(typeof google.container === "string" ? { container: string(google.container, "", 253) } : {}),
+      } : undefined;
       const logStreams = list(raw.logStreams, 100)
         .filter((stream): stream is string => typeof stream === "string")
         .map((stream) => stream.slice(0, 512))
@@ -342,6 +356,7 @@ function parseSources(value: unknown): LogSource[] {
           ? { connectionId: string(raw.connectionId, "", 160) }
           : {}),
         ...(logStreams.length ? { logStreams: [...new Set(logStreams)] } : {}),
+        ...(gcp ? { gcp } : {}),
       };
     })
     .filter((source) => source.logGroup);
@@ -351,6 +366,7 @@ function parseSources(value: unknown): LogSource[] {
         (other) =>
           other.logGroup === source.logGroup &&
           other.connectionId === source.connectionId &&
+          JSON.stringify(other.gcp) === JSON.stringify(source.gcp) &&
           JSON.stringify(other.logStreams) ===
             JSON.stringify(source.logStreams),
       ) === index,
@@ -407,6 +423,7 @@ function parseTab(value: unknown, connections: Connection[]): LogTab | null {
       raw.filterMode === "plain" || raw.filterMode === "auto"
         ? raw.filterMode
         : "pattern",
+    ...(raw.gcpLogType === "audit" || raw.gcpLogType === "execution" ? { gcpLogType: raw.gcpLogType } : {}),
     query: string(raw.query, defaults.query, 10000),
     timePreset:
       ["clear", "custom"].includes(String(raw.timePreset)) ||
@@ -427,12 +444,16 @@ function parseConnection(value: unknown): Connection | null {
   const id = string(raw.id, "", 160);
   if (!id) return null;
   const region = string(raw.region, "eu-west-1", 40);
+  const google = record(raw.gcpIdentity);
+  const googleIdentity = raw.mode === "gcp" && typeof google.configuration === "string" && !!google.configuration && typeof google.account === "string" && !!google.account ? { configuration: string(google.configuration, "", 256), account: string(google.account, "", 256), ...(typeof google.quotaProject === "string" && google.quotaProject ? { quotaProject: string(google.quotaProject, "", 256) } : {}) } : undefined;
+  if (raw.mode === "gcp" && !googleIdentity) return null;
   return {
     id,
     name: string(raw.name, "Connection", 120) || "Connection",
     profile: string(raw.profile, "default", 256) || "default",
-    region: /^[a-z]{2}(?:-[a-z]+)+-\d+$/.test(region) ? region : "eu-west-1",
-    mode: raw.mode === "aws" ? "aws" : "offline",
+    region: (raw.mode === "gcp" ? /^[a-z][a-z0-9-]{1,39}$/ : /^[a-z]{2}(?:-[a-z]+)+-\d+$/).test(region) ? region : "eu-west-1",
+    mode: raw.mode === "gcp" ? "gcp" : raw.mode === "aws" ? "aws" : "offline",
+    ...(googleIdentity ? { gcpIdentity: googleIdentity } : {}),
     ...(typeof raw.enabled === "boolean" ? { enabled: raw.enabled } : {}),
   };
 }
@@ -465,6 +486,9 @@ function parsePreferences(value: unknown): Preferences {
     tabBarLayout: raw.tabBarLayout === "wrap" ? "wrap" : "scroll",
     pinnedTabsSeparateRow: raw.pinnedTabsSeparateRow === true,
     settingsDetached: raw.settingsDetached === true,
+    gcpProjectId: string(raw.gcpProjectId, "", 30),
+    gcpConfiguration: string(raw.gcpConfiguration, "", 256),
+    gcpAccount: string(raw.gcpAccount, "", 256),
     closedTabHistoryDays: historyRetentionDays(raw.closedTabHistoryDays),
     recentSearchesLimit: Math.round(
       number(
@@ -1076,6 +1100,7 @@ function resourceKey(tab: LogTab): string {
     tab.sources.map((source) => [
       source.connectionId ?? tab.connectionId,
       source.logGroup,
+      source.gcp ?? null,
       [...(source.logStreams ?? [])].sort(),
     ]),
   ]);
@@ -1156,6 +1181,23 @@ function legacyWorkspaceReducer(
   action: WorkspaceAction,
 ): Workspace {
   switch (action.type) {
+    case "gcp/open-source": {
+      const requested = action.connection;
+      const connection = state.connections.find((item) =>
+        item.mode === "gcp" && item.region === requested.region &&
+        item.gcpIdentity?.configuration === requested.gcpIdentity?.configuration &&
+        item.gcpIdentity?.account === requested.gcpIdentity?.account &&
+        item.gcpIdentity?.quotaProject === requested.gcpIdentity?.quotaProject,
+      ) ?? requested;
+      if (connection === requested && state.connections.length >= 50) return state;
+      const next = connection === requested
+        ? workspaceReducer(state, { type: "connections/set", connections: [...state.connections, connection] })
+        : state;
+      return workspaceReducer(next, {
+        type: action.mode === "preview" ? "tab/preview" : "tab/open-resource",
+        tab: createTab(connection.id, [action.source]),
+      });
+    }
     case "workspace/restore":
       return restoreWorkspace(action.workspace);
     case "tab/preview":

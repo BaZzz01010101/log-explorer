@@ -221,7 +221,7 @@ function prepare(event: LogEvent): EventRow {
   let row = parsedCache.get(event);
   if (!row) {
     const parsed = parseLogMessage(event.message);
-    row = { event, parsed, level: inferLevel(parsed, event.message) };
+    row = { event, parsed, level: inferLevel(parsed, event.message, event.severity) };
     parsedCache.set(event, row);
   }
   return row;
@@ -915,7 +915,7 @@ export function LogViewer({
               if (path === "@timestamp")
                 return timeLabel(event.timestamp, preferences.timezone);
               if (path === "@level")
-                return inferLevel(parsed, event.message).toUpperCase();
+                return inferLevel(parsed, event.message, event.severity).toUpperCase();
               if (path === "@source") return sourceLabel(event);
               if (path === "@message")
                 return messagePreview(parsed)?.value ?? event.message;

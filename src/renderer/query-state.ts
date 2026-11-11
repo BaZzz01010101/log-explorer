@@ -1,5 +1,6 @@
 import { sourceIdentity } from "../shared/source-identity";
 import { compileServerFilter } from "../shared/server-filter";
+import { compileGcpServerFilter } from "../shared/gcp-server-filter";
 import type {
   LogEvent,
   LogTab,
@@ -144,6 +145,8 @@ export function requestMatchesTab(
     compileServerFilter(tab.filterPattern, tab.filterMode)
   )
     return false;
+  if (request.connection.mode === "gcp" || request.connections?.some((item) => item.mode === "gcp"))
+    if (request.gcpFilterPattern !== compileGcpServerFilter(tab.filterPattern, tab.filterMode, tab.gcpLogType)) return false;
   try {
     const range = resolveTimeRange(
       tab.timePreset,

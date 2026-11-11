@@ -9,7 +9,9 @@ import type {
   Workspace,
 } from "../shared/contracts";
 import { sourceIdentity } from "../shared/source-identity";
-import { compileServerFilter } from "../shared/server-filter";
+import { compileServerFilter, serverFilterMode } from "../shared/server-filter";
+import { compileGcpServerFilter, gcpServerFilterMode } from "../shared/gcp-server-filter";
+import { queryPageLimit } from "../shared/log-query-limits";
 import {
   mergeEvents,
   requestMatchesTab,
@@ -366,6 +368,9 @@ export function useLogJobs(
       }
       let request: QueryRequest | undefined;
       try {
+        const modes = new Set(tab.sources.map((item) => state.connections.find((candidate) => candidate.id === (item.connectionId ?? tab.connectionId))?.mode));
+        if (modes.has("gcp") && (modes.has("aws") || modes.has("offline")) && tab.filterPattern.trim() && (serverFilterMode(tab.filterPattern, tab.filterMode) === "pattern" || gcpServerFilterMode(tab.filterPattern, tab.filterMode) === "pattern"))
+          throw new Error("Mixed AWS and Google Cloud sources support plain text server filters. Select Plain Text or clear the filter.");
         const canContinue = Boolean(
           more &&
           !live &&
@@ -416,11 +421,9 @@ export function useLogJobs(
                 tab.filterPattern,
                 tab.filterMode,
               ),
+              gcpFilterPattern: compileGcpServerFilter(tab.filterPattern, tab.filterMode, tab.gcpLogType),
               query: "",
-              limit: Math.min(
-                10000,
-                workspaceRef.current.preferences.maxEvents,
-              ),
+              limit: queryPageLimit(modes, workspaceRef.current.preferences.maxEvents),
             };
         const retainHistory =
           live &&
@@ -737,7 +740,7 @@ export function useLogJobs(
 function timeIdentity(tab: LogTab): string {
   return JSON.stringify(
     tab.timePreset === "custom"
-      ? [tab.timePreset, tab.customStart ?? "", tab.customEnd ?? ""]
-      : [tab.timePreset],
+      ? [tab.timePreset, tab.customStart ?? "", tab.customEnd ?? "", tab.gcpLogType ?? "all"]
+      : [tab.timePreset, tab.gcpLogType ?? "all"],
   );
 }

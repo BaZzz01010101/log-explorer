@@ -53,7 +53,7 @@ export function useDeserializedEvents(
             : "deserialized",
       );
       projections.current.set(event, {
-        row: { ...original, parsed, level: inferLevel(parsed, event.message) },
+        row: { ...original, parsed, level: inferLevel(parsed, event.message, event.severity) },
         paths: new Set([...(previous?.paths ?? []), path]),
         labels,
       });

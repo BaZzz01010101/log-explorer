@@ -17,6 +17,8 @@ export function tabTitle(sources: LogSource[]): string {
   const count = sourceCount(sources);
   if (count > 1) return "Mixed Sources";
   if (!sources.length) return "Log view";
+  if (sources[0].gcp?.kind === "function") return sources[0].gcp.functionName ?? "Function";
+  if (sources[0].gcp?.kind === "kubernetes") return `${sources[0].gcp.container ?? "Container"} · ${sources[0].gcp.cluster ?? "Cluster"}`;
   const title =
     sources[0].logGroup.split("/").filter(Boolean).at(-1) ||
     sources[0].logGroup;
@@ -56,6 +58,7 @@ export function eventSourceDisplay(
     const source = sources[badge.sourceIndex];
     return (
       source.logGroup === event.logGroup &&
+      (!event.gcpSource || JSON.stringify(source.gcp) === JSON.stringify(event.gcpSource)) &&
       (source.connectionId ?? defaultConnectionId) === connectionId &&
       (!badge.stream || badge.stream === event.logStream)
     );
@@ -83,7 +86,7 @@ export function eventSourceDisplay(
   if (multipleConnections) label += " · " + endpoint;
   return {
     label,
-    detail: [event.logGroup, event.logStream, endpoint]
+    detail: [event.logGroup, event.gcpSource?.namespace, event.logStream, endpoint]
       .filter(Boolean)
       .join("\n"),
   };

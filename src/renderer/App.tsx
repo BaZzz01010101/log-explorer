@@ -15,6 +15,7 @@ import { ApplicationMenu } from "./components/ApplicationMenu";
 import { Notifications, notifications } from "@mantine/notifications";
 import {
   IconSettings,
+  IconBrandGoogle,
   IconChevronRight,
   IconCloud,
   IconLayoutColumns,
@@ -27,6 +28,8 @@ import type {
   LogEvent,
   LogSource,
   LogTab,
+  GcpSource,
+  GcpIdentity,
 } from "../shared/contracts";
 import {
   createTab,
@@ -49,6 +52,8 @@ import {
   MAX_SPLIT_PANES,
 } from "../shared/pane-layout";
 import { ResourceSidebar } from "./components/ResourceSidebar";
+import { GcpExplorer } from "./components/GcpExplorer";
+import { gcpResourceToLogSource } from "./gcp-open";
 import {
   WorkspaceTabs,
   WorkspaceDragSurface,
@@ -119,7 +124,7 @@ export default function App() {
     useState<SettingsPreviewSnapshot | null>(null);
   const [settingsPage, setSettingsPage] = useState<string | null>(null);
   const [settingsPageRequest, setSettingsPageRequest] = useState(0);
-  const [sidePanel, setSidePanel] = useState<"explorer" | "settings">(
+  const [sidePanel, setSidePanel] = useState<"explorer" | "gcp" | "settings">(
     "explorer",
   );
   const [windowControlsVisible, setWindowControlsVisible] = useState(false);
@@ -235,6 +240,11 @@ export default function App() {
     setSidePanel("explorer");
     dispatch({ type: "workspace/update", patch: { sidebarVisible: !visible } });
   };
+  const toggleGcpExplorer = () => {
+    const visible = workspace.sidebarVisible && sidePanel === "gcp";
+    setSidePanel("gcp");
+    dispatch({ type: "workspace/update", patch: { sidebarVisible: !visible } });
+  };
 
   useEffect(() => {
     const overlay = (
@@ -336,6 +346,40 @@ export default function App() {
         },
       });
   };
+  const openGcpSource = (source: GcpSource, identity: GcpIdentity, mode: "preview" | "permanent") => {
+    try {
+      const resource = gcpResourceToLogSource(source);
+      const state = workspaceRef.current;
+      let connection = state.connections.find((item) => item.mode === "gcp" && item.region === source.region && item.gcpIdentity?.configuration === identity.configuration && item.gcpIdentity?.account === identity.account && item.gcpIdentity?.quotaProject === identity.quotaProject);
+      if (!connection) {
+        if (state.connections.length >= 50) throw new Error("Connection limit reached. Remove an unused connection and retry.");
+        connection = { id: `gcp-${crypto.randomUUID()}`, name: `Google Cloud · ${source.region}`, profile: identity.configuration, region: source.region, mode: "gcp", gcpIdentity: { ...identity } };
+      }
+      dispatch({ type: "gcp/open-source", connection, source: resource, mode });
+    } catch (error) {
+      notifications.show({ color: "red", message: error instanceof Error ? error.message : "Could not open Google Cloud source." });
+    }
+  };
+  const applyGcpSource = (source: GcpSource, identity: GcpIdentity, mode: "add-sources" | "add-splits" | "new-split" | "new-multisource") => {
+    try {
+      const resource = gcpResourceToLogSource(source);
+      const state = workspaceRef.current;
+      let connection = state.connections.find((item) => item.mode === "gcp" && item.region === source.region && item.gcpIdentity?.configuration === identity.configuration && item.gcpIdentity?.account === identity.account && item.gcpIdentity?.quotaProject === identity.quotaProject);
+      let next = state;
+      if (!connection) {
+        if (state.connections.length >= 50) throw new Error("Connection limit reached.");
+        connection = { id: `gcp-${crypto.randomUUID()}`, name: `Google Cloud · ${source.region}`, profile: identity.configuration, region: source.region, mode: "gcp", gcpIdentity: { ...identity } };
+        next = workspaceReducer(state, { type: "connections/set", connections: [...state.connections, connection] });
+      }
+      const payload = { connectionId: connection.id, sources: [resource] };
+      const result = projectResourceAction(next, payload, mode);
+      if (result.error) throw new Error(result.error);
+      if (next !== state) dispatch({ type: "connections/set", connections: next.connections });
+      dispatch({ type: "resources/apply", payload, mode });
+    } catch (error) {
+      notifications.show({ color: "red", message: error instanceof Error ? error.message : "Could not add Google Cloud source." });
+    }
+  };
   const execute = (tab: LogTab, live = false, more = false) => {
     if (!more) {
       const text = tab.filterPattern;
@@ -375,7 +419,7 @@ export default function App() {
         {
           connectionId,
           logGroup: event.logGroup,
-          logStreams: [event.logStream],
+          ...(event.gcpSource ? { gcp: event.gcpSource, ...(event.gcpSource.kind === "kubernetes" ? { logStreams: [event.logStream] } : {}) } : { logStreams: [event.logStream] }),
         },
       ]),
       title: `Context · ${contextRangeLabel(range)} · ${event.logStream.split("/").at(-1)}`,
@@ -634,6 +678,21 @@ export default function App() {
                   />
                 </ActionIcon>
               </Tooltip>
+              <Tooltip label="Google Cloud logs explorer" position="right">
+                <ActionIcon
+                  variant={
+                    workspace.sidebarVisible && sidePanel === "gcp"
+                      ? "light"
+                      : "subtle"
+                  }
+                  size="lg"
+                  aria-label="Google Cloud logs explorer"
+                  aria-pressed={workspace.sidebarVisible && sidePanel === "gcp"}
+                  onClick={toggleGcpExplorer}
+                >
+                  <IconBrandGoogle size={22} />
+                </ActionIcon>
+              </Tooltip>
               <div className="activity-spacer" />
               <div className="activity-menu-separator" aria-hidden="true" />
               <Tooltip label="Settings" position="right">
@@ -706,6 +765,29 @@ export default function App() {
                     dispatch({ type: "favorites/remove", favoriteId })
                   }
                   onManage={openSettings}
+                />
+              </div>
+              <div className="explorer-host" hidden={sidePanel !== "gcp"}>
+                <GcpExplorer
+                  active={workspace.sidebarVisible && sidePanel === "gcp"}
+                  onOpen={openGcpSource}
+                  onSourceAction={applyGcpSource}
+                  shortcuts={workspace.preferences.shortcuts}
+                  initialProject={workspace.preferences.gcpProjectId}
+                  initialConfiguration={workspace.preferences.gcpConfiguration}
+                  initialAccount={workspace.preferences.gcpAccount}
+                  onIdentityChange={(gcpConfiguration, gcpAccount) =>
+                    dispatch({
+                      type: "preferences/update",
+                      patch: { gcpConfiguration, gcpAccount },
+                    })
+                  }
+                  onProjectChange={(gcpProjectId) =>
+                    dispatch({
+                      type: "preferences/update",
+                      patch: { gcpProjectId },
+                    })
+                  }
                 />
               </div>
               <Settings

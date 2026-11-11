@@ -5,6 +5,7 @@ import {
   Button,
   Group,
   Modal,
+  Select,
   Text,
   TextInput,
 } from "@mantine/core";
@@ -131,6 +132,15 @@ export function QueryPane({
     !stale &&
     runtime.events.length < workspace.preferences.maxEvents,
   );
+  const prefetched = useRef(new Set<string>());
+  useEffect(() => {
+    const request = runtime?.request;
+    if (!canPage || !request || request.cursor || (runtime?.events.length ?? 0) < 100 ||
+        !sourceConnections.some((item) => item.mode === "gcp") || prefetched.current.has(request.requestId)) return;
+    prefetched.current.add(request.requestId);
+    if (prefetched.current.size > 100) prefetched.current.delete(prefetched.current.values().next().value!);
+    onRun(false, true);
+  }, [canPage, runtime?.request, runtime?.events.length, sourceConnections, onRun]);
   const currentText = tab.filterPattern;
   const savedSearches = workspace.savedQueries.filter(
     (query) => query.kind === "events",
@@ -194,8 +204,15 @@ export function QueryPane({
           </Group>
         </Group>
         <div className="query-editor">
+          {sourceConnections.some((item) => item.mode === "gcp") && <Select
+            aria-label="Google Cloud log type" size="xs" w={150} allowDeselect={false}
+            value={tab.gcpLogType ?? "all"}
+            data={[{ value: "all", label: "All GCP logs" }, { value: "execution", label: "Execution logs" }, { value: "audit", label: "Audit logs" }]}
+            onChange={(value) => onPatch({ gcpLogType: value === "audit" || value === "execution" ? value : "all" })}
+          />}
           <div className="query-input">
             <ServerFilterInput
+              provider={sourceConnections.length > 0 && sourceConnections.every((item) => item.mode === "gcp") ? "gcp" : "aws"}
               historyKey={`events-filter:${tab.id}`}
               value={tab.filterPattern}
               mode={tab.filterMode}
@@ -349,6 +366,8 @@ export function QueryPane({
                 aria-description={
                   offlineSources
                     ? "Start an explicitly simulated fixture stream"
+                    : sourceConnections.every((item) => item.mode === "gcp")
+                    ? "Stream new Google Cloud log entries"
                     : "Start CloudWatch Live Tail (AWS charges apply; results may be sampled)"
                 }
                 leftSection={<IconRadio size={14} />}
@@ -402,7 +421,7 @@ export function QueryPane({
       )}
       {runtime?.sampled && (
         <Alert color="yellow" p="xs" mx="xs">
-          Live Tail is sampled by CloudWatch. This view does not contain every
+          Live Tail omitted events. This view does not contain every
           matching event.
         </Alert>
       )}

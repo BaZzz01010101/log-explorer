@@ -20,7 +20,9 @@ export function sourceIdentity(
           connection?.profile,
           connection?.region,
           connection?.mode,
+          connection?.gcpIdentity ?? null,
           source.logGroup,
+          source.gcp ?? null,
           [...(source.logStreams ?? [])].sort(),
         ];
       })

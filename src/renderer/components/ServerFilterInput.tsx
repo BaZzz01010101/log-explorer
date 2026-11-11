@@ -11,6 +11,7 @@ import {
   type ServerFilterMode,
 } from "../../shared/server-filter";
 import "./server-filter.css";
+import { compileGcpServerFilter, gcpServerFilterMode } from "../../shared/gcp-server-filter";
 
 const labels = { plain: "Plain Text", pattern: "AWS Patterns", auto: "Auto" };
 
@@ -22,6 +23,7 @@ export function ServerFilterInput({
   onModeChange,
   onRun,
   onClear,
+  provider = "aws",
 }: {
   value: string;
   mode?: ServerFilterMode;
@@ -30,6 +32,7 @@ export function ServerFilterInput({
   onModeChange(mode: ServerFilterMode): void;
   onRun(): void;
   onClear(): void;
+  provider?: "aws" | "gcp";
 }) {
   const input = useRef<HTMLInputElement>(null),
     paint = useRef<HTMLPreElement>(null);
@@ -38,9 +41,10 @@ export function ServerFilterInput({
     [focused, setFocused] = useState(false),
     [selected, setSelected] = useState(0),
     [dismissed, setDismissed] = useState(false);
-  const effective = serverFilterMode(value, mode);
+  const effective = provider === "gcp" ? gcpServerFilterMode(value, mode) : serverFilterMode(value, mode);
+  const providerLabels = provider === "gcp" ? { ...labels, pattern: "Cloud Logging query" } : labels;
   const suggestions =
-    focused && !dismissed && effective === "pattern"
+    provider === "aws" && focused && !dismissed && effective === "pattern"
       ? filterCompletions(value, caret)
       : [];
   const choice = Math.min(selected, Math.max(0, suggestions.length - 1));
@@ -59,10 +63,10 @@ export function ServerFilterInput({
   };
   return (
     <div
-      className={`server-filter-control ${effective === "pattern" ? "server-filter-pattern" : ""}`}
+      className={`server-filter-control ${provider === "aws" && effective === "pattern" ? "server-filter-pattern" : ""}`}
     >
       <div className="server-filter-text">
-        {effective === "pattern" && (
+        {provider === "aws" && effective === "pattern" && (
           <pre ref={paint} className="server-filter-paint" aria-hidden="true">
             {filterTokens(value).map((token, index) => (
               <span key={index} className={`aws-token-${token.kind}`}>
@@ -73,7 +77,7 @@ export function ServerFilterInput({
         )}
         <TextInput
           ref={input}
-          aria-label="CloudWatch filter pattern"
+          aria-label={provider === "gcp" ? "Google Cloud log filter" : "CloudWatch filter pattern"}
           data-edit-history-key={historyKey}
           role="combobox"
           aria-haspopup="listbox"
@@ -134,7 +138,7 @@ export function ServerFilterInput({
             }
           }}
           placeholder={
-            effective === "pattern"
+            provider === "gcp" ? (effective === "pattern" ? 'severity>=ERROR or jsonPayload.field="value"' : "Find text in Google Cloud logs…") : effective === "pattern"
               ? '{ $.level = "ERROR" } or %error|failed%'
               : "Find text in AWS logs…"
           }
@@ -145,10 +149,10 @@ export function ServerFilterInput({
                 <button
                   type="button"
                   className="server-filter-mode"
-                  aria-label={`AWS filter mode: ${labels[mode]}`}
-                  data-tooltip={`${labels[mode]}${mode === "auto" ? ` → ${labels[effective]}` : ""}. Enter runs the query; Tab accepts a keyword.\nAWS pattern: ${compileServerFilter(value, mode) || "(all events)"}`}
+                  aria-label={`${provider === "gcp" ? "GCP" : "AWS"} filter mode: ${providerLabels[mode]}`}
+                  data-tooltip={`${providerLabels[mode]}${mode === "auto" ? ` → ${providerLabels[effective]}` : ""}. Enter runs the query.\nQuery: ${(provider === "gcp" ? compileGcpServerFilter(value, mode) : compileServerFilter(value, mode)) || "(all events)"}`}
                 >
-                  AWS ·{" "}
+                  {provider === "gcp" ? "GCP" : "AWS"} ·{" "}
                   {mode === "auto"
                     ? `A:${effective === "plain" ? "TXT" : "PAT"}`
                     : effective === "plain"
@@ -158,14 +162,14 @@ export function ServerFilterInput({
                 </button>
               </Menu.Target>
               <Menu.Dropdown>
-                <Menu.Label>AWS filter mode</Menu.Label>
+                <Menu.Label>{provider === "gcp" ? "GCP" : "AWS"} filter mode</Menu.Label>
                 {(Object.keys(labels) as ServerFilterMode[]).map((item) => (
                   <Menu.Item
                     key={item}
                     onClick={() => onModeChange(item)}
                     leftSection={item === mode ? "✓" : undefined}
                   >
-                    {labels[item]}
+                    {providerLabels[item]}
                   </Menu.Item>
                 ))}
               </Menu.Dropdown>
