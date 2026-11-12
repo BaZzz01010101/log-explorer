@@ -1,6 +1,6 @@
 import { useId, useRef, useState } from "react";
 import { TextInput } from "@mantine/core";
-import { IconX } from "@tabler/icons-react";
+import { IconX, IconLetterT, IconRegex, IconSparkles, IconCheck } from "@tabler/icons-react";
 import { clearEditControl } from "../scoped-edit-history";
 import { Menu } from "./AppMenu";
 import {
@@ -13,7 +13,8 @@ import {
 import "./server-filter.css";
 import { compileGcpServerFilter, gcpServerFilterMode } from "../../shared/gcp-server-filter";
 
-const labels = { plain: "Plain Text", pattern: "AWS Patterns", auto: "Auto" };
+const labels = { plain: "Text", pattern: "Pattern", auto: "Auto" };
+const modeIcons = { plain: IconLetterT, pattern: IconRegex, auto: IconSparkles };
 
 export function ServerFilterInput({
   value,
@@ -42,7 +43,7 @@ export function ServerFilterInput({
     [selected, setSelected] = useState(0),
     [dismissed, setDismissed] = useState(false);
   const effective = provider === "gcp" ? gcpServerFilterMode(value, mode) : serverFilterMode(value, mode);
-  const providerLabels = provider === "gcp" ? { ...labels, pattern: "Cloud Logging query" } : labels;
+  const providerLabels = labels;
   const suggestions =
     provider === "aws" && focused && !dismissed && effective === "pattern"
       ? filterCompletions(value, caret)
@@ -138,9 +139,9 @@ export function ServerFilterInput({
             }
           }}
           placeholder={
-            provider === "gcp" ? (effective === "pattern" ? 'severity>=ERROR or jsonPayload.field="value"' : "Find text in Google Cloud logs…") : effective === "pattern"
+            provider === "gcp" ? (effective === "pattern" ? 'severity>=ERROR or jsonPayload.field="value"' : "Find text in logs…") : effective === "pattern"
               ? '{ $.level = "ERROR" } or %error|failed%'
-              : "Find text in AWS logs…"
+              : "Find text in logs…"
           }
           size="xs"
           leftSection={
@@ -149,25 +150,25 @@ export function ServerFilterInput({
                 <button
                   type="button"
                   className="server-filter-mode"
-                  aria-label={`${provider === "gcp" ? "GCP" : "AWS"} filter mode: ${providerLabels[mode]}`}
+                  aria-label={`Filter mode: ${providerLabels[mode]}`}
                   data-tooltip={`${providerLabels[mode]}${mode === "auto" ? ` → ${providerLabels[effective]}` : ""}. Enter runs the query.\nQuery: ${(provider === "gcp" ? compileGcpServerFilter(value, mode) : compileServerFilter(value, mode)) || "(all events)"}`}
                 >
-                  {provider === "gcp" ? "GCP" : "AWS"} ·{" "}
                   {mode === "auto"
                     ? `A:${effective === "plain" ? "TXT" : "PAT"}`
                     : effective === "plain"
-                      ? "Text"
-                      : "Patt"}{" "}
+                      ? "TXT"
+                      : "PAT"}{" "}
                   ▾
                 </button>
               </Menu.Target>
               <Menu.Dropdown>
-                <Menu.Label>{provider === "gcp" ? "GCP" : "AWS"} filter mode</Menu.Label>
+                <Menu.Label>Filter mode</Menu.Label>
                 {(Object.keys(labels) as ServerFilterMode[]).map((item) => (
                   <Menu.Item
                     key={item}
                     onClick={() => onModeChange(item)}
-                    leftSection={item === mode ? "✓" : undefined}
+                    leftSection={(() => { const Icon = modeIcons[item]; return <Icon size={14} />; })()}
+                    rightSection={item === mode ? <IconCheck size={14} /> : undefined}
                   >
                     {providerLabels[item]}
                   </Menu.Item>

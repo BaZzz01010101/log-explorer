@@ -623,7 +623,7 @@ test("quick presets stay outside Custom and immediately refresh without Run", as
   await expect(oneDay).toHaveAttribute("data-variant", "light");
   await expect(fiveMinutes).toHaveAttribute("aria-pressed", "false");
   await page
-    .getByRole("button", { name: "Clear time filter", exact: true })
+    .getByRole("button", { name: "Recent logs", exact: true })
     .click();
   await expect.poll(requestIds).toHaveLength(3);
   await expect(
@@ -645,7 +645,7 @@ for (const theme of ["dark", "light"] as const) {
       .click();
     await page.keyboard.press("Escape");
     const selectedTemplateBackground = await page
-      .getByRole("button", { name: "Clear time filter", exact: true })
+      .getByRole("button", { name: "Recent logs", exact: true })
       .evaluate((button) => getComputedStyle(button).backgroundColor);
     const checkGlyphs = async (state: string, unit: "Hours" | "Days") => {
       await selectToolbarRelative("2", unit);
@@ -702,7 +702,7 @@ test("absolute ranges keep Clear visible on the left and clearing refreshes imme
   await apply();
   await expect.poll(requestIds).toHaveLength(1);
   const clear = page.getByRole("button", {
-    name: "Clear time filter",
+    name: "Recent logs",
     exact: true,
   });
   await expect(clear).toBeInViewport();

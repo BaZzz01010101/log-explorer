@@ -179,7 +179,7 @@ for (const theme of ["light", "dark"]) {
       await button.click();
     }
     const activeTime = page.getByRole("button", {
-      name: "Clear time filter",
+      name: "Recent logs",
       exact: true,
     });
     const otherTime = page.getByRole("button", {

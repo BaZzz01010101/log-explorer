@@ -171,15 +171,17 @@ export function ViewFavorites({
   onOpen,
   onRemove,
   onRename,
+  dropId = "view-favorites",
 }: {
   favorites: ViewFavorite[];
   onOpen?(id: string): void;
   onRemove?(id: string): void;
   onRename?(id: string, title: string): void;
+  dropId?: string;
 }) {
   const [menuId, setMenuId] = useState<string | null>(null);
   const { setNodeRef, isOver } = useDroppable({
-    id: "view-favorites",
+    id: dropId,
     data: { kind: "view-favorites" },
   });
   return (

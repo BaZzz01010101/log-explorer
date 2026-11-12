@@ -128,14 +128,14 @@ export function QueryPane({
     !runtime.live &&
     !runtime.error &&
     !runtime.truncated &&
-    !runtime.evicted &&
+    (runtime.request.direction === "older" || !runtime.evicted) &&
     !stale &&
-    runtime.events.length < workspace.preferences.maxEvents,
+    (runtime.request.direction === "older" || runtime.events.length < workspace.preferences.maxEvents),
   );
   const prefetched = useRef(new Set<string>());
   useEffect(() => {
     const request = runtime?.request;
-    if (!canPage || !request || request.cursor || (runtime?.events.length ?? 0) < 100 ||
+    if (!canPage || !request || request.direction === "older" || request.cursor || (runtime?.events.length ?? 0) < 100 ||
         !sourceConnections.some((item) => item.mode === "gcp") || prefetched.current.has(request.requestId)) return;
     prefetched.current.add(request.requestId);
     if (prefetched.current.size > 100) prefetched.current.delete(prefetched.current.values().next().value!);
@@ -204,12 +204,6 @@ export function QueryPane({
           </Group>
         </Group>
         <div className="query-editor">
-          {sourceConnections.some((item) => item.mode === "gcp") && <Select
-            aria-label="Google Cloud log type" size="xs" w={150} allowDeselect={false}
-            value={tab.gcpLogType ?? "all"}
-            data={[{ value: "all", label: "All GCP logs" }, { value: "execution", label: "Execution logs" }, { value: "audit", label: "Audit logs" }]}
-            onChange={(value) => onPatch({ gcpLogType: value === "audit" || value === "execution" ? value : "all" })}
-          />}
           <div className="query-input">
             <ServerFilterInput
               provider={sourceConnections.length > 0 && sourceConnections.every((item) => item.mode === "gcp") ? "gcp" : "aws"}
@@ -355,40 +349,28 @@ export function QueryPane({
                 </Button>
               </Tooltip>
             ) : (
+              <span data-tooltip={liveUnavailable} aria-label={liveUnavailable} role={liveUnavailable ? "note" : undefined} tabIndex={liveUnavailable ? 0 : undefined}>
               <Button
                 size="xs"
                 color="teal"
                 variant="light"
                 disabled={Boolean(liveUnavailable)}
-                aria-describedby={
-                  liveUnavailable ? `live-unavailable-${tab.id}` : undefined
-                }
                 aria-description={
-                  offlineSources
+                  liveUnavailable ?? (offlineSources
                     ? "Start an explicitly simulated fixture stream"
                     : sourceConnections.every((item) => item.mode === "gcp")
                     ? "Stream new Google Cloud log entries"
-                    : "Start CloudWatch Live Tail (AWS charges apply; results may be sampled)"
+                    : "Start CloudWatch Live Tail (AWS charges apply; results may be sampled)")
                 }
                 leftSection={<IconRadio size={14} />}
                 onClick={() => onRun(true)}
               >
                 Live
               </Button>
+              </span>
             )}
           </Group>
         </div>
-        {!running && liveUnavailable && (
-          <Text
-            id={`live-unavailable-${tab.id}`}
-            role="status"
-            size="xs"
-            c="dimmed"
-            mt={5}
-          >
-            {liveUnavailable}
-          </Text>
-        )}
       </div>
       {stale && (
         <Alert color="yellow" p="xs" mx="xs">
@@ -428,11 +410,12 @@ export function QueryPane({
       {(runtime?.truncated || (runtime?.evicted ?? 0) > 0) && (
         <Alert color="yellow" p="xs" mx="xs">
           {runtime?.evicted
-            ? `${runtime.evicted.toLocaleString()} earlier events removed at the buffer limit. `
+            ? `${runtime.evicted.toLocaleString()} ${runtime.request?.direction === "older" ? "newer" : "earlier"} events removed at the buffer limit. `
             : ""}
           {runtime?.truncated
             ? "The service result limit was reached. Narrow the time range or query."
             : ""}
+          {runtime?.evicted && runtime.request?.direction === "older" ? <Button size="compact-xs" variant="subtle" onClick={() => onRun()}>Return to recent</Button> : null}
         </Alert>
       )}
       <div className="viewer-container">
@@ -453,6 +436,7 @@ export function QueryPane({
           loading={
             running && (!runtime?.live || runtime.liveState !== "streaming")
           }
+          incomplete={runtime?.incomplete}
           liveState={runtime?.liveState}
           followLive={Boolean(runtime?.live && followLive)}
           onPauseLiveFollow={() => setFollowLive(false)}
@@ -470,6 +454,8 @@ export function QueryPane({
           )}
           pagination={{
             scope: `${tab.id}:${paginationScope.current}`,
+            direction: runtime?.request?.direction,
+            loadingOlder: runtime?.request?.direction === "older" && Boolean(runtime.request.cursor),
             pageKey: canPage
               ? JSON.stringify([runtime!.cursor, runtime!.request!.requestId])
               : undefined,

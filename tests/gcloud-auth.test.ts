@@ -2,6 +2,26 @@ import { describe, expect, it, vi } from "vitest";
 import { createGcloudAuth } from "../src/main/gcloud-auth";
 
 describe("gcloud authentication", () => {
+  it("discards cached access tokens when the user signs in again", async () => {
+    const run = vi.fn().mockResolvedValueOnce("old-token").mockResolvedValueOnce("new-token");
+    const auth = createGcloudAuth(run);
+    const identity = { configuration: "work", account: "user@example.com" };
+    expect(await auth.token(identity)).toBe("old-token");
+    auth.clearTokens();
+    expect(await auth.token(identity)).toBe("new-token");
+  });
+  it("does not let a pre-login token request replace newly signed-in credentials", async () => {
+    let release!: (value: string) => void;
+    const run = vi.fn().mockImplementationOnce(() => new Promise<string>((resolve) => { release = resolve; })).mockResolvedValueOnce("new-token");
+    const auth = createGcloudAuth(run);
+    const identity = { configuration: "work", account: "user@example.com" };
+    const old = auth.token(identity);
+    auth.clearTokens();
+    expect(await auth.token(identity)).toBe("new-token");
+    release("old-token");
+    await old;
+    expect(await auth.token(identity)).toBe("new-token");
+  });
   it("loads named configurations and credentialed accounts", async () => {
     const run = vi.fn(async (args: string[]) =>
       args[0] === "config"

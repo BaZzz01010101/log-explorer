@@ -8,7 +8,7 @@ export interface ScrollPageTarget {
 
 export function useScrollPagination(
   scrollRef: RefObject<HTMLElement | null>,
-  options: { scope: string; targets: ScrollPageTarget[] },
+  options: { scope: string; targets: ScrollPageTarget[]; edge?: "top" | "bottom"; enabled?: boolean },
 ) {
   const current = useRef(options);
   current.current = options;
@@ -24,13 +24,13 @@ export function useScrollPagination(
     const element = scrollRef.current;
     if (!element || typeof element.addEventListener !== "function") return;
     const check = () => {
-      if (element.clientHeight <= 0) return;
+      if (element.clientHeight <= 0 || current.current.enabled === false) return;
       const bottom = element.scrollTop + element.clientHeight + 96;
       for (const target of current.current.targets) {
         if (
           consumed.current.budget <= 0 ||
           consumed.current.keys.has(target.key) ||
-          bottom < (target.end ?? element.scrollHeight)
+          (current.current.edge === "top" ? element.scrollTop > 96 : bottom < (target.end ?? element.scrollHeight))
         )
           continue;
         // Consume before dispatch: React may not commit the loading flag until
@@ -45,10 +45,10 @@ export function useScrollPagination(
       check();
     };
     const onWheel = (event: WheelEvent) => {
-      if (event.deltaY > 0) onScroll();
+      if (current.current.edge === "top" ? event.deltaY < 0 : event.deltaY > 0) onScroll();
     };
     const onKeyDown = (event: KeyboardEvent) => {
-      if (["ArrowDown", "PageDown", "End", " "].includes(event.key)) onScroll();
+      if ((current.current.edge === "top" ? ["ArrowUp", "PageUp", "Home"] : ["ArrowDown", "PageDown", "End", " "]).includes(event.key)) onScroll();
     };
     checkRef.current = check;
     element.addEventListener("scroll", onScroll, { passive: true });

@@ -109,7 +109,7 @@ test("trusted date preset selection refreshes without clicking Run and leaves pa
   const picker = page.getByRole("button", { name: "Time range", exact: true });
   await expect(picker).toHaveText("Custom");
   await expect(
-    page.getByRole("button", { name: "Clear time filter", exact: true }),
+    page.getByRole("button", { name: "Recent logs", exact: true }),
   ).toHaveAttribute("aria-pressed", "true");
   await expect(
     page.getByRole("combobox", { name: "Timezone", exact: true }),
@@ -210,7 +210,7 @@ test("absolute date ranges refresh automatically in UTC and clearing restores al
   ).toBeAttached();
   await picker.click();
   await page
-    .getByRole("button", { name: "Clear custom time filter", exact: true })
+    .getByRole("button", { name: "Show recent logs", exact: true })
     .click();
   await expect(picker).toHaveText("Custom");
   await expect.poll(async () => count(await metadata())).toBe(all);

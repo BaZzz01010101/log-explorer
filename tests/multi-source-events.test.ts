@@ -40,6 +40,117 @@ const adapter = (events: LogAdapter["events"]): LogAdapter => ({
   destroy: vi.fn(),
 });
 
+it("merges newest-first pages without losing the newest source head", async () => {
+  const merger = createMultiSourceEvents((connection) => adapter(async (input) => ({
+    requestId: input.requestId, state: "complete",
+    events: (connection.id === "west" ? [9, 5, 1] : [10, 8, 3]).map((timestamp) => ({ id: `${connection.id}-${timestamp}`, timestamp, message: "x", logGroup: "/same", logStream: "one" })),
+  })));
+  const result = await merger.events(request({ direction: "older", limit: 4 }), new AbortController().signal);
+  expect(result.events?.map((event) => event.timestamp)).toEqual([10, 9, 8, 5]);
+  expect(result.cursor).toBeTruthy();
+});
+
+it("orders Google entries within the same millisecond across sources", async () => {
+  const merger = createMultiSourceEvents((connection) => adapter(async (input) => ({
+    requestId: input.requestId, state: "complete", events: [{ id: connection.id, timestamp: 5, timestampSubMillis: connection.id === "west" ? 100 : 900, message: "x", logGroup: "/same", logStream: "one" }],
+  })));
+  const result = await merger.events(request({ direction: "older" }), new AbortController().signal);
+  expect(result.events?.map((event) => event.connectionId)).toEqual(["east", "west"]);
+});
+
+it("does not scan old history while another source has a provably newer head", async () => {
+  const calls: string[] = [];
+  const merger = createMultiSourceEvents((connection) => adapter(async (input) => {
+    calls.push(`${connection.id}:${input.cursor ?? "first"}`);
+    if (connection.id === "west") return { requestId: input.requestId, state: "complete", cursor: "old", cursorUpperBound: 10, events: [{ id: "west", timestamp: 100, message: "x", logGroup: "/same", logStream: "one" }] };
+    return { requestId: input.requestId, state: "complete", events: [90, 80, 70].map((timestamp) => ({ id: String(timestamp), timestamp, message: "x", logGroup: "/same", logStream: "one" })) };
+  }));
+  const result = await merger.events(request({ direction: "older", limit: 3 }), new AbortController().signal);
+  expect(result.events?.map((event) => event.timestamp)).toEqual([100, 90, 80]);
+  expect(calls).toEqual(["west:first", "east:first"]);
+});
+it("avoids serial small pages for a recent view with two sources", async () => {
+  const limits: number[] = [];
+  const merger = createMultiSourceEvents((connection) => adapter(async (input) => {
+    limits.push(input.limit);
+    return { requestId: input.requestId, state: "complete", events: [{ id: connection.id, timestamp: 1, message: "x", logGroup: "/same", logStream: "one" }] };
+  }));
+  await merger.events(request({ direction: "older", limit: 1000 }), new AbortController().signal);
+  expect(limits).toEqual([1000, 1000]);
+});
+it("resumes a deferred older source as soon as its upper bound can affect the merge", async () => {
+  const calls: string[] = [];
+  const merger = createMultiSourceEvents((connection) => adapter(async (input) => {
+    calls.push(`${connection.id}:${input.cursor ?? "first"}`);
+    const timestamps = connection.id === "west" ? (input.cursor ? [9] : [100]) : [90, 8];
+    return { requestId: input.requestId, state: "complete", ...(connection.id === "west" && !input.cursor ? { cursor: "old", cursorUpperBound: 10 } : {}), events: timestamps.map((timestamp) => ({ id: `${connection.id}-${timestamp}`, timestamp, message: "x", logGroup: "/same", logStream: "one" })) };
+  }));
+  const result = await merger.events(request({ direction: "older", limit: 4 }), new AbortController().signal);
+  expect(result.events?.map((event) => event.timestamp)).toEqual([100, 90, 9, 8]);
+  expect(calls).toContain("west:old");
+});
+
+it("reads CloudWatch recent history newest first and continues into older history", async () => {
+  const boundary = Date.UTC(2024, 0, 1);
+  const inputs: Array<{ startTime?: number; endTime?: number; startFromHead?: boolean; nextToken?: string }> = [];
+  const aws = createAwsAdapter({ ...west, mode: "aws" }, { allowAws: () => true, transportFactory: async () => ({
+    destroy() {},
+    send: async (command) => {
+      const input = command.input as typeof inputs[number]; inputs.push(input);
+      if (input.startFromHead === false) return { events: [{ eventId: "new", timestamp: boundary + 100, message: "new" }] };
+      return { events: input.startTime! <= boundary - 100 && input.endTime! >= boundary - 100 ? [{ eventId: "old", timestamp: boundary - 100, message: "old" }] : [] };
+    },
+  }) });
+  const input = request({ connection: { ...west, mode: "aws" }, connections: [], sources: [{ logGroup: "/same" }], startTime: boundary - 1000, endTime: boundary + 1000, direction: "older" });
+  const signal = new AbortController().signal;
+  const first = await aws.events(input, signal);
+  expect(first.events?.map((event) => event.message)).toEqual(["new"]);
+  expect(first.cursor).toBeTruthy();
+  const second = await aws.events({ ...input, cursor: first.cursor }, signal);
+  expect(second.events?.map((event) => event.message)).toEqual(["old"]);
+  expect(inputs[0]).toMatchObject({ startTime: boundary, startFromHead: false });
+  expect(inputs[1].startFromHead).toBe(true);
+  expect(second.cursor).toBeUndefined();
+});
+
+it("pages pre-2024 CloudWatch windows backward without losing equal-timestamp events", async () => {
+  const original = [1100, 1300, 1300, 1300, 1900, 2100, 2200, 2200].map((timestamp, index) => ({ eventId: String(index), timestamp, message: String(index) }));
+  const aws = createAwsAdapter({ ...west, mode: "aws" }, { allowAws: () => true, transportFactory: async () => ({
+    destroy() {},
+    send: async (command) => {
+      const input = command.input as { startTime: number; endTime: number; limit: number; nextToken?: string; startFromHead?: boolean };
+      expect(input.startFromHead).toBe(true);
+      const entries = original.filter((event) => event.timestamp >= input.startTime && event.timestamp <= input.endTime);
+      const offset = Number(input.nextToken ?? 0);
+      return { events: entries.slice(offset, offset + input.limit), ...(offset + input.limit < entries.length ? { nextToken: String(offset + input.limit) } : {}) };
+    },
+  }) });
+  const input = request({ connection: { ...west, mode: "aws" }, connections: [], sources: [{ logGroup: "/same" }], startTime: 1000, endTime: 5000, limit: 3, direction: "older" });
+  const signal = new AbortController().signal;
+  const events = []; let cursor: string | undefined;
+  do { const page = await aws.events({ ...input, cursor }, signal); events.push(...(page.events ?? [])); cursor = page.cursor; } while (cursor);
+  expect(events.map((event) => event.timestamp)).toEqual(original.map((event) => event.timestamp).reverse());
+  expect(new Set(events.map((event) => event.id)).size).toBe(original.length);
+});
+
+it("narrows a dense pre-2024 window without dropping boundary events", async () => {
+  const largeMessage = "x".repeat(900000);
+  const original = Array.from({ length: 10 }, (_, index) => ({ eventId: String(index), timestamp: 1000 + index, message: largeMessage }));
+  const aws = createAwsAdapter({ ...west, mode: "aws" }, { allowAws: () => true, transportFactory: async () => ({
+    destroy() {}, send: async (command) => {
+      const input = command.input as { startTime: number; endTime: number; limit: number; nextToken?: string };
+      const entries = original.filter((event) => event.timestamp >= input.startTime && event.timestamp <= input.endTime);
+      const offset = Number(input.nextToken ?? 0);
+      return { events: entries.slice(offset, offset + input.limit), ...(offset + input.limit < entries.length ? { nextToken: String(offset + input.limit) } : {}) };
+    },
+  }) });
+  const input = request({ connection: { ...west, mode: "aws" }, connections: [], sources: [{ logGroup: "/same" }], startTime: 1000, endTime: 1009, limit: 3, direction: "older" });
+  const signal = new AbortController().signal;
+  const timestamps: number[] = []; let cursor: string | undefined;
+  do { const page = await aws.events({ ...input, cursor }, signal); timestamps.push(...(page.events ?? []).map((event) => event.timestamp)); cursor = page.cursor; } while (cursor);
+  expect(timestamps).toEqual(original.map((event) => event.timestamp).reverse());
+});
+
 it("starts independent source reads concurrently while keeping merged events chronological", async () => {
   let release!: () => void;
   const gate = new Promise<void>((resolve) => { release = resolve; });

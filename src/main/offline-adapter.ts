@@ -79,6 +79,7 @@ function signature(request: QueryRequest): string {
         request.startTime,
         request.endTime,
         request.filterPattern,
+        request.direction,
       ]),
     )
     .digest("hex")
@@ -192,6 +193,7 @@ export function createOfflineAdapter(): LogAdapter {
       throwIfAborted(signal);
       const started = Date.now();
       const items = select(request);
+      if (request.direction === "older") items.reverse();
       const key = signature(request);
       const match = request.cursor?.match(/^events:([a-f0-9]{16}):(\d+)$/);
       if (request.cursor && (!match || match[1] !== key))

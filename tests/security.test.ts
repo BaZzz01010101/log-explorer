@@ -107,6 +107,8 @@ describe("desktop trust boundary", () => {
     expect(
       querySchema.safeParse({ ...request, endTime: 3, limit: 10001 }).success,
     ).toBe(false);
+    expect(querySchema.parse({ ...request, endTime: 3, direction: "older", gcpLocalFilter: { kind: "plain", value: "ERROR" } })).toMatchObject({ direction: "older", gcpLocalFilter: { kind: "plain", value: "ERROR" } });
+    expect(querySchema.safeParse({ ...request, endTime: 3, direction: "newer" }).success).toBe(false);
   });
   it("rejects unsupported workspace versions before writing", () => {
     expect(workspaceSchema.safeParse({ version: 99 }).success).toBe(false);

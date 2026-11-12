@@ -33,6 +33,10 @@ it("deduplicates overlapping pages and bounds live memory", () => {
   ).toEqual({ events: [event("2"), event("3")], evicted: 1 });
 });
 
+it("keeps older pages when a recent-history window reaches its memory limit", () => {
+  expect(mergeEvents([event("3", 3), event("4", 4)], [event("1", 1), event("2", 2)], 3, undefined, false, "newest")).toEqual({ events: [event("1", 1), event("2", 2), event("3", 3)], evicted: 1 });
+});
+
 it("keeps interleaved multi-source history, late pages and Live arrivals in timestamp order", () => {
   const sourceEvent = (
     id: string,

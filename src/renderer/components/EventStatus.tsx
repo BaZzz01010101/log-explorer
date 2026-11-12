@@ -23,7 +23,9 @@ export function EventStatus({
       ? runtime?.liveState
         ? "Live Tail failed"
         : "Query failed"
-      : runtime?.liveState === "stopped"
+        : runtime?.incomplete && state === "complete"
+          ? "Search incomplete · scroll to continue"
+        : runtime?.liveState === "stopped"
         ? "Live stopped"
         : runtime?.liveState === "connecting"
           ? "Connecting to Live Tail"
@@ -68,6 +70,7 @@ export function EventStatus({
             `${eventsShown.toLocaleString()} shown / `}
           {eventsLoaded.toLocaleString()} loaded
         </span>
+        {runtime?.request?.gcpLocalFilter?.kind === "aws-json" && <span data-tooltip="AWS JSON patterns are checked after Google Cloud events are fetched. Sparse matches can take longer to load.">GCP filter after fetch</span>}
         {runtime?.liveReceived !== undefined && (
           <span>
             {runtime.liveReceived.toLocaleString()} new in this session

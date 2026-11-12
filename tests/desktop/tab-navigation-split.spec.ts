@@ -228,10 +228,10 @@ for (const theme of ["light", "dark"]) {
     // A modifier-held Tab navigates tabs while autocomplete is open; it must
     // leave the draft untouched instead of accepting the selected keyword.
     await page
-      .getByRole("button", { name: "AWS filter mode: Plain Text", exact: true })
+      .getByRole("button", { name: "Filter mode: Text", exact: true })
       .click();
     await page
-      .getByRole("menuitem", { name: "AWS Patterns", exact: true })
+      .getByRole("menuitem", { name: "Pattern", exact: true })
       .click();
     const input = page.getByRole("combobox", {
       name: "CloudWatch filter pattern",

@@ -202,6 +202,7 @@ function querySignature(request: QueryRequest): string {
         request.startTime,
         request.endTime,
         request.filterPattern,
+        request.direction,
       ]),
     )
     .digest("hex");
@@ -256,6 +257,8 @@ export function createAwsAdapter(
 ): LogAdapter {
   const slots = new Semaphore(4);
   const cursors = new Map<string, EventCursor>();
+  type RecentCursor = { signature: string; expires: number; phase: "recent" | "old"; token?: string; seen: string[]; end: number; span: number; start?: number; buffer: LogEvent[]; ready: boolean };
+  const recentCursors = new Map<string, RecentCursor>();
   const metadataContinuations = new MetadataContinuations();
   const arnCache = new Map<string, { arn: string; expires: number }>();
   let transport: Promise<AwsTransport> | undefined;
@@ -482,6 +485,79 @@ export function createAwsAdapter(
       throwIfAborted(signal);
       const started = Date.now();
       const key = querySignature(request);
+      if (request.direction === "older") {
+        if (request.sources.length !== 1) throw new Error("Recent CloudWatch queries require one source per partition.");
+        const boundary = Date.UTC(2024, 0, 1);
+        for (const [id, cursor] of recentCursors) if (cursor.expires <= started) recentCursors.delete(id);
+        const saved = request.cursor ? recentCursors.get(request.cursor) : undefined;
+        if (request.cursor && (!saved || saved.signature !== key)) throw new Error("Continuation expired or belongs to a different query. Run the query again.");
+        const state: RecentCursor = saved ? structuredClone(saved) : { signature: key, expires: 0, phase: request.endTime >= boundary ? "recent" : "old", seen: [], end: Math.min(request.endTime, boundary - 1), span: 86400000, buffer: [], ready: false };
+        const source = request.sources[0];
+        let events: LogEvent[] = [];
+        let finished = false;
+        for (let calls = 0; calls < 32 && !events.length && !finished; calls++) {
+          throwIfAborted(signal);
+          if (state.phase === "old" && state.ready) {
+            events = state.buffer.splice(0, request.limit);
+            if (!state.buffer.length) { state.ready = false; state.end = state.start! - 1; state.start = undefined; }
+            if (state.end < request.startTime && !state.buffer.length) finished = true;
+            continue;
+          }
+          if (state.phase === "old" && state.end < request.startTime) { finished = true; break; }
+          if (state.phase === "old" && state.start === undefined) state.start = Math.max(request.startTime, state.end - state.span + 1);
+          const response = await send<FilterLogEventsCommandOutput>(new FilterLogEventsCommand({
+            ...identifier(source.logGroup), logStreamNames: source.logStreams?.length ? source.logStreams : undefined,
+            startTime: state.phase === "recent" ? Math.max(boundary, request.startTime) : state.start,
+            endTime: state.phase === "recent" ? request.endTime : state.end,
+            startFromHead: state.phase === "old", filterPattern: request.filterPattern || undefined,
+            nextToken: state.token, limit: Math.min(10000, request.limit),
+          }), signal);
+          throwIfAborted(signal);
+          const token = response.nextToken;
+          if (token && state.seen.includes(token)) throw new Error("CloudWatch returned a repeated continuation token.");
+          if (token) state.seen.push(token);
+          state.token = token;
+          const page = (response.events ?? []).map((event) => ({
+            id: `${source.logGroup}:${event.eventId ?? eventId([event.logStreamName, event.timestamp, event.ingestionTime, event.message])}`,
+            timestamp: event.timestamp ?? request.startTime, ingestionTime: event.ingestionTime,
+            message: event.message ?? "", logGroup: nameFromIdentifier(source.logGroup), logStream: event.logStreamName ?? "",
+          }));
+          if (state.phase === "recent") {
+            events = page;
+            if (!token) { state.phase = "old"; state.seen = []; if (state.end < request.startTime) finished = true; }
+          } else {
+            state.buffer.push(...page);
+            const over = state.buffer.length > Math.max(2000, request.limit * 4) || state.buffer.reduce((sum, item) => sum + item.message.length, 0) > 8_000_000;
+            if (state.start === state.end) {
+              // All rows have the same timestamp, so ascending service order is
+              // also a valid descending order and can be streamed page by page.
+              events = state.buffer.splice(0, request.limit);
+              if (!token) { state.end = state.start! - 1; state.start = undefined; state.seen = []; }
+            } else if (over) {
+              state.span = Math.max(1, Math.floor((state.end - state.start! + 1) / 2));
+              state.start = undefined; state.buffer = []; state.token = undefined; state.seen = [];
+            } else if (!token) {
+              if (state.buffer.length) { state.buffer.reverse(); state.ready = true; }
+              else { state.end = state.start! - 1; state.start = undefined; state.span = Math.min(Number.MAX_SAFE_INTEGER, state.span * 4); }
+              state.seen = [];
+            }
+          }
+        }
+        let cursor: string | undefined;
+        if (!finished || state.buffer.length) {
+          cursor = request.cursor ?? `recent:${randomUUID()}`;
+          recentCursors.delete(cursor);
+          let retained = [...recentCursors.values()].reduce((sum, entry) => sum + entry.buffer.reduce((n, event) => n + event.message.length, 0), 0);
+          const incoming = state.buffer.reduce((sum, event) => sum + event.message.length, 0);
+          while (recentCursors.size && (recentCursors.size >= 128 || retained + incoming > 32_000_000)) {
+            const oldest = recentCursors.keys().next().value!;
+            retained -= recentCursors.get(oldest)!.buffer.reduce((n, event) => n + event.message.length, 0);
+            recentCursors.delete(oldest);
+          }
+          recentCursors.set(cursor, { ...state, expires: Date.now() + 23 * 3600000 });
+        } else if (request.cursor) recentCursors.delete(request.cursor);
+        return { requestId: request.requestId, state: "complete", events, replace: !request.cursor, cursor, ...(cursor && !events.length ? { incomplete: true } : {}), ...(cursor && state.phase === "old" ? { cursorUpperBound: state.end } : {}), stats: { recordsMatched: events.length, elapsedMs: Date.now() - started } };
+      }
       for (const [id, value] of cursors)
         if (value.expires <= started) cursors.delete(id);
       const saved = request.cursor ? cursors.get(request.cursor) : undefined;
@@ -694,6 +770,7 @@ export function createAwsAdapter(
     destroy() {
       destroyed = true;
       cursors.clear();
+      recentCursors.clear();
       metadataContinuations.clear();
       arnCache.clear();
       if (transport)

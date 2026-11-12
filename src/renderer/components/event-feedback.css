@@ -59,6 +59,11 @@
   padding: 14px;
 }
 
+.event-loading-older {
+  min-height: 56px;
+  padding: 14px;
+}
+
 .event-loading-spinner {
   width: 26px;
   height: 26px;

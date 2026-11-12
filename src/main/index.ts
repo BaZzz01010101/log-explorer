@@ -195,7 +195,7 @@ function allowGcpDiscovery() {
   if (process.argv.includes("--offline-verification") || backgroundVerification)
     throw new Error("Google Cloud access is disabled in verification mode.");
 }
-const signInToGoogle = createGcpSignIn(launchGoogleLogin, () => {});
+const signInToGoogle = createGcpSignIn(launchGoogleLogin, () => gcloudAuth.clearTokens());
 const gcpIdentity = z.object({
   configuration: z.string().min(1).max(256),
   account: z.string().min(1).max(256),

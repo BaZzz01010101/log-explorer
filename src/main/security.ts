@@ -36,8 +36,10 @@ export const querySchema = z
     kind: z.literal("events"),
     filterPattern: text,
     gcpFilterPattern: text.optional(),
+    gcpLocalFilter: z.object({ kind: z.enum(["plain", "aws-json"]), value: text }).optional(),
     query: text,
     limit: z.number().int().min(1).max(10000),
+    direction: z.literal("older").optional(),
     cursor: z.string().max(100000).optional(),
   })
   .refine((v) => v.endTime > v.startTime, "End time must be after start time");

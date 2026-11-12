@@ -91,7 +91,7 @@ it("stages a relative choice until Apply and clears it without keeping absolute 
     renderer!.root.findByType("form").props.onSubmit({ preventDefault() {} }),
   );
   expect(patched).toHaveBeenLastCalledWith({ timePreset: "5m" });
-  await act(async () => element("Clear time filter").props.onClick());
+  await act(async () => element("Recent logs").props.onClick());
   expect(patched).toHaveBeenLastCalledWith({
     timePreset: "clear",
     customStart: undefined,
@@ -111,7 +111,7 @@ it("highlights an applied custom relative range and transfers selection to a sho
   );
   expect(patched).toHaveBeenLastCalledWith({ timePreset: "2h" });
   expect(element("Time range").props["aria-pressed"]).toBe(true);
-  expect(element("Clear time filter").props["aria-pressed"]).toBe(false);
+  expect(element("Recent logs").props["aria-pressed"]).toBe(false);
   await act(async () => element("Set last 5 minutes").props.onClick());
   expect(patched).toHaveBeenLastCalledWith({ timePreset: "5m" });
   expect(element("Time range").props["aria-pressed"]).toBe(false);
@@ -182,9 +182,9 @@ it("keeps separate date/time edits as drafts until Apply commits a valid absolut
   await act(async () => element("Time range").props.onClick());
   expect(element("Start time").props.value).toBe("12:00:00");
   expect(patched).toHaveBeenCalledTimes(1);
-  expect(element("Clear time filter")).toBeDefined();
+  expect(element("Recent logs")).toBeDefined();
   expect(element("Time range").props["aria-pressed"]).toBe(true);
-  await act(async () => element("Clear time filter").props.onClick());
+  await act(async () => element("Recent logs").props.onClick());
   expect(patched).toHaveBeenLastCalledWith({
     timePreset: "clear",
     customStart: undefined,

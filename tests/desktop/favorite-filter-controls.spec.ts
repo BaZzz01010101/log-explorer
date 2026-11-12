@@ -503,7 +503,7 @@ for (const theme of ["light", "dark"]) {
     for (const name of [
       "Live",
       "Time range",
-      "Clear time filter",
+      "Recent logs",
       "Set last 5 minutes",
     ]) {
       await option(name).hover();

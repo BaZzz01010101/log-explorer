@@ -7,6 +7,41 @@ const connection = { id: "gcp", mode: "gcp" as const, profile: "work", name: "Go
 const request = { requestId: "test", connection, sources: [source], startTime: 1000, endTime: 5000, kind: "events" as const, filterPattern: "", query: "", limit: 100 };
 
 describe("GCP event adapter", () => {
+  it("requests recent events newest first and retains the order for continuation", async () => {
+    const post = vi.fn().mockResolvedValueOnce({ entries: [{ timestamp: "1970-01-01T00:00:04.123456789Z", textPayload: "new" }], nextPageToken: "next" }).mockResolvedValueOnce({ entries: [{ timestamp: "1970-01-01T00:00:03Z", textPayload: "older" }] });
+    const adapter = createGcpAdapter(connection, post);
+    const signal = new AbortController().signal;
+    const input = { ...request, direction: "older" as const };
+    const first = await adapter.events(input, signal);
+    const second = await adapter.events({ ...input, cursor: first.cursor }, signal);
+    expect(post.mock.calls.map(([body]) => body.orderBy)).toEqual(["timestamp desc", "timestamp desc"]);
+    expect([...first.events!, ...second.events!].map((event) => event.message)).toEqual(["new", "older"]);
+    expect(first.events![0].timestampSubMillis).toBe(456789);
+  });
+  it("keeps a recent-history continuation after a short break", async () => {
+    vi.useFakeTimers();
+    try {
+      const post = vi.fn().mockResolvedValueOnce({ entries: [{ timestamp: "1970-01-01T00:00:04Z", textPayload: "new" }], nextPageToken: "next" }).mockResolvedValueOnce({ entries: [] });
+      const adapter = createGcpAdapter(connection, post);
+      const input = { ...request, direction: "older" as const };
+      const signal = new AbortController().signal;
+      const first = await adapter.events(input, signal);
+      vi.advanceTimersByTime(16 * 60000);
+      await expect(adapter.events({ ...input, cursor: first.cursor }, signal)).resolves.toMatchObject({ state: "complete" });
+    } finally { vi.useRealTimers(); }
+  });
+  it("continues through locally rejected GCP records when matching an AWS JSON filter", async () => {
+    const post = vi.fn().mockResolvedValueOnce({ entries: [{ timestamp: "1970-01-01T00:00:04Z", jsonPayload: { level: "warn" } }], nextPageToken: "next" }).mockResolvedValueOnce({ entries: [{ timestamp: "1970-01-01T00:00:03Z", textPayload: '{"level":"ERROR"}' }] });
+    const input = { ...request, direction: "older" as const, gcpLocalFilter: { kind: "aws-json" as const, value: '{ $.level = "ERROR" }' } };
+    const result = await createGcpAdapter(connection, post).events(input, new AbortController().signal);
+    expect(result.events?.map((event) => event.message)).toEqual(['{"level":"ERROR"}']);
+    expect(post).toHaveBeenCalledTimes(2);
+  });
+  it("verifies mixed plain text against the message with AWS case sensitivity", async () => {
+    const post = vi.fn().mockResolvedValue({ entries: [{ timestamp: "1970-01-01T00:00:04Z", textPayload: "error" }, { timestamp: "1970-01-01T00:00:03Z", textPayload: "ERROR" }] });
+    const result = await createGcpAdapter(connection, post).events({ ...request, gcpLocalFilter: { kind: "plain", value: "ERROR" } }, new AbortController().signal);
+    expect(result.events?.map((event) => event.message)).toEqual(["ERROR"]);
+  });
   it("refreshes an expired cached token once after HTTP 401", async () => {
     const token = vi.spyOn(gcloudAuth, "token").mockResolvedValueOnce("old").mockResolvedValueOnce("new");
     const invalidate = vi.spyOn(gcloudAuth, "invalidateToken").mockImplementation(() => {});
@@ -43,6 +78,7 @@ describe("GCP event adapter", () => {
     const result = await adapter.events(request, new AbortController().signal);
     expect(result.cursor).toBeTruthy();
     expect(result.events).toEqual([]);
+    expect(result.incomplete).toBe(true);
     expect(page).toBeLessThanOrEqual(8);
   });
   it("continues through sparse empty Google pages without returning prematurely", async () => {

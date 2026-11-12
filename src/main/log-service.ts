@@ -279,7 +279,7 @@ export function createLogService(
         for (const query of scopedQueries(input)) gate(query.connection);
         update({ requestId: input.requestId, state: "running" });
         const queries = scopedQueries(input);
-        if (queries.length > 1 || (!live && input.sources.length > 1 && queries.some((query) => query.connection.mode === "gcp"))) {
+        if (queries.length > 1 || (!live && input.sources.length > 1 && (input.direction === "older" || queries.some((query) => query.connection.mode === "gcp")))) {
           update(await multiSourceEvents.events(input, job.controller.signal, update));
         } else {
           const query = queries[0];

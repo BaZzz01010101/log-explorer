@@ -222,11 +222,11 @@ export function TimeRangePicker({
           className="time-range-clear"
           variant={tab.timePreset === "clear" ? "light" : "subtle"}
           size="compact-xs"
-          aria-label="Clear time filter"
+          aria-label="Recent logs"
           aria-pressed={tab.timePreset === "clear"}
           onClick={clear}
         >
-          Clear
+          Recent
         </Button>
         {tab.timePreset !== "custom" && (
           <div className="time-range-shortcuts">
@@ -459,11 +459,11 @@ export function TimeRangePicker({
                   type="button"
                   size="xs"
                   variant="subtle"
-                  aria-label="Clear custom time filter"
+                  aria-label="Show recent logs"
                   leftSection={<IconX size={12} />}
                   onClick={clear}
                 >
-                  Clear
+                  Recent
                 </Button>
                 <Group gap={7}>
                   <Button

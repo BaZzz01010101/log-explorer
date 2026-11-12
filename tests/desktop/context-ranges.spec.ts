@@ -367,7 +367,7 @@ test("dark nested context menus keep one owner, themed hoverable hints and dismi
   await page.locator(".pane-title").click();
   await expect(page.getByRole("menu")).toHaveCount(0);
   await openContext();
-  await page.getByRole("button", { name: /^AWS filter mode:/ }).click();
+  await page.getByRole("button", { name: /^Filter mode:/ }).click();
   await expect(
     page.getByRole("menuitem", { name: "Surrounding context", exact: true }),
   ).toHaveCount(0);

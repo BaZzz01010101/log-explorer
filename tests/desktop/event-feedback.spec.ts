@@ -36,7 +36,7 @@ test.beforeEach(async ({}, info) => {
   workspace.preferences.theme = info.title.includes("dark") ? "dark" : "light";
   workspace.sidebarVisible = false;
   workspace.preferences.timezone = "utc";
-  workspace.tabs[0].timePreset = "clear";
+  workspace.tabs[0].timePreset = info.title.includes("loads continuation at the bottom") ? "1h" : "clear";
   workspace.tabs[0].filterPattern = "";
   workspace.tabs[0].view.mode = "table";
   workspace.tabs[0].view.wrap = false;
@@ -227,13 +227,13 @@ for (const theme of ["light", "dark"])
       name: "CloudWatch filter pattern",
       exact: true,
     });
-    const mode = page.getByRole("button", { name: /^AWS filter mode:/ });
+    const mode = page.getByRole("button", { name: /^Filter mode:/ });
     const initialWidth = (await mode.boundingBox())!.width;
     const selectMode = async (name: string) => {
       await mode.click();
       await page.getByRole("menuitem", { name, exact: true }).click();
     };
-    await selectMode("Plain Text");
+    await selectMode("Text");
     await input.fill('"mediaId"');
     await input.press("Enter");
     await expect.poll(async () => (await requests()).length).toBe(1);
@@ -242,7 +242,7 @@ for (const theme of ["light", "dark"])
     );
     await expect(input).toHaveValue('"mediaId"');
     await send(0, { state: "complete", events: [] }, true);
-    await selectMode("AWS Patterns");
+    await selectMode("Pattern");
     await input.fill("{ $.missing N");
     await expect(
       page.getByRole("listbox", { name: "AWS pattern suggestions" }),
@@ -407,4 +407,33 @@ test("event viewer centers initial loading, loads continuation at the bottom and
   ).toHaveLength(1);
   expect((await requests()).length).toBe(2);
   await assertBottomStatus();
+});
+
+test("Recent shows the older-page spinner below the header and keeps the existing rows in view", async () => {
+  await page.getByTestId("run-query").click();
+  await expect.poll(async () => (await requests()).length).toBe(1);
+  const events: LogEvent[] = Array.from({ length: 120 }, (_, index) => ({
+    id: `recent-${index}`, timestamp: 2_000_000 + index * 1000,
+    logGroup: "/aws/lambda/orders-api", logStream: "feedback-stream", message: `Event ${index}`,
+  }));
+  await send(0, { state: "complete", events, replace: true, cursor: "older" }, true);
+  await expect(status()).toHaveAttribute("data-query-state", "complete");
+  await viewer().hover();
+  await page.mouse.wheel(0, -20000);
+  await expect.poll(async () => (await requests()).length).toBe(2);
+  const indicator = page.locator('.event-loading[data-loading-position="older"]');
+  await expect(indicator).toBeVisible();
+  const header = page.locator(".log-table-header");
+  const headerBox = await header.boundingBox();
+  const indicatorBox = await indicator.boundingBox();
+  expect(headerBox).not.toBeNull();
+  expect(indicatorBox!.y).toBeGreaterThanOrEqual(headerBox!.y + headerBox!.height - 1);
+  const oldFirst = page.locator('.virtual-event[data-event-id="recent-0"]');
+  await expect(oldFirst).toBeVisible();
+  const older = Array.from({ length: 20 }, (_, index) => ({ ...events[0], id: `older-${index}`, timestamp: 1_000_000 + index * 1000 }));
+  await send(1, { state: "running", events: older.slice(10) });
+  await expect(oldFirst).toBeVisible();
+  await send(1, { state: "complete", events: older.slice(0, 10), cursor: "older-2" }, true);
+  await expect(indicator).toHaveCount(0);
+  await expect(oldFirst).toBeVisible();
 });

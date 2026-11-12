@@ -104,6 +104,7 @@ import {
 import { eventSourceDisplay, sourceCount } from "../../shared/source-labels";
 import { useColumnHeaderDrag } from "../useColumnHeaderDrag";
 import { useScrollPagination } from "../useScrollPagination";
+import { shouldFollowRecentLoad } from "../recent-scroll";
 import { useMeasuredVirtualRows } from "../useMeasuredVirtualRows";
 import {
   useMessageExpansion,
@@ -181,8 +182,9 @@ export interface LogViewerProps {
   onViewChange: (view: ViewConfig) => void;
   preferences: Preferences;
   onContext?: (event: LogEvent, range: ContextRange) => void;
-  pagination?: { scope: string; pageKey?: string; onLoad(): void };
+  pagination?: { scope: string; pageKey?: string; direction?: "older"; loadingOlder?: boolean; onLoad(): void };
   loading?: boolean;
+  incomplete?: boolean;
   liveState?: LiveState;
   followLive?: boolean;
   onPauseLiveFollow?(): void;
@@ -280,6 +282,7 @@ export function LogViewer({
   onContext,
   pagination,
   loading = false,
+  incomplete,
   liveState,
   followLive = false,
   onPauseLiveFollow,
@@ -415,10 +418,24 @@ export function LogViewer({
     },
     [onScrollElement],
   );
+  const [positionedScope, setPositionedScope] = useState("");
+  const rowsRef = useRef<string[]>([]);
+  const pageAnchor = useRef<{ id: string; offset: number; firstId: string; started?: boolean } | undefined>(undefined);
   useScrollPagination(scrollRef, {
     scope: pagination?.scope ?? "no-query",
+    edge: pagination?.direction === "older" ? "top" : "bottom",
+    enabled: pagination?.direction !== "older" || positionedScope === pagination.scope || events.length === 0,
     targets: pagination?.pageKey
-      ? [{ key: pagination.pageKey, load: pagination.onLoad }]
+      ? [{ key: pagination.pageKey, load: () => {
+          if (pagination.direction === "older" && scrollRef.current) {
+            const scroll = scrollRef.current;
+            const top = scroll.getBoundingClientRect().top;
+            const visible = [...scroll.querySelectorAll<HTMLElement>("[data-index]")].find((element) => element.getBoundingClientRect().bottom > top);
+            const index = Number(visible?.dataset.index);
+            if (visible && Number.isInteger(index) && rowsRef.current[index]) pageAnchor.current = { id: rowsRef.current[index], offset: visible.getBoundingClientRect().top - top, firstId: rowsRef.current[0] };
+          }
+          pagination.onLoad();
+        } }]
       : [],
   });
   const detailHeights = useRef(new WeakMap<LogEvent, number>());
@@ -716,6 +733,7 @@ export function LogViewer({
     },
   });
   const rows = table.getRowModel().rows;
+  rowsRef.current = rows.map((row) => row.id);
   const eventIds = useMemo(
     () => rows.map((row) => row.original.event.id),
     [rows],
@@ -744,6 +762,30 @@ export function LogViewer({
     getItemKey: (index) => rows[index]!.id,
     overscan: 7,
   });
+  useLayoutEffect(() => {
+    if (pagination?.direction !== "older" || !scrollRef.current || !rows.length) return;
+    if (positionedScope !== pagination.scope) {
+      pageAnchor.current = undefined;
+      virtualizer.scrollToIndex(rows.length - 1, { align: "end" });
+      setPositionedScope(pagination.scope);
+      return;
+    }
+    const anchor = pageAnchor.current;
+    if (anchor && loading) anchor.started = true;
+    if (anchor && (rows[0]?.id !== anchor.firstId || (anchor.started && !loading))) {
+      const index = rows.findIndex((row) => row.id === anchor.id);
+      if (index >= 0) {
+        const element = scrollRef.current.querySelector<HTMLElement>(".virtual-events");
+        const offset = virtualizer.measurementsCache[index]?.start;
+        if (element && offset !== undefined) {
+          const base = element.getBoundingClientRect().top - scrollRef.current.getBoundingClientRect().top + scrollRef.current.scrollTop;
+          scrollRef.current.scrollTop = Math.max(0, base + offset - anchor.offset);
+        }
+      }
+      anchor.firstId = rows[0]?.id ?? "";
+    } else if (shouldFollowRecentLoad(loading, Boolean(pagination?.loadingOlder), Boolean(anchor))) virtualizer.scrollToIndex(rows.length - 1, { align: "end" });
+    if (anchor?.started && !loading) pageAnchor.current = undefined;
+  }, [rows, pagination?.direction, pagination?.scope, pagination?.loadingOlder, positionedScope, loading, virtualizer]);
   const measureRow = useMeasuredVirtualRows(
     virtualizer,
     [
@@ -780,7 +822,7 @@ export function LogViewer({
   }, [events, rows, followLive, liveState, virtualizer]);
   useLayoutEffect(() => {
     const scroll = scrollRef.current;
-    if (!loading || rows.length === 0 || !scroll) return;
+    if (!loading || pagination?.direction === "older" || rows.length === 0 || !scroll) return;
     const indicator = scroll.querySelector('[data-loading-position="more"]');
     const addedHeight = indicator?.getBoundingClientRect().height ?? 0;
     const distance =
@@ -1483,6 +1525,8 @@ export function LogViewer({
                     <Text size="sm" fw={600}>
                       {events.length
                         ? "No loaded events match this filter"
+                        : incomplete
+                          ? "No matching events found yet"
                         : liveState === "streaming"
                           ? "Waiting for new events"
                           : liveState === "stopped"
@@ -1492,6 +1536,8 @@ export function LogViewer({
                     <Text size="xs" c="dimmed">
                       {events.length
                         ? "Clear the local search or choose another level."
+                        : incomplete
+                          ? "Scroll to continue searching older events."
                         : liveState === "streaming"
                           ? "New matching events appear here automatically."
                           : liveState === "stopped"
@@ -1749,6 +1795,7 @@ export function LogViewer({
                         ))}
                     </div>
                   )}
+                  {loading && pagination?.loadingOlder && <EventLoadingIndicator position="older" />}
                   <div
                     className="virtual-events"
                     style={{
@@ -2095,7 +2142,7 @@ export function LogViewer({
                   </div>
                 </>
               )}
-              {loading && rows.length > 0 && (
+              {loading && rows.length > 0 && !pagination?.loadingOlder && (
                 <EventLoadingIndicator position="more" />
               )}
             </div>

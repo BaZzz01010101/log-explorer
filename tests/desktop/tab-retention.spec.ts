@@ -365,10 +365,10 @@ for (const theme of ["light", "dark"]) {
   });
 }
 
-for (const mode of ["Plain Text", "AWS Patterns", "Auto"]) {
+for (const mode of ["Text", "Pattern", "Auto"]) {
   test(`clear server filter queries automatically with empty pattern in ${mode}`, async () => {
     await fixtures();
-    await page.getByRole("button", { name: /^AWS filter mode:/ }).click();
+    await page.getByRole("button", { name: /^Filter mode:/ }).click();
     await page.getByRole("menuitem", { name: new RegExp(`${mode}$`) }).click();
     const input = page.getByRole("combobox", {
       name: "CloudWatch filter pattern",
@@ -397,7 +397,7 @@ for (const mode of ["Plain Text", "AWS Patterns", "Auto"]) {
     expect(requests.at(-1).filter).toBe("");
     await expect(
       page.getByRole("button", {
-        name: `AWS filter mode: ${mode}`,
+        name: `Filter mode: ${mode}`,
         exact: true,
       }),
     ).toBeVisible();

@@ -89,6 +89,7 @@ export interface LogEvent {
   connectionId?: string;
   id: string;
   timestamp: number;
+  timestampSubMillis?: number;
   ingestionTime?: number;
   message: string;
   logGroup: string;
@@ -106,8 +107,10 @@ export interface QueryRequest {
   kind: "events" | "insights";
   filterPattern: string;
   gcpFilterPattern?: string;
+  gcpLocalFilter?: { kind: "plain" | "aws-json"; value: string };
   query: string;
   limit: number;
+  direction?: "older";
   cursor?: string;
 }
 export interface QueryStats {
@@ -123,6 +126,9 @@ export interface QueryUpdate {
   events?: LogEvent[];
   replace?: boolean;
   cursor?: string;
+  /** Inclusive upper timestamp bound for unread events, when known. */
+  cursorUpperBound?: number;
+  incomplete?: boolean;
   stats?: QueryStats;
   error?: string;
   sampled?: boolean;

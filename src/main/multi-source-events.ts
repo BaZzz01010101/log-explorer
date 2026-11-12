@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
+import { compareLogTime } from "../shared/log-order";
 import type {
   Connection,
   LogEvent,
@@ -35,6 +36,7 @@ export function scopedQueries(request: QueryRequest): QueryRequest[] {
 
 interface Partition {
   cursor?: string;
+  upperBound?: number;
   done: boolean;
   events: LogEvent[];
 }
@@ -86,18 +88,25 @@ export function createMultiSourceEvents(
           : queries.map(() => ({ done: false, events: [] }));
         const chunk = Math.max(
           1,
-          Math.min(256, Math.ceil(request.limit / queries.length)),
+          request.direction === "older"
+            ? Math.min(1000, Math.ceil(request.limit * 2 / queries.length))
+            : Math.min(256, Math.ceil(request.limit / queries.length)),
         );
         const events: LogEvent[] = [];
         let truncated = false;
         let messageCharacters = 0;
         let reads = 0;
         let published = 0;
+        let incomplete = false;
         while (events.length < request.limit) {
           throwIfAborted(signal);
           // Fetch independent heads concurrently, bounded under the parent query slot.
           let unresolved = false;
-          const needed = queries.map((_, index) => index).filter((index) => !partitions[index].done && !partitions[index].events.length);
+          const bestHead = () => Math.max(-Infinity, ...partitions.flatMap((partition) => partition.events.length ? [partition.events[0].timestamp] : []));
+          const needed = queries.map((_, index) => index).filter((index) => {
+            const partition = partitions[index];
+            return !partition.done && !partition.events.length && !(request.direction === "older" && partition.upperBound !== undefined && bestHead() > partition.upperBound);
+          });
           for (let offset = 0; offset < needed.length; offset += 4) {
             const batch = needed.slice(offset, offset + Math.min(4, 128 - reads));
             if (!batch.length) { unresolved = true; break; }
@@ -121,18 +130,19 @@ export function createMultiSourceEvents(
                 id: JSON.stringify([query.connection.id, event.id]),
               }))
               .sort(
-                (a, b) => a.timestamp - b.timestamp || a.id.localeCompare(b.id),
+                (a, b) => request.direction === "older" ? compareLogTime(b, a) : compareLogTime(a, b) || a.id.localeCompare(b.id),
               );
             partition.done = !result.cursor;
             partition.cursor = result.cursor;
+            partition.upperBound = result.cursorUpperBound;
             truncated ||= !!result.truncated;
-            if (!partition.done && !partition.events.length) unresolved = true;
             }
             if (batch.length < 4 && offset + batch.length < needed.length) { unresolved = true; break; }
           }
+          if (partitions.some((partition) => !partition.done && !partition.events.length && !(request.direction === "older" && partition.upperBound !== undefined && bestHead() > partition.upperBound))) unresolved = true;
           // An adapter may pause a sparse scan with an empty continuation. Do not
           // emit another region's later events until that head becomes known.
-          if (unresolved) break;
+          if (unresolved) { incomplete = true; break; }
           let selected = -1;
           for (let index = 0; index < partitions.length; index++) {
             const head = partitions[index].events[0];
@@ -141,8 +151,8 @@ export function createMultiSourceEvents(
               selected < 0 ? undefined : partitions[selected].events[0];
             if (
               !prior ||
-              head.timestamp < prior.timestamp ||
-              (head.timestamp === prior.timestamp && head.id < prior.id)
+              (request.direction === "older" ? compareLogTime(head, prior) > 0 : compareLogTime(head, prior) < 0) ||
+              (request.direction !== "older" && compareLogTime(head, prior) === 0 && head.id < prior.id)
             )
               selected = index;
           }
@@ -197,7 +207,7 @@ export function createMultiSourceEvents(
           }
           continuations.set(cursor, {
             signature,
-            expires: Date.now() + 15 * 60000,
+            expires: Date.now() + (request.direction === "older" ? 23 * 3600000 : 15 * 60000),
             partitions,
             characters: retained,
           });
@@ -207,6 +217,7 @@ export function createMultiSourceEvents(
           state: "complete",
           events: events.slice(published),
           cursor,
+          ...(incomplete ? { incomplete: true } : {}),
           replace: !request.cursor && published === 0,
           truncated,
           stats: {

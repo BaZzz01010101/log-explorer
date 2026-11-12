@@ -770,6 +770,25 @@ export default function App() {
               <div className="explorer-host" hidden={sidePanel !== "gcp"}>
                 <GcpExplorer
                   active={workspace.sidebarVisible && sidePanel === "gcp"}
+                  favorites={workspace.favorites}
+                  onOpenFavorite={(favoriteId) => {
+                    const result = projectFavoriteOpen(workspace, favoriteId);
+                    if (result.error) notifications.show({ title: "Saved view", message: result.error, color: "red" });
+                    else if (result.workspace !== workspace) dispatch({ type: "favorites/open", favoriteId });
+                  }}
+                  onRenameFavorite={(favoriteId, title) => dispatch({ type: "favorites/rename", favoriteId, title })}
+                  onRemoveFavorite={(favoriteId) => dispatch({ type: "favorites/remove", favoriteId })}
+                  onAuthorized={(configuration, account) => {
+                    const visible = new Set(workspace.panes.map((pane) => pane.tabId));
+                    for (const tab of workspace.tabs) {
+                      if (!visible.has(tab.id)) continue;
+                      const matches = tab.sources.some((source) => {
+                        const connection = workspace.connections.find((item) => item.id === (source.connectionId ?? tab.connectionId));
+                        return connection?.mode === "gcp" && connection.gcpIdentity?.configuration === configuration && connection.gcpIdentity.account === account;
+                      });
+                      if (matches) void run(tab, Boolean(runtimesRef.current[tab.id]?.live));
+                    }
+                  }}
                   onOpen={openGcpSource}
                   onSourceAction={applyGcpSource}
                   shortcuts={workspace.preferences.shortcuts}

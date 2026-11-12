@@ -9,8 +9,8 @@ import type {
   Workspace,
 } from "../shared/contracts";
 import { sourceIdentity } from "../shared/source-identity";
-import { compileServerFilter, serverFilterMode } from "../shared/server-filter";
-import { compileGcpServerFilter, gcpServerFilterMode } from "../shared/gcp-server-filter";
+import { compileServerFilter } from "../shared/server-filter";
+import { compileGcpViewFilter } from "../shared/gcp-server-filter";
 import { queryPageLimit } from "../shared/log-query-limits";
 import {
   mergeEvents,
@@ -30,8 +30,10 @@ export interface TabRuntime {
   stats?: QueryStats;
   sampled?: boolean;
   truncated?: boolean;
+  incomplete?: boolean;
   evicted: number;
   request?: QueryRequest;
+  recentHistory?: { request: QueryRequest; cursor: string; evicted: number };
 }
 const empty = (): TabRuntime => ({
   events: [],
@@ -65,6 +67,7 @@ export function useLogJobs(
       { tabId: string; live: boolean; generation: number; stopping?: boolean }
     >(),
   );
+  const reloadRecent = useRef<(tab: LogTab) => Promise<void>>(async () => {});
   const current = useRef(new Map<string, string>());
   const latestRequest = useRef(
     new Map<string, { requestId: string; generation: number }>(),
@@ -137,6 +140,8 @@ export function useLogJobs(
                 update.events ?? [],
                 workspaceRef.current.preferences.maxEvents,
                 undefined,
+                false,
+                !job.live && prior.request?.direction === "older" && prior.request.cursor ? "newest" : "oldest",
               )
             : { events: prior.events, evicted: 0 };
         const terminal = ["error", "cancelled", "complete"].includes(
@@ -170,6 +175,7 @@ export function useLogJobs(
             stats: update.stats ?? prior.stats,
             sampled: update.sampled ?? prior.sampled,
             truncated: update.truncated ?? prior.truncated,
+            incomplete: update.state === "complete" ? Boolean(update.incomplete) : prior.incomplete,
             evicted: prior.evicted + merged.evicted,
           },
         };
@@ -256,10 +262,12 @@ export function useLogJobs(
         requests.current.delete(id);
         current.current.delete(tabId);
       }
+      const needsRecentReload = !pause && !cancellationError && Boolean(runtimesRef.current[tabId]?.recentHistory && runtimesRef.current[tabId]!.evicted !== runtimesRef.current[tabId]!.recentHistory!.evicted);
       setRuntimes((previous) => {
         if (!ownsOperation(tabId, generation) || !previous[tabId])
           return previous;
         const prior = previous[tabId];
+        const history = !pause && !cancellationError && prior.recentHistory && prior.evicted === prior.recentHistory.evicted ? prior.recentHistory : undefined;
         return {
           ...previous,
           [tabId]: {
@@ -269,7 +277,7 @@ export function useLogJobs(
                 ? "error"
                 : pause
                   ? "idle"
-                  : "cancelled",
+                  : history ? "complete" : "cancelled",
             live: pause && !cancellationError,
             livePaused: pause || undefined,
             liveState: pause
@@ -278,9 +286,11 @@ export function useLogJobs(
                 ? "stopped"
                 : undefined,
             error: cancellationError ?? prior.error,
+            ...(history && id ? { request: { ...history.request, requestId: id }, cursor: history.cursor, recentHistory: undefined } : {}),
           },
         };
       });
+      if (needsRecentReload && ownsOperation(tabId, generation)) await reloadRecent.current(tab);
     },
     [ownsOperation],
   );
@@ -297,7 +307,7 @@ export function useLogJobs(
           !prior.cursor ||
           prior.state !== "complete" ||
           prior.live ||
-          !!prior.liveState ||
+          (prior.liveState !== undefined && prior.liveState !== "stopped") ||
           !ownsRequest(
             tab.id,
             operations.current.get(tab.id)!,
@@ -369,8 +379,8 @@ export function useLogJobs(
       let request: QueryRequest | undefined;
       try {
         const modes = new Set(tab.sources.map((item) => state.connections.find((candidate) => candidate.id === (item.connectionId ?? tab.connectionId))?.mode));
-        if (modes.has("gcp") && (modes.has("aws") || modes.has("offline")) && tab.filterPattern.trim() && (serverFilterMode(tab.filterPattern, tab.filterMode) === "pattern" || gcpServerFilterMode(tab.filterPattern, tab.filterMode) === "pattern"))
-          throw new Error("Mixed AWS and Google Cloud sources support plain text server filters. Select Plain Text or clear the filter.");
+        const mixed = modes.has("gcp") && (modes.has("aws") || modes.has("offline"));
+        const gcpFilter = compileGcpViewFilter(tab.filterPattern, tab.filterMode, tab.gcpLogType, mixed);
         const canContinue = Boolean(
           more &&
           !live &&
@@ -421,9 +431,11 @@ export function useLogJobs(
                 tab.filterPattern,
                 tab.filterMode,
               ),
-              gcpFilterPattern: compileGcpServerFilter(tab.filterPattern, tab.filterMode, tab.gcpLogType),
+              gcpFilterPattern: gcpFilter.pattern,
+              ...(gcpFilter.local ? { gcpLocalFilter: gcpFilter.local } : {}),
               query: "",
-              limit: queryPageLimit(modes, workspaceRef.current.preferences.maxEvents),
+              ...(tab.timePreset === "clear" && !live ? { direction: "older" as const } : {}),
+              limit: tab.timePreset === "clear" && !live ? Math.min(1000, Math.max(1, Math.floor(workspaceRef.current.preferences.maxEvents / 4))) : queryPageLimit(modes, workspaceRef.current.preferences.maxEvents),
             };
         const retainHistory =
           live &&
@@ -449,6 +461,7 @@ export function useLogJobs(
                   ...(retainHistory
                     ? { events: prior.events, evicted: prior.evicted }
                     : {}),
+                  ...(live && retainHistory && prior.request?.direction === "older" && prior.cursor ? { recentHistory: { request: prior.request, cursor: prior.cursor, evicted: prior.evicted } } : live && prior?.recentHistory ? { recentHistory: prior.recentHistory } : {}),
                   state: "queued",
                   live,
                   liveState: live ? "connecting" : undefined,
@@ -511,6 +524,8 @@ export function useLogJobs(
     },
     [cancelQuietly, ownsOperation, ownsRequest, isVisible],
   );
+
+  reloadRecent.current = (tab) => run(tab);
 
   useEffect(() => {
     if (!ready) return;

@@ -1,6 +1,7 @@
 import { sourceIdentity } from "../shared/source-identity";
+import { compareLogTime } from "../shared/log-order";
 import { compileServerFilter } from "../shared/server-filter";
-import { compileGcpServerFilter } from "../shared/gcp-server-filter";
+import { compileGcpViewFilter } from "../shared/gcp-server-filter";
 import type {
   LogEvent,
   LogTab,
@@ -14,6 +15,7 @@ export function mergeEvents(
   limit: number,
   maxMessageCharacters = 16_000_000,
   preserveOrder = false,
+  evictFrom: "oldest" | "newest" = "oldest",
 ): { events: LogEvent[]; evicted: number } {
   const seen = new Set(
     previous.map(
@@ -28,7 +30,13 @@ export function mergeEvents(
       seen.add(key);
     }
   }
-  if (!preserveOrder) events.sort((a, b) => a.timestamp - b.timestamp);
+  if (!preserveOrder) events.sort(compareLogTime);
+  if (evictFrom === "newest") {
+    let end = Math.min(events.length, limit);
+    let characters = events.slice(0, end).reduce((sum, event) => sum + event.message.length, 0);
+    while (characters > maxMessageCharacters && end > 0) characters -= events[--end].message.length;
+    return { events: events.slice(0, end), evicted: events.length - end };
+  }
   let evicted = Math.max(0, events.length - limit);
   let characters = events
     .slice(evicted)
@@ -145,9 +153,12 @@ export function requestMatchesTab(
     compileServerFilter(tab.filterPattern, tab.filterMode)
   )
     return false;
-  if (request.connection.mode === "gcp" || request.connections?.some((item) => item.mode === "gcp"))
-    if (request.gcpFilterPattern !== compileGcpServerFilter(tab.filterPattern, tab.filterMode, tab.gcpLogType)) return false;
   try {
+    const sourceModes = new Set(tab.sources.map((source) => connections.find((candidate) => candidate.id === (source.connectionId ?? tab.connectionId))?.mode));
+    if (sourceModes.has("gcp")) {
+      const expected = compileGcpViewFilter(tab.filterPattern, tab.filterMode, tab.gcpLogType, sourceModes.has("aws") || sourceModes.has("offline"));
+      if (request.gcpFilterPattern !== expected.pattern || JSON.stringify(request.gcpLocalFilter ?? null) !== JSON.stringify(expected.local ?? null)) return false;
+    }
     const range = resolveTimeRange(
       tab.timePreset,
       tab.customStart,

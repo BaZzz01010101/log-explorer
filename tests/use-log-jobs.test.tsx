@@ -120,6 +120,20 @@ it("keeps AWS patterns raw and auto-detects ordinary text versus JSON filters", 
   await act(async () => jobs.run(tab));
   expect(requests.at(-1)?.filterPattern).toBe(tab.filterPattern);
 });
+it("uses the AWS pattern on mixed sources and sends a safe Google candidate with exact local verification", async () => {
+  const tab = workspace.tabs[0]!;
+  workspace.connections.push({ id: "google", name: "Google", mode: "gcp", profile: "work", region: "europe-west2", gcpIdentity: { configuration: "work", account: "test@example.com" } });
+  tab.sources.push({ connectionId: "google", logGroup: "/gcp/functions/orders", gcp: { kind: "function", project: "test-project", region: "europe-west2", generation: "v1", functionName: "orders" } });
+  Object.assign(tab, { filterMode: "auto", filterPattern: '{ $.level = "ERROR" }' });
+  await mount();
+  expect(requests[0]).toMatchObject({ filterPattern: tab.filterPattern, gcpLocalFilter: { kind: "aws-json", value: tab.filterPattern }, direction: "older" });
+  expect(requests[0].gcpFilterPattern).toContain('(textPayload:* OR protoPayload:* OR jsonPayload."level":*)');
+  expect(requests[0].gcpFilterPattern).toContain("NOT protoPayload");
+  Object.assign(tab, { filterPattern: '{ $.level = %ERR% }' });
+  await act(async () => jobs.run(tab));
+  expect(requests).toHaveLength(1);
+  expect(jobs.runtimes[tab.id].error).toMatch(/mixed.*support/i);
+});
 async function replaceWorkspace(value: Workspace) {
   workspace = value;
   await act(async () => {
@@ -357,6 +371,8 @@ it("switching tabs during an explicit Stop never turns that stop into a resumabl
 it("Live retains matching history and counts appended events independently of loaded history", async () => {
   await mount();
   const tab = workspace.tabs[0]!;
+  expect(tab.timePreset).toBe("clear");
+  expect(requests[0]!.direction).toBe("older");
   await emit({
     requestId: requests[0]!.requestId,
     state: "complete",
@@ -371,6 +387,7 @@ it("Live retains matching history and counts appended events independently of lo
     liveReceived: 0,
   });
   expect(liveRequests[0]!.cursor).toBeUndefined();
+  expect(liveRequests[0]!.direction).toBeUndefined();
   await emit({
     requestId: liveRequests[0]!.requestId,
     state: "running",
@@ -403,6 +420,30 @@ it("Live retains matching history and counts appended events independently of lo
     liveState: "streaming",
     liveReceived: 1,
   });
+});
+it("continues paging older Recent events after Live is stopped", async () => {
+  await mount();
+  const tab = workspace.tabs[0]!;
+  await emit({ requestId: requests[0]!.requestId, state: "complete", events: [logEvent], cursor: "older-page" });
+  await act(async () => jobs.run(tab, true));
+  await emit({ requestId: liveRequests[0]!.requestId, state: "running", liveState: "streaming" });
+  await act(async () => jobs.cancel(tab.id));
+  expect(jobs.runtimes[tab.id]).toMatchObject({ state: "complete", cursor: "older-page", live: false });
+  await act(async () => jobs.run(tab, false, true));
+  expect(requests.at(-1)).toMatchObject({ cursor: "older-page", direction: "older" });
+});
+it("reloads Recent after Live evicts old rows instead of skipping a history gap", async () => {
+  workspace.preferences.maxEvents = 2;
+  await mount();
+  const tab = workspace.tabs[0]!;
+  await emit({ requestId: requests[0]!.requestId, state: "complete", events: [logEvent, { ...logEvent, id: "newer", timestamp: 2000 }], cursor: "older-page" });
+  await act(async () => jobs.run(tab, true));
+  await emit({ requestId: liveRequests[0]!.requestId, state: "running", liveState: "streaming", events: [{ ...logEvent, id: "live", timestamp: 3000 }] });
+  expect(jobs.runtimes[tab.id].evicted).toBeGreaterThan(0);
+  await act(async () => jobs.cancel(tab.id));
+  expect(requests).toHaveLength(2);
+  expect(requests[1]).toMatchObject({ direction: "older" });
+  expect(requests[1].cursor).toBeUndefined();
 });
 
 it("Live keeps the newest events within the buffer and counts all received events", async () => {

@@ -5,6 +5,7 @@ import { gcloudAuth } from "./gcloud-auth";
 import { gcpSourceFilter, normalizeGcpEntry } from "./gcp-log-query";
 import { streamGcpProject } from "./gcp-live";
 import { waitForGcpRequest } from "./gcp-request-gate";
+import { matchAwsCompatibleFilter, parseAwsCompatibleFilter } from "../shared/aws-compatible-filter";
 
 type Body = { resourceNames: string[]; filter: string; orderBy: string; pageSize: number; pageToken?: string };
 type Post = (body: Body, signal: AbortSignal) => Promise<{ entries?: unknown[]; nextPageToken?: string }>;
@@ -63,24 +64,27 @@ export function createGcpAdapter(connection: Connection, transport?: Post): LogA
     const started = Date.now();
     let pageToken = saved?.token;
     let data: { entries?: unknown[]; nextPageToken?: string } = {};
+    let events: LogEvent[] = [];
+    const local = request.gcpLocalFilter;
+    const predicate = local?.kind === "aws-json" ? parseAwsCompatibleFilter(local.value) : undefined;
     const seen = new Set<string>();
     if (pageToken) seen.add(pageToken);
     for (let page = 0; page < 8; page++) {
-      data = await post({ resourceNames: [`projects/${source.gcp!.project}`], filter, orderBy: "timestamp asc", pageSize: request.limit, ...(pageToken ? { pageToken } : {}) }, signal);
+      data = await post({ resourceNames: [`projects/${source.gcp!.project}`], filter, orderBy: request.direction === "older" ? "timestamp desc" : "timestamp asc", pageSize: request.limit, ...(pageToken ? { pageToken } : {}) }, signal);
       throwIfAborted(signal);
       if (data.nextPageToken && seen.has(data.nextPageToken)) throw new Error("Google Cloud returned a repeated continuation token.");
       if (data.nextPageToken) seen.add(data.nextPageToken);
-      if (data.entries?.length || !data.nextPageToken) break;
+      events = (Array.isArray(data.entries) ? data.entries : []).map((entry) => ({ ...normalizeGcpEntry(entry, source.logGroup), gcpSource: source.gcp })).filter((event) => !local || (predicate ? matchAwsCompatibleFilter(predicate, event.message) : event.message.includes(local.value)));
+      if (events.length || !data.nextPageToken) break;
       pageToken = data.nextPageToken;
     }
-    const events = (Array.isArray(data.entries) ? data.entries : []).map((entry) => ({ ...normalizeGcpEntry(entry, source.logGroup), gcpSource: source.gcp }));
     let cursor: string | undefined;
     if (data.nextPageToken) {
       cursor = request.cursor ?? `gcp:${randomUUID()}`;
       if (cursors.size >= 128) cursors.delete(cursors.keys().next().value!);
-      cursors.set(cursor, { token: data.nextPageToken, signature, expires: Date.now() + 15 * 60000 });
+      cursors.set(cursor, { token: data.nextPageToken, signature, expires: Date.now() + (request.direction === "older" ? 23 * 3600000 : 15 * 60000) });
     } else if (request.cursor) cursors.delete(request.cursor);
-    return { requestId: request.requestId, state: "complete", events, cursor, replace: !request.cursor, stats: { recordsMatched: events.length, elapsedMs: Date.now() - started } };
+    return { requestId: request.requestId, state: "complete", events, cursor, ...(cursor && !events.length ? { incomplete: true } : {}), replace: !request.cursor, stats: { recordsMatched: events.length, elapsedMs: Date.now() - started } };
   }
   return {
     events,
@@ -89,8 +93,11 @@ export function createGcpAdapter(connection: Connection, transport?: Post): LogA
         const stop = new AbortController();
         const activeSignal = AbortSignal.any([signal, stop.signal]);
         const recent = new Map<string, number>();
+        const local = request.gcpLocalFilter;
+        const predicate = local?.kind === "aws-json" ? parseAwsCompatibleFilter(local.value) : undefined;
         const publish = (items: LogEvent[], sampled = false) => {
           const fresh = items.filter((event) => {
+            if (local && !(predicate ? matchAwsCompatibleFilter(predicate, event.message) : event.message.includes(local.value))) return false;
             if (recent.has(event.id)) return false;
             recent.set(event.id, Date.now());
             if (recent.size > 100000) recent.delete(recent.keys().next().value!);

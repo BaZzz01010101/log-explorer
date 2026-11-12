@@ -45,8 +45,9 @@ for (const theme of ["light", "dark"] as const)
     });
     try {
       await app.evaluate(({ ipcMain }) => {
-        const testState = globalThis as typeof globalThis & { __gcpQueryCursors?: boolean[] };
+        const testState = globalThis as typeof globalThis & { __gcpQueryCursors?: boolean[]; __gcpScanCount?: number };
         testState.__gcpQueryCursors = [];
+        testState.__gcpScanCount = 0;
         ipcMain.removeHandler("gcp:projects");
         ipcMain.removeHandler("gcp:logs");
         ipcMain.removeHandler("gcp:functions");
@@ -84,7 +85,7 @@ for (const theme of ["light", "dark"] as const)
         ipcMain.handle("gcp:projects", async (_event, identity, cursor) => {
           if (
             identity.configuration === "other" &&
-            identity.account === "second@example.com"
+            identity.account === "user@example.com"
           )
             return { items: [{ id: "other-123", name: "Other project" }] };
           if (
@@ -129,6 +130,7 @@ for (const theme of ["light", "dark"] as const)
         ipcMain.handle(
           "gcp:functions",
           async (_event, identity, project, generation, cursor) => {
+            testState.__gcpScanCount!++;
             if (
               identity.configuration !== "work" ||
               identity.account !== "user@example.com"
@@ -206,7 +208,7 @@ for (const theme of ["light", "dark"] as const)
         name: "Google Cloud resources",
       });
       await expect(
-        explorer.getByText("Find a project or enter its ID to browse sources."),
+        explorer.getByText("Select a project to browse sources."),
       ).toBeVisible();
       await expect(
         explorer.getByLabel("Google Cloud configuration"),
@@ -214,15 +216,11 @@ for (const theme of ["light", "dark"] as const)
       await expect(
         explorer.getByLabel("Google Cloud account", { exact: true }),
       ).toHaveValue("user@example.com");
-      await explorer.getByRole("button", { name: "Add account" }).click();
+      await explorer.getByRole("button", { name: "Sign in" }).click();
       await expect(explorer.getByRole("alert").last()).toContainText(
         "cancelled or failed",
       );
-      await explorer.getByRole("button", { name: "Add account" }).click();
-      await explorer.getByRole("button", { name: "Find projects" }).click();
-      await expect(
-        explorer.getByRole("button", { name: "Find projects" }),
-      ).toBeEnabled();
+      await explorer.getByRole("button", { name: "Sign in" }).click();
       await explorer
         .getByLabel("Google Cloud project", { exact: true })
         .click();
@@ -233,17 +231,7 @@ for (const theme of ["light", "dark"] as const)
       await expect(
         explorer.getByRole("option", { name: "/gcp/kubernetes/worker/dev" }),
       ).toBeVisible();
-      await explorer.getByLabel("Source type").click();
-      await page
-        .getByRole("option", { name: "Kubernetes", exact: true })
-        .click();
-      await expect(
-        explorer.getByRole("option", { name: "/gcp/functions/later" }),
-      ).toHaveCount(0);
-      await explorer.getByLabel("Source type").click();
-      await page
-        .getByRole("option", { name: "All sources", exact: true })
-        .click();
+      await expect(explorer.getByLabel("Source type")).toHaveCount(0);
       await explorer.getByLabel("Search GCP sources").fill("later");
       await expect(
         explorer.getByRole("option", { name: "/gcp/functions/first" }),
@@ -252,12 +240,16 @@ for (const theme of ["light", "dark"] as const)
         .getByRole("option", { name: "/gcp/functions/later" })
         .click();
       await expect(page.getByText("Google event loaded", { exact: false }).first()).toBeVisible();
-      await expect.poll(() => app.evaluate(() => (globalThis as typeof globalThis & { __gcpQueryCursors?: boolean[] }).__gcpQueryCursors?.includes(true))).toBe(true);
-      await page.getByRole("combobox", { name: "Google Cloud log type" }).click();
-      await page.getByRole("option", { name: "Audit logs", exact: true }).click();
-      await expect(page.getByRole("combobox", { name: "Google Cloud log type" })).toHaveValue("Audit logs");
-      await page.getByRole("combobox", { name: "Google Cloud log type" }).click();
-      await page.getByRole("option", { name: "All GCP logs", exact: true }).click();
+      const before = await app.evaluate(() => ({ scans: (globalThis as typeof globalThis & { __gcpScanCount?: number }).__gcpScanCount!, queries: (globalThis as typeof globalThis & { __gcpQueryCursors?: boolean[] }).__gcpQueryCursors!.length }));
+      await explorer.getByRole("button", { name: "Sign in" }).click();
+      await expect(explorer.getByText("Signed in. Refresh requested.")).toBeVisible();
+      await expect.poll(() => app.evaluate(() => (globalThis as typeof globalThis & { __gcpScanCount?: number }).__gcpScanCount!)).toBeGreaterThan(before.scans);
+      await expect.poll(() => app.evaluate(() => (globalThis as typeof globalThis & { __gcpQueryCursors?: boolean[] }).__gcpQueryCursors!.length)).toBeGreaterThan(before.queries);
+      await expect(explorer.getByLabel("Favorite views")).toBeVisible();
+      await page.getByRole("tab", { selected: true }).click({ button: "right" });
+      await page.getByRole("menuitem", { name: "Save view to Favorites" }).click();
+      await expect(explorer.locator(".saved-view-favorite")).toHaveCount(1);
+      await expect(page.getByRole("combobox", { name: "Google Cloud log type" })).toHaveCount(0);
       await explorer.getByLabel("Search GCP sources").fill("");
       await explorer.getByRole("option", { name: "/gcp/kubernetes/worker/dev" }).click({ button: "right" });
       await page.getByRole("menuitem", { name: "Add to current tab" }).click();
@@ -289,21 +281,11 @@ for (const theme of ["light", "dark"] as const)
       await expect(
         explorer.getByRole("option", { name: "/gcp/functions/later" }),
       ).toHaveCount(0);
-      await explorer.getByRole("button", { name: "Enter project ID" }).click();
-      await explorer.getByLabel("Google Cloud project ID").fill("denied-123");
-      await explorer.getByRole("button", { name: "Open", exact: true }).click();
-      await expect(explorer.getByRole("alert")).toContainText(
-        "Permission denied",
-      );
-      await expect(
-        explorer.getByRole("option", { name: "/gcp/functions/later" }),
-      ).toHaveCount(0);
       await explorer.getByLabel("Google Cloud configuration").click();
       await page.getByRole("option", { name: "other", exact: true }).click();
       await expect(
         explorer.getByLabel("Google Cloud account", { exact: true }),
-      ).toHaveValue("second@example.com");
-      await explorer.getByRole("button", { name: "Find projects" }).click();
+      ).toHaveValue("user@example.com");
       await explorer
         .getByLabel("Google Cloud project", { exact: true })
         .click();

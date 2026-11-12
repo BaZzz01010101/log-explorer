@@ -363,7 +363,7 @@ it.each([
     reason: "Live Tail supports selected streams only with one log group.",
   },
 ])(
-  "explains a disabled Live action inline: $reason",
+  "explains a disabled Live action on its tooltip: $reason",
   async ({ sources, reason }) => {
     const props = setup();
     props.tab.sources = sources;
@@ -372,15 +372,8 @@ it.each([
     });
     const live = control("Button", "Live");
     expect(live.props.disabled).toBe(true);
-    expect(live.props["aria-describedby"]).toBe(
-      `live-unavailable-${props.tab.id}`,
-    );
-    const status = renderer!.root.findByProps({
-      id: live.props["aria-describedby"],
-      role: "status",
-      "data-control": "Text",
-    });
-    expect(status.children).toEqual([reason]);
+    expect(live.props["aria-description"]).toBe(reason);
+    expect(renderer!.root.findAllByProps({ "data-tooltip": reason })).toHaveLength(1);
     expect(props.onRun).not.toHaveBeenCalled();
   },
 );

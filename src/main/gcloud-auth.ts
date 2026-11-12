@@ -11,6 +11,7 @@ const str = (value: unknown): string | undefined =>
 export function createGcloudAuth(run: Runner) {
   const tokens = new Map<string, { value: string; expires: number }>();
   const pending = new Map<string, Promise<string>>();
+  let tokenGeneration = 0;
   const keyFor = (identity: GcpIdentity) => JSON.stringify([identity.configuration, identity.account]);
   return {
     async profiles(): Promise<GcpProfiles> {
@@ -57,6 +58,7 @@ export function createGcloudAuth(run: Runner) {
       if (cached && cached.expires > Date.now()) return cached.value;
       const existing = pending.get(key);
       if (existing) return existing;
+      const generation = tokenGeneration;
       const request = (async () => { try {
         const value = (
           await run([
@@ -70,7 +72,7 @@ export function createGcloudAuth(run: Runner) {
         if (!value || /\s/.test(value) || value.length > 16384)
           throw new Error("Invalid token");
         if (tokens.size >= 64 && !tokens.has(key)) tokens.delete(tokens.keys().next().value!);
-        tokens.set(key, { value, expires: Date.now() + 5 * 60000 });
+        if (generation === tokenGeneration) tokens.set(key, { value, expires: Date.now() + 5 * 60000 });
         return value;
       } catch {
         throw new Error(
@@ -80,6 +82,7 @@ export function createGcloudAuth(run: Runner) {
       pending.set(key, request);
       try { return await request; } finally { if (pending.get(key) === request) pending.delete(key); }
     },
+    clearTokens(): void { tokenGeneration++; tokens.clear(); pending.clear(); },
     invalidateToken(identity: GcpIdentity, expected?: string): void {
       const key = keyFor(identity);
       if (expected === undefined || tokens.get(key)?.value === expected) tokens.delete(key);

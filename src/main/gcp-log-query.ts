@@ -39,6 +39,8 @@ export function normalizeGcpEntry(value: unknown, logGroup: string): LogEvent {
   const labels = resource.labels && typeof resource.labels === "object" ? resource.labels as Record<string, unknown> : {};
   const rawTimestamp = typeof entry.timestamp === "string" ? entry.timestamp : "";
   const timestamp = Date.parse(rawTimestamp);
+  const fraction = rawTimestamp.match(/\.(\d+)(?:Z|[+-])/i)?.[1] ?? "";
+  const timestampSubMillis = Number(fraction.padEnd(9, "0").slice(3, 9));
   if (!Number.isFinite(timestamp)) throw new Error("Google Cloud returned a log entry without a valid timestamp.");
   const payload = entry.jsonPayload ?? entry.textPayload ?? entry.protoPayload ?? "";
   const message = typeof payload === "string" ? payload : JSON.stringify(payload);
@@ -47,5 +49,5 @@ export function normalizeGcpEntry(value: unknown, logGroup: string): LogEvent {
   const stableResource = Object.fromEntries(Object.entries(resource).sort(([a], [b]) => a.localeCompare(b)).map(([key, item]) => [key, key === "labels" ? Object.fromEntries(Object.entries(labels).sort(([a], [b]) => a.localeCompare(b))) : item]));
   const id = createHash("sha256").update(JSON.stringify([logName, rawTimestamp, insertId, stableResource, insertId ? "" : message])).digest("hex");
   const received = typeof entry.receiveTimestamp === "string" ? Date.parse(entry.receiveTimestamp) : NaN;
-  return { id, timestamp, ...(Number.isFinite(received) ? { ingestionTime: received } : {}), message, logGroup, logStream: typeof labels.pod_name === "string" ? labels.pod_name : logName, ...(typeof entry.severity === "string" ? { severity: entry.severity } : {}) };
+  return { id, timestamp, ...(timestampSubMillis ? { timestampSubMillis } : {}), ...(Number.isFinite(received) ? { ingestionTime: received } : {}), message, logGroup, logStream: typeof labels.pod_name === "string" ? labels.pod_name : logName, ...(typeof entry.severity === "string" ? { severity: entry.severity } : {}) };
 }

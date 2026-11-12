@@ -1,7 +1,7 @@
 import "./event-feedback.css";
 
 interface Props {
-  position: "empty" | "more";
+  position: "empty" | "more" | "older";
 }
 
 export function EventLoadingIndicator({ position }: Props) {
