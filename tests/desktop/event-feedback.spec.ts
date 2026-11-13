@@ -221,6 +221,55 @@ async function assertBottomStatus() {
   expect(positions.statusBottom).toBeLessThanOrEqual(positions.panelBottom + 1);
 }
 
+test("quick highlight navigation and markers follow matching messages", async () => {
+  await page.getByTestId("run-query").click();
+  await expect.poll(async () => (await requests()).length).toBe(1);
+  const events: LogEvent[] = Array.from({ length: 5 }, (_, index) => ({ id: `highlight-${index}`, timestamp: 1000 + index, message: index === 1 || index === 3 ? `needle ${index}` : `ordinary ${index}`, logGroup: "/aws/lambda/orders-api", logStream: "stream" }));
+  await send(0, { state: "complete", events, replace: true }, true);
+  const field = page.getByLabel("Highlight text in loaded events");
+  await field.fill("needle");
+  const grid = viewer();
+  await expect(grid.locator('[data-event-id="highlight-1"] .log-cell.has-highlight-marker')).toHaveCount(1);
+  await expect(grid.locator('[data-event-id="highlight-0"] .has-highlight-marker')).toHaveCount(0);
+  await grid.locator('[data-event-id="highlight-0"] .log-table-row').click();
+  await page.keyboard.press('Control+ArrowDown');
+  await expect(grid.locator('[data-current="true"]')).toHaveAttribute('data-event-id', 'highlight-1');
+  await expect(grid).toBeFocused();
+  await page.keyboard.press('Control+ArrowDown');
+  await expect(grid.locator('[data-current="true"]')).toHaveAttribute('data-event-id', 'highlight-3');
+  await page.keyboard.press('Control+ArrowUp');
+  await expect(grid.locator('[data-current="true"]')).toHaveAttribute('data-event-id', 'highlight-1');
+  await page.locator('.viewer-mode-control').getByText('Hybrid', { exact: true }).click();
+  await expect(grid.locator('[data-event-id="highlight-1"] .log-cell.has-highlight-marker')).toHaveCount(1);
+  await page.locator('.viewer-mode-control').getByText('JSON', { exact: true }).click();
+  await expect(grid.locator('[data-event-id="highlight-1"].has-highlight-marker')).toHaveCount(1);
+});
+
+test("Recent selects the newest row during initial chunks and preserves the selected row when older events arrive", async () => {
+  await page.getByTestId("run-query").click();
+  await expect.poll(async () => (await requests()).length).toBe(1);
+  const make = (start: number, count: number): LogEvent[] => Array.from({ length: count }, (_, index) => ({ id: `recent-${start + index}`, timestamp: start + index, message: `event ${start + index}`, logGroup: "/aws/lambda/orders-api", logStream: "stream" }));
+  await send(0, { state: "running", events: make(100, 20), replace: true });
+  await expect(viewer().locator('[data-current="true"]')).toHaveAttribute('data-event-id', 'recent-119');
+  await send(0, { state: "running", events: make(80, 20) });
+  await send(0, { state: "complete", events: [], cursor: "older" }, true);
+  await expect(viewer().locator('[data-current="true"]')).toHaveAttribute('data-event-id', 'recent-119');
+  await viewer().evaluate(element => { element.scrollTop = 0; element.dispatchEvent(new WheelEvent('wheel', { deltaY: -100, bubbles: true })); });
+  await expect.poll(async () => (await requests()).length).toBe(2);
+  const anchor = await viewer().evaluate(scroll => {
+    const top = scroll.getBoundingClientRect().top;
+    const header = scroll.querySelector<HTMLElement>('.log-table-header')?.getBoundingClientRect().height ?? 0;
+    const visible = [...scroll.querySelectorAll<HTMLElement>('.virtual-event[data-event-id]')]
+      .find(element => element.getBoundingClientRect().bottom > top + header);
+    if (!visible) throw new Error('No visible event to anchor');
+    return { id: visible.dataset.eventId!, top: visible.getBoundingClientRect().top };
+  });
+  await send(1, { state: 'running', events: make(60, 20) });
+  await send(1, { state: 'complete', events: [], cursor: 'older-2' }, true);
+  await expect(viewer().locator(`[data-event-id="${anchor.id}"]`)).toBeVisible();
+  await expect.poll(async () => Math.abs((await viewer().locator(`[data-event-id="${anchor.id}"]`).evaluate(element => element.getBoundingClientRect().top)) - anchor.top)).toBeLessThan(8);
+});
+
 for (const theme of ["light", "dark"])
   test(`${theme} AWS filter modes compile Enter queries, complete keywords and keep a stable badge`, async () => {
     const input = page.getByRole("combobox", {

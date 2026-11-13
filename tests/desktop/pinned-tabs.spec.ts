@@ -41,6 +41,10 @@ test.beforeEach(async ({}, info) => {
     tabId: "tab-orders",
   });
   workspace.tabs[0].filterPattern = "";
+  if (info.title.includes("mixed filter selector")) {
+    workspace.connections.push({ id: "test-gcp", name: "Test GCP", mode: "gcp", profile: "work", region: "europe-west2", gcpIdentity: { configuration: "work", account: "test@example.com" } });
+    workspace.tabs[0].sources.push({ connectionId: "test-gcp", logGroup: "/gcp/functions/test", gcp: { kind: "function", project: "test-project", region: "europe-west2", generation: "v1", functionName: "test" } });
+  }
   if (info.title.includes("drag motion wrapped")) {
     for (let index = 0; index < 5; index++) {
       const tab = createTab("offline", [
@@ -510,6 +514,152 @@ test("Explorer hover still activates a target tab before a split drop and cancel
   ).toBeVisible();
   await page.mouse.up();
   await expect(page.locator(".query-pane")).toHaveCount(2);
+});
+
+test("source badge moves to the sources of a hover activated tab", async () => {
+  const resource = row("/aws/lambda/notifications").getByRole("button", {
+    name: "/aws/lambda/notifications",
+    exact: true,
+  });
+  await startDrag(resource);
+  await moveTo(page.locator(".source-badges"), 30);
+  await page.mouse.up();
+  await expect(page.locator(".source-badge")).toHaveCount(2);
+  const badge = page.locator(
+    '.source-badge[data-source-group="/aws/lambda/notifications"] .source-badge-drag-label',
+  );
+  await startDrag(badge);
+  await moveTo(tab("tab-payments"), 65);
+  await expect(tab("tab-payments").getByRole("tab")).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+  await expect(page.locator(".source-badges")).toBeVisible();
+  await moveTo(page.locator(".source-badges"), 30);
+  await expect(page.locator(".source-badges")).toHaveClass(
+    /source-drop-active/,
+  );
+  await page.mouse.up();
+  await expect(page.locator(".source-badge")).toHaveCount(2);
+  await expect(
+    page.locator(
+      '.source-badge[data-source-group="/aws/lambda/notifications"]',
+    ),
+  ).toHaveCount(1);
+  await tab("tab-orders").getByRole("tab").click();
+  await expect(
+    page.locator(
+      '.source-badge[data-source-group="/aws/lambda/notifications"]',
+    ),
+  ).toHaveCount(0);
+});
+
+test("tab drag merges its sources into a hover activated tab", async () => {
+  await startDrag(tab("tab-orders").getByRole("tab"));
+  await moveTo(tab("tab-payments"), 65);
+  await expect(tab("tab-payments").getByRole("tab")).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+  await expect(page.locator(".source-badges")).toBeVisible();
+  await moveTo(page.locator(".source-badges"), 30);
+  await expect(page.locator(".source-badges")).toHaveClass(
+    /source-drop-active/,
+  );
+  await page.mouse.up();
+  await expect(tab("tab-orders")).toHaveCount(0);
+  await expect(page.locator(".source-badge")).toHaveCount(2);
+});
+
+for (const destination of ["split", "tab"] as const) {
+  test(`source badge moves into a new ${destination}`, async () => {
+    const resource = row("/aws/lambda/notifications").getByRole("button", {
+      name: "/aws/lambda/notifications",
+      exact: true,
+    });
+    await startDrag(resource);
+    await moveTo(page.locator(".source-badges"), 30);
+    await page.mouse.up();
+    await expect(page.locator(".source-badge")).toHaveCount(2);
+    await startDrag(
+      page.locator(
+        '.source-badge[data-source-group="/aws/lambda/notifications"] .source-badge-drag-label',
+      ),
+    );
+    if (destination === "split") {
+      const pane = (await page
+        .locator("[data-pane-drop-target]")
+        .boundingBox())!;
+      await page.mouse.move(
+        pane.x + pane.width - 15,
+        pane.y + pane.height / 2,
+        { steps: 5 },
+      );
+      await expect(
+        page.locator('[data-resource-split-preview="right"]'),
+      ).toBeVisible();
+    } else {
+      const last = (await tab("tab-media").boundingBox())!;
+      await page.mouse.move(last.x + last.width - 5, last.y + last.height / 2, {
+        steps: 6,
+      });
+      await expect(page.locator("[data-resource-tab-insertion]")).toBeVisible();
+    }
+    await page.mouse.up();
+    if (destination === "split")
+      await expect(page.locator(".query-pane")).toHaveCount(2);
+    else await expect(page.locator(".workspace-tab")).toHaveCount(4);
+  });
+}
+
+test("source badge can split a different tab after hover activation", async () => {
+  const resource = row("/aws/lambda/notifications").getByRole("button", { name: "/aws/lambda/notifications", exact: true });
+  await startDrag(resource);
+  await moveTo(page.locator('.source-badges'), 30);
+  await page.mouse.up();
+  await expect(page.locator('.source-badge')).toHaveCount(2);
+  await startDrag(page.locator('.source-badge[data-source-group="/aws/lambda/notifications"] .source-badge-drag-label'));
+  await moveTo(tab("tab-payments"), 65);
+  await expect(tab("tab-payments").getByRole("tab")).toHaveAttribute("aria-selected", "true");
+  const pane = (await page.locator("[data-pane-drop-target]").boundingBox())!;
+  await page.mouse.move(pane.x + pane.width - 15, pane.y + pane.height / 2, { steps: 5 });
+  await expect(page.locator('[data-resource-split-preview="right"]')).toBeVisible();
+  await page.mouse.up();
+  await expect(page.locator('.query-pane')).toHaveCount(2);
+  await tab("tab-orders").getByRole("tab").click();
+  await expect(page.locator('.source-badge[data-source-group="/aws/lambda/notifications"]')).toHaveCount(0);
+});
+
+test("filter selector offers Unified and only the compatible provider pattern", async () => {
+  const filter = page.getByRole("combobox", { name: "CloudWatch filter pattern" });
+  const selector = page.getByRole("button", { name: /^Filter mode:/ });
+  await selector.click();
+  await expect(page.getByRole("menuitem", { name: "AWS Pattern" })).toBeVisible();
+  await expect(page.getByRole("menuitem", { name: "GCP Pattern" })).toHaveCount(0);
+  await expect(page.getByRole("menuitem", { name: "Unified" })).toBeVisible();
+  await page.getByRole("menuitem", { name: "Auto" }).click();
+  await filter.fill('jsonPayload.count >= 3');
+  await expect(selector).toContainText("A:GCP-PAT");
+  expect(await selector.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+  await filter.press("Enter");
+  await expect(page.getByText(/GCP Pattern is not available/)).toBeVisible();
+  await filter.fill('{ $.count >= 3 }');
+  await expect(selector).toContainText("A:AWS-PAT");
+  expect(await selector.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+  await expect(page.locator('.server-filter-paint')).toHaveCSS('font-variant-ligatures', 'none');
+  await filter.fill('$.count >= 3');
+  await expect(selector).toContainText("A:UNI");
+  await expect(filter).toHaveCSS('font-variant-ligatures', 'none');
+});
+
+test("mixed filter selector shows only Text Unified and Auto", async () => {
+  const selector = page.getByRole("button", { name: /^Filter mode:/ });
+  await selector.click();
+  await expect(page.getByRole("menuitem", { name: "Text" })).toBeVisible();
+  await expect(page.getByRole("menuitem", { name: "Unified" })).toBeVisible();
+  await expect(page.getByRole("menuitem", { name: "Auto" })).toBeVisible();
+  await expect(page.getByRole("menuitem", { name: "AWS Pattern" })).toHaveCount(0);
+  await expect(page.getByRole("menuitem", { name: "GCP Pattern" })).toHaveCount(0);
 });
 
 test("left-quarter tab pickup reorders across later tabs in shared and separate layouts", async () => {

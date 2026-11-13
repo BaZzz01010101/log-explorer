@@ -120,19 +120,20 @@ it("keeps AWS patterns raw and auto-detects ordinary text versus JSON filters", 
   await act(async () => jobs.run(tab));
   expect(requests.at(-1)?.filterPattern).toBe(tab.filterPattern);
 });
-it("uses the AWS pattern on mixed sources and sends a safe Google candidate with exact local verification", async () => {
+it("uses native Unified queries on mixed sources and rejects provider-specific patterns", async () => {
   const tab = workspace.tabs[0]!;
   workspace.connections.push({ id: "google", name: "Google", mode: "gcp", profile: "work", region: "europe-west2", gcpIdentity: { configuration: "work", account: "test@example.com" } });
   tab.sources.push({ connectionId: "google", logGroup: "/gcp/functions/orders", gcp: { kind: "function", project: "test-project", region: "europe-west2", generation: "v1", functionName: "orders" } });
-  Object.assign(tab, { filterMode: "auto", filterPattern: '{ $.level = "ERROR" }' });
+  Object.assign(tab, { filterMode: "auto", filterPattern: '$.level = "ERROR"' });
   await mount();
-  expect(requests[0]).toMatchObject({ filterPattern: tab.filterPattern, gcpLocalFilter: { kind: "aws-json", value: tab.filterPattern }, direction: "older" });
-  expect(requests[0].gcpFilterPattern).toContain('(textPayload:* OR protoPayload:* OR jsonPayload."level":*)');
+  expect(requests[0]).toMatchObject({ filterPattern: '{ ($.level = "ERROR") }', direction: "older" });
+  expect(requests[0].gcpLocalFilter).toBeUndefined();
+  expect(requests[0].gcpFilterPattern).toContain('jsonPayload.level = "ERROR"');
   expect(requests[0].gcpFilterPattern).toContain("NOT protoPayload");
   Object.assign(tab, { filterPattern: '{ $.level = %ERR% }' });
   await act(async () => jobs.run(tab));
   expect(requests).toHaveLength(1);
-  expect(jobs.runtimes[tab.id].error).toMatch(/mixed.*support/i);
+  expect(jobs.runtimes[tab.id].error).toMatch(/AWS Pattern.*not available/i);
 });
 async function replaceWorkspace(value: Workspace) {
   workspace = value;

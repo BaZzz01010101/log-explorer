@@ -179,7 +179,7 @@ it("searches command labels and scope without editing bindings", async () => {
       .findByProps({ "aria-label": "Search commands" })
       .props.onChange({ currentTarget: { value: "local filter" } }),
   );
-  expect(renderer.root.findAll((node) => node.type === "li")).toHaveLength(2);
+  expect(renderer.root.findAll((node) => node.type === "li")).toHaveLength(3);
   expect(onChange).not.toHaveBeenCalled();
 });
 

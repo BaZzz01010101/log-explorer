@@ -1,11 +1,4 @@
-import {
-  useEffect,
-  useRef,
-  useState,
-  type ReactNode,
-  type MouseEvent,
-} from "react";
-import { createPortal } from "react-dom";
+import { useRef, type ReactNode, type MouseEvent } from "react";
 import {
   announceResourceDragStart,
   RESOURCE_DRAG_MOVE,
@@ -24,21 +17,25 @@ export function ResourceDragLabel({
   title,
   onClick,
   onDoubleClick,
+  className = "resource-label",
+  ariaLabel,
 }: {
   payload: ResourcePayload;
   children: ReactNode;
   title?: string;
   onClick(event?: MouseEvent<HTMLButtonElement>): void;
   onDoubleClick(): void;
+  className?: string;
+  ariaLabel?: string;
 }) {
-  const [preview, setPreview] = useState<{ x: number; y: number }>();
   const cleanup = useRef<() => void>(() => {});
   const suppressClick = useRef(false);
-  useEffect(() => () => cleanup.current(), []);
   return (
     <>
       <button
-        className="resource-label"
+        type="button"
+        aria-label={ariaLabel}
+        className={className}
         data-tooltip={title}
         onClick={(event) => {
           if (!suppressClick.current) onClick(event);
@@ -73,7 +70,11 @@ export function ResourceDragLabel({
           const finish = (drop: boolean) => {
             const destination = target,
               wasDragging = dragging;
-            if (wasDragging) announceResourceDragEnd(drop && !destination);
+            if (wasDragging)
+              announceResourceDragEnd(
+                drop && !destination,
+                drop && !!destination,
+              );
             dragging = false;
             cleanup.current();
             if (wasDragging && drop && destination)
@@ -81,7 +82,6 @@ export function ResourceDragLabel({
                 new CustomEvent(SOURCE_DROP_EVENT, { detail: payload }),
               );
             clearTarget();
-            setPreview(undefined);
             if (wasDragging) {
               suppressClick.current = true;
               setTimeout(() => {
@@ -100,8 +100,7 @@ export function ResourceDragLabel({
             dragging = true;
             move.preventDefault();
             document.body.style.userSelect = "none";
-            document.body.style.cursor = "copy";
-            setPreview({ x: move.clientX + 16, y: move.clientY + 12 });
+            document.body.style.cursor = payload.origin ? "move" : "copy";
             window.dispatchEvent(
               new CustomEvent(RESOURCE_DRAG_MOVE, {
                 detail: {
@@ -159,19 +158,6 @@ export function ResourceDragLabel({
       >
         {children}
       </button>
-      {preview &&
-        createPortal(
-          <div
-            className="resource-drag-preview"
-            style={{ left: preview.x, top: preview.y }}
-          >
-            {payload.sources[0].logStreams?.[0] ?? payload.sources[0].logGroup}
-            {payload.sources.length > 1
-              ? ` +${payload.sources.length - 1}`
-              : ""}
-          </div>,
-          document.body,
-        )}
     </>
   );
 }

@@ -10,7 +10,7 @@ export function FilterMatchButtons({
   onCaseChange,
   onRegexChange,
 }: {
-  scope: "highlight" | "local filter";
+  scope: "highlight" | "local filter" | "explorer";
   caseSensitive: boolean;
   regex: boolean;
   caseShortcut: string;
@@ -24,7 +24,7 @@ export function FilterMatchButtons({
         <ActionIcon
           size={22}
           variant={caseSensitive ? "light" : "subtle"}
-          aria-label={`Match ${scope} case`}
+          aria-label={scope === "explorer" ? "Match case" : `Match ${scope} case`}
           aria-pressed={caseSensitive}
           onMouseDown={(event) => event.preventDefault()}
           onClick={onCaseChange}
@@ -38,7 +38,7 @@ export function FilterMatchButtons({
         <ActionIcon
           size={22}
           variant={regex ? "light" : "subtle"}
-          aria-label={`Use ${scope} regular expression`}
+          aria-label={scope === "explorer" ? "Use regular expression" : `Use ${scope} regular expression`}
           aria-pressed={regex}
           onMouseDown={(event) => event.preventDefault()}
           onClick={onRegexChange}

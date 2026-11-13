@@ -9,7 +9,7 @@ import type {
   Workspace,
 } from "../shared/contracts";
 import { sourceIdentity } from "../shared/source-identity";
-import { compileServerFilter } from "../shared/server-filter";
+import { compileAwsViewFilter } from "../shared/server-filter";
 import { compileGcpViewFilter } from "../shared/gcp-server-filter";
 import { queryPageLimit } from "../shared/log-query-limits";
 import {
@@ -141,7 +141,11 @@ export function useLogJobs(
                 workspaceRef.current.preferences.maxEvents,
                 undefined,
                 false,
-                !job.live && prior.request?.direction === "older" && prior.request.cursor ? "newest" : "oldest",
+                !job.live &&
+                  prior.request?.direction === "older" &&
+                  prior.request.cursor
+                  ? "newest"
+                  : "oldest",
               )
             : { events: prior.events, evicted: 0 };
         const terminal = ["error", "cancelled", "complete"].includes(
@@ -175,7 +179,10 @@ export function useLogJobs(
             stats: update.stats ?? prior.stats,
             sampled: update.sampled ?? prior.sampled,
             truncated: update.truncated ?? prior.truncated,
-            incomplete: update.state === "complete" ? Boolean(update.incomplete) : prior.incomplete,
+            incomplete:
+              update.state === "complete"
+                ? Boolean(update.incomplete)
+                : prior.incomplete,
             evicted: prior.evicted + merged.evicted,
           },
         };
@@ -262,12 +269,25 @@ export function useLogJobs(
         requests.current.delete(id);
         current.current.delete(tabId);
       }
-      const needsRecentReload = !pause && !cancellationError && Boolean(runtimesRef.current[tabId]?.recentHistory && runtimesRef.current[tabId]!.evicted !== runtimesRef.current[tabId]!.recentHistory!.evicted);
+      const needsRecentReload =
+        !pause &&
+        !cancellationError &&
+        Boolean(
+          runtimesRef.current[tabId]?.recentHistory &&
+          runtimesRef.current[tabId]!.evicted !==
+            runtimesRef.current[tabId]!.recentHistory!.evicted,
+        );
       setRuntimes((previous) => {
         if (!ownsOperation(tabId, generation) || !previous[tabId])
           return previous;
         const prior = previous[tabId];
-        const history = !pause && !cancellationError && prior.recentHistory && prior.evicted === prior.recentHistory.evicted ? prior.recentHistory : undefined;
+        const history =
+          !pause &&
+          !cancellationError &&
+          prior.recentHistory &&
+          prior.evicted === prior.recentHistory.evicted
+            ? prior.recentHistory
+            : undefined;
         return {
           ...previous,
           [tabId]: {
@@ -277,7 +297,9 @@ export function useLogJobs(
                 ? "error"
                 : pause
                   ? "idle"
-                  : history ? "complete" : "cancelled",
+                  : history
+                    ? "complete"
+                    : "cancelled",
             live: pause && !cancellationError,
             livePaused: pause || undefined,
             liveState: pause
@@ -286,11 +308,18 @@ export function useLogJobs(
                 ? "stopped"
                 : undefined,
             error: cancellationError ?? prior.error,
-            ...(history && id ? { request: { ...history.request, requestId: id }, cursor: history.cursor, recentHistory: undefined } : {}),
+            ...(history && id
+              ? {
+                  request: { ...history.request, requestId: id },
+                  cursor: history.cursor,
+                  recentHistory: undefined,
+                }
+              : {}),
           },
         };
       });
-      if (needsRecentReload && ownsOperation(tabId, generation)) await reloadRecent.current(tab);
+      if (needsRecentReload && ownsOperation(tabId, generation))
+        await reloadRecent.current(tab);
     },
     [ownsOperation],
   );
@@ -378,9 +407,25 @@ export function useLogJobs(
       }
       let request: QueryRequest | undefined;
       try {
-        const modes = new Set(tab.sources.map((item) => state.connections.find((candidate) => candidate.id === (item.connectionId ?? tab.connectionId))?.mode));
-        const mixed = modes.has("gcp") && (modes.has("aws") || modes.has("offline"));
-        const gcpFilter = compileGcpViewFilter(tab.filterPattern, tab.filterMode, tab.gcpLogType, mixed);
+        const modes = new Set(
+          tab.sources.map(
+            (item) =>
+              state.connections.find(
+                (candidate) =>
+                  candidate.id === (item.connectionId ?? tab.connectionId),
+              )?.mode,
+          ),
+        );
+        const mixed =
+          modes.has("gcp") && (modes.has("aws") || modes.has("offline"));
+        const gcpFilter = modes.has("gcp")
+          ? compileGcpViewFilter(
+              tab.filterPattern,
+              tab.filterMode,
+              tab.gcpLogType,
+              mixed,
+            )
+          : { pattern: "", local: undefined };
         const canContinue = Boolean(
           more &&
           !live &&
@@ -427,15 +472,31 @@ export function useLogJobs(
                 tab.customEnd,
               ),
               kind: "events",
-              filterPattern: compileServerFilter(
-                tab.filterPattern,
-                tab.filterMode,
-              ),
+              filterPattern:
+                modes.has("aws") || modes.has("offline")
+                  ? compileAwsViewFilter(tab.filterPattern, tab.filterMode)
+                  : "",
               gcpFilterPattern: gcpFilter.pattern,
               ...(gcpFilter.local ? { gcpLocalFilter: gcpFilter.local } : {}),
               query: "",
-              ...(tab.timePreset === "clear" && !live ? { direction: "older" as const } : {}),
-              limit: tab.timePreset === "clear" && !live ? Math.min(1000, Math.max(1, Math.floor(workspaceRef.current.preferences.maxEvents / 4))) : queryPageLimit(modes, workspaceRef.current.preferences.maxEvents),
+              ...(tab.timePreset === "clear" && !live
+                ? { direction: "older" as const }
+                : {}),
+              limit:
+                tab.timePreset === "clear" && !live
+                  ? Math.min(
+                      1000,
+                      Math.max(
+                        1,
+                        Math.floor(
+                          workspaceRef.current.preferences.maxEvents / 4,
+                        ),
+                      ),
+                    )
+                  : queryPageLimit(
+                      modes,
+                      workspaceRef.current.preferences.maxEvents,
+                    ),
             };
         const retainHistory =
           live &&
@@ -461,7 +522,20 @@ export function useLogJobs(
                   ...(retainHistory
                     ? { events: prior.events, evicted: prior.evicted }
                     : {}),
-                  ...(live && retainHistory && prior.request?.direction === "older" && prior.cursor ? { recentHistory: { request: prior.request, cursor: prior.cursor, evicted: prior.evicted } } : live && prior?.recentHistory ? { recentHistory: prior.recentHistory } : {}),
+                  ...(live &&
+                  retainHistory &&
+                  prior.request?.direction === "older" &&
+                  prior.cursor
+                    ? {
+                        recentHistory: {
+                          request: prior.request,
+                          cursor: prior.cursor,
+                          evicted: prior.evicted,
+                        },
+                      }
+                    : live && prior?.recentHistory
+                      ? { recentHistory: prior.recentHistory }
+                      : {}),
                   state: "queued",
                   live,
                   liveState: live ? "connecting" : undefined,
@@ -755,7 +829,12 @@ export function useLogJobs(
 function timeIdentity(tab: LogTab): string {
   return JSON.stringify(
     tab.timePreset === "custom"
-      ? [tab.timePreset, tab.customStart ?? "", tab.customEnd ?? "", tab.gcpLogType ?? "all"]
+      ? [
+          tab.timePreset,
+          tab.customStart ?? "",
+          tab.customEnd ?? "",
+          tab.gcpLogType ?? "all",
+        ]
       : [tab.timePreset, tab.gcpLogType ?? "all"],
   );
 }

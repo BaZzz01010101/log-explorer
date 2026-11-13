@@ -1,7 +1,7 @@
 import { normalizeShortcut, shortcutKeys } from "./shortcuts";
 
 export type ShortcutScope =
-  "global" | "explorer" | "highlight" | "local-filter";
+  "global" | "explorer" | "highlight" | "local-filter" | "log-view";
 export interface ShortcutDefinition {
   id: string;
   label: string;
@@ -14,6 +14,7 @@ export const SHORTCUT_SCOPE_LABELS: Record<ShortcutScope, string> = {
   explorer: "Explorer filter",
   highlight: "Highlight field",
   "local-filter": "Local filter",
+  "log-view": "Log view",
 };
 
 export const SHORTCUT_DEFINITIONS: readonly ShortcutDefinition[] = [
@@ -89,6 +90,9 @@ export const SHORTCUT_DEFINITIONS: readonly ShortcutDefinition[] = [
     defaultShortcut: "Control+Enter",
     scope: "global",
   },
+  { id: "focusLogLocalFilter", label: "Focus local filter", defaultShortcut: "Control+F", scope: "log-view" },
+  { id: "focusLogQuery", label: "Focus query filter", defaultShortcut: "Control+Q", scope: "log-view" },
+  { id: "focusLogHighlight", label: "Focus text highlight", defaultShortcut: "Control+H", scope: "log-view" },
   {
     id: "explorerRegex",
     label: "Explorer regex",

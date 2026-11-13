@@ -1,6 +1,6 @@
 import { sourceIdentity } from "../shared/source-identity";
 import { compareLogTime } from "../shared/log-order";
-import { compileServerFilter } from "../shared/server-filter";
+import { compileAwsViewFilter } from "../shared/server-filter";
 import { compileGcpViewFilter } from "../shared/gcp-server-filter";
 import type {
   LogEvent,
@@ -33,8 +33,11 @@ export function mergeEvents(
   if (!preserveOrder) events.sort(compareLogTime);
   if (evictFrom === "newest") {
     let end = Math.min(events.length, limit);
-    let characters = events.slice(0, end).reduce((sum, event) => sum + event.message.length, 0);
-    while (characters > maxMessageCharacters && end > 0) characters -= events[--end].message.length;
+    let characters = events
+      .slice(0, end)
+      .reduce((sum, event) => sum + event.message.length, 0);
+    while (characters > maxMessageCharacters && end > 0)
+      characters -= events[--end].message.length;
     return { events: events.slice(0, end), evicted: events.length - end };
   }
   let evicted = Math.max(0, events.length - limit);
@@ -148,16 +151,36 @@ export function requestMatchesTab(
     ]) !== sourceIdentity(tab.connectionId, tab.sources, connections)
   )
     return false;
-  if (
-    request.filterPattern !==
-    compileServerFilter(tab.filterPattern, tab.filterMode)
-  )
-    return false;
   try {
-    const sourceModes = new Set(tab.sources.map((source) => connections.find((candidate) => candidate.id === (source.connectionId ?? tab.connectionId))?.mode));
+    const sourceModes = new Set(
+      tab.sources.map(
+        (source) =>
+          connections.find(
+            (candidate) =>
+              candidate.id === (source.connectionId ?? tab.connectionId),
+          )?.mode,
+      ),
+    );
+    if (
+      request.filterPattern !==
+      (sourceModes.has("aws") || sourceModes.has("offline")
+        ? compileAwsViewFilter(tab.filterPattern, tab.filterMode)
+        : "")
+    )
+      return false;
     if (sourceModes.has("gcp")) {
-      const expected = compileGcpViewFilter(tab.filterPattern, tab.filterMode, tab.gcpLogType, sourceModes.has("aws") || sourceModes.has("offline"));
-      if (request.gcpFilterPattern !== expected.pattern || JSON.stringify(request.gcpLocalFilter ?? null) !== JSON.stringify(expected.local ?? null)) return false;
+      const expected = compileGcpViewFilter(
+        tab.filterPattern,
+        tab.filterMode,
+        tab.gcpLogType,
+        sourceModes.has("aws") || sourceModes.has("offline"),
+      );
+      if (
+        request.gcpFilterPattern !== expected.pattern ||
+        JSON.stringify(request.gcpLocalFilter ?? null) !==
+          JSON.stringify(expected.local ?? null)
+      )
+        return false;
     }
     const range = resolveTimeRange(
       tab.timePreset,

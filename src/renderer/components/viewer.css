@@ -329,6 +329,7 @@ body.resizing-columns * {
   min-height: 44px;
 }
 .log-cell {
+  position: relative;
   box-sizing: border-box;
   padding: 8px 10px;
   line-height: 1.45;
@@ -336,6 +337,17 @@ body.resizing-columns * {
   overflow: hidden;
   border-right: 1px solid
     color-mix(in srgb, var(--mantine-color-default-border) 45%, transparent);
+}
+.log-cell.has-highlight-marker::before,
+.json-event-card.has-highlight-marker::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 4px;
+  background: var(--event-marker-color);
+  pointer-events: none;
 }
 .density-comfortable .log-cell {
   padding-top: 12px;

@@ -29,6 +29,7 @@ it("reveals a single-source control mounted after a resource drag has already st
   await act(async () => {
     renderer = create(
       <SourceBadges
+        tabId="tab-1"
         sources={workspace.tabs[0].sources}
         connectionId="offline"
         connections={workspace.connections}
@@ -63,6 +64,7 @@ it("adds regional streams through the strip, removes one badge and ignores dupli
   ];
   const render = () => (
     <SourceBadges
+      tabId="tab-1"
       sources={sources}
       connectionId={west.id}
       connections={[west, east]}
@@ -131,7 +133,11 @@ it("adds regional streams through the strip, removes one badge and ignores dupli
   expect(change).not.toHaveBeenCalled();
   const remove = renderer.root
     .findAllByType("button")
-    .find((button) => button.props["aria-label"].includes("ghijkl456"))!;
+    .find(
+      (button) =>
+        button.props["aria-label"]?.startsWith("Remove source") &&
+        button.props["aria-label"].includes("ghijkl456"),
+    )!;
   await act(async () => remove.props.onClick());
   expect(change.mock.calls[0][0]).toEqual([sources[0]]);
   change.mockClear();

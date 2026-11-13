@@ -48,7 +48,7 @@ self.onmessage = (
       quick,
     );
     if (overview) {
-      if (result.overview!.length) batch.push({ id: item.id, result });
+      if (result.overview!.length || needle) batch.push({ id: item.id, result });
     } else batch.push({ id: item.id, result });
     if (performance.now() - lastProgress > 16) {
       self.postMessage({ batch });

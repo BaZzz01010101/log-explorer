@@ -106,6 +106,7 @@ for (const theme of ["dark", "light"] as const)
     await page.getByRole("button", { name: "Stop Live" }).click();
     await expect(page.locator('.query-status[data-query-state="complete"]')).toBeAttached();
       const grid = page.locator(".viewer-scroll");
+      await expect(grid.locator('[data-current="true"]')).toHaveAttribute('data-event-id', /:539$/);
       await expect
         .poll(() => grid.evaluate((el) => el.scrollTop))
         .toBeGreaterThan(0);

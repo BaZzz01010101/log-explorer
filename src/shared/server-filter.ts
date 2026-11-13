@@ -1,10 +1,61 @@
-export type ServerFilterMode = "plain" | "pattern" | "auto";
+import { compileUnifiedFilter } from "./unified-filter";
+export type ServerFilterMode =
+  "plain" | "pattern" | "aws-pattern" | "gcp-pattern" | "unified" | "auto";
+export type FilterProvider = "aws" | "gcp" | "mixed";
+export function availableFilterModes(
+  provider: FilterProvider,
+): ServerFilterMode[] {
+  return [
+    "plain",
+    "unified",
+    ...(provider === "aws"
+      ? ["aws-pattern" as const]
+      : provider === "gcp"
+        ? ["gcp-pattern" as const]
+        : []),
+    "auto",
+  ];
+}
+
+export function resolveFilterSyntax(
+  text: string,
+  mode: ServerFilterMode = "auto",
+  legacyProvider: "aws" | "gcp" = "aws",
+): "plain" | "aws" | "gcp" | "unified" {
+  if (mode === "plain") return "plain";
+  if (mode === "aws-pattern") return "aws";
+  if (mode === "gcp-pattern") return "gcp";
+  if (mode === "unified") return "unified";
+  if (mode === "pattern") return legacyProvider;
+  if (/^(?:\s*\()*\s*\$\./.test(text)) return "unified";
+  if (
+    /(?:^|\s|\()(?:resource|jsonPayload|protoPayload|textPayload|labels|severity|logName|timestamp|insertId|trace|httpRequest)(?:\.[\w".-]+)*\s*(?:=~|!~|!=|>=|<=|=|>|<|:)/i.test(
+      text,
+    )
+  )
+    return "gcp";
+  return serverFilterMode(text, "auto") === "pattern" ? "aws" : "plain";
+}
+
+export function compileAwsViewFilter(
+  text: string,
+  mode: ServerFilterMode = "auto",
+): string {
+  if (!text.trim()) return "";
+  const syntax = resolveFilterSyntax(text, mode);
+  if (syntax === "plain") return JSON.stringify(text);
+  if (syntax === "aws") return text;
+  if (syntax === "unified") return compileUnifiedFilter(text, "aws");
+  throw new Error(
+    "GCP Pattern is not available for views containing AWS sources. Use Unified or Text.",
+  );
+}
 
 export function serverFilterMode(
   text: string,
   mode: ServerFilterMode = "pattern",
 ): "plain" | "pattern" {
-  if (mode !== "auto") return mode;
+  if (mode !== "auto") return mode === "plain" ? "plain" : "pattern";
   const input = text.trim();
   // Recognize explicit AWS syntax, never punctuation in ordinary prose or JSON
   // records. Incomplete explicit openers stay editable as patterns.

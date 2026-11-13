@@ -62,6 +62,23 @@
   background: var(--mantine-color-default-border);
   color: var(--mantine-color-text);
 }
+.source-badge .source-badge-drag-label {
+  display: block;
+  flex: 1 1 auto;
+  width: auto;
+  height: auto;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: inherit;
+  cursor: grab;
+  text-align: left;
+}
+.source-badge .source-badge-drag-label:hover {
+  background: transparent;
+  color: inherit;
+}
 .source-badges.source-drop-active {
   outline: 2px dashed var(--mantine-color-blue-5);
   outline-offset: -2px;

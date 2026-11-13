@@ -74,6 +74,7 @@ import "./floating-surfaces.css";
 import "./toggle-buttons.css";
 import { TextTooltips } from "./components/AppTooltip";
 import { shortcutMatches } from "./shortcuts";
+import { isResourceDragging, isTabSourceDragging } from "./resource-drag";
 import {
   cycleRecentTabs,
   finishRecentTabCycle,
@@ -179,6 +180,17 @@ export default function App() {
     workspace.activeConnectionId ?? workspace.connections[0].id;
   const entries = workspaceEntries(workspace);
   const activeWorkspaceTabId = activeEntryId(workspace);
+  const previousFocusedEntry = useRef<string | null | undefined>(undefined);
+  useEffect(() => {
+    if (!ready) return;
+    const previous = previousFocusedEntry.current;
+    previousFocusedEntry.current = activeWorkspaceTabId;
+    if (previous === undefined || previous === activeWorkspaceTabId || !activeTab || settingsVisibleRef.current || isResourceDragging() || isTabSourceDragging()) return;
+    const frame = requestAnimationFrame(() => {
+      document.getElementById(`view-${activeTab.id}`)?.querySelector<HTMLElement>('.viewer-scroll')?.focus({ preventScroll: true });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [activeWorkspaceTabId, ready]);
   const tabNavigation = useRef<TabNavigationState>({ recentIds: [] });
   useEffect(() => {
     tabNavigation.current = observeTabFocus(
@@ -477,7 +489,7 @@ export default function App() {
         !!event.target.closest('input,textarea,[contenteditable="true"]');
       const entry = Object.entries(workspace.preferences.shortcuts).find(
         ([action, shortcut]) =>
-          !["explorer", "highlight", "localFilter"].some((prefix) =>
+          !["explorer", "highlight", "localFilter", "focusLog"].some((prefix) =>
             action.startsWith(prefix),
           ) && shortcutMatches(event, shortcut),
       );

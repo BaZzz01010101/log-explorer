@@ -6,3 +6,9 @@ export function gcpErrorMessage(failure: unknown): string {
     "",
   );
 }
+
+export function isGcpAuthorizationError(message: string): boolean {
+  return /could not obtain a google cloud access token|google cloud credentials expired/i.test(
+    message,
+  );
+}

@@ -121,25 +121,8 @@ describe("AWS-compatible mixed source filters", () => {
         /mixed.*support/i,
       );
   });
-  it("compiles mixed AWS JSON patterns without misinterpreting them as Google syntax", () => {
-    const compiled = compileGcpViewFilter(
-      '{ $.value = "ERROR" }',
-      "auto",
-      "all",
-      true,
-    );
-    expect(compiled.pattern).toContain('(textPayload:* OR protoPayload:* OR jsonPayload."value":*)');
-    expect(compiled.pattern).toContain("NOT protoPayload");
-    expect(compiled.local).toEqual({ kind: "aws-json", value: '{ $.value = "ERROR" }' });
-    expect(
-      compileGcpViewFilter("{ $.value NOT EXISTS }", "pattern", "all", true)
-        .pattern,
-    ).toContain("NOT protoPayload");
-    expect(compileGcpViewFilter("ERROR", "auto", "all", true)).toMatchObject({
-      local: { kind: "plain", value: "ERROR" },
-    });
-    expect(() =>
-      compileGcpViewFilter("{ $.value = %err% }", "auto", "all", true),
-    ).toThrow(/mixed/i);
+  it("rejects AWS syntax in mixed views and executes text natively", () => {
+    expect(() => compileGcpViewFilter('{ $.value = "ERROR" }', "auto", "all", true)).toThrow(/AWS Pattern.*not available/i);
+    expect(compileGcpViewFilter("ERROR", "auto", "all", true).local).toBeUndefined();
   });
 });

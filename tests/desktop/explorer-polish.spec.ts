@@ -165,7 +165,9 @@ test("regex tooltip uses light theme colors and its glyph has a filled dot", asy
 });
 
 test("source removal cross is centered inside its hover hit area", async () => {
-  const remove = page.locator(".source-badge button").first();
+  const remove = page
+    .locator('.source-badge button[aria-label^="Remove source"]')
+    .first();
   await remove.hover();
   const button = (await remove.boundingBox())!,
     icon = (await remove.locator("svg").boundingBox())!;
@@ -184,7 +186,10 @@ test("normal multi-source tab icon counts individual streams and changes after r
     1,
   );
   await expect(page.locator("[data-split-tab-icon]")).toHaveCount(0);
-  await page.locator(".source-badge button").first().click();
+  await page
+    .locator('.source-badge button[aria-label^="Remove source"]')
+    .first()
+    .click();
   await expect(
     page.locator(".workspace-tab .tabler-icon-terminal-2"),
   ).toHaveCount(1);

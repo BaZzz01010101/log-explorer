@@ -138,6 +138,7 @@ import {
   type EventSelectionState,
 } from "../useEventSelection";
 import { useDeserializedEvents } from "../useDeserializedEvents";
+import { eventPageDestination } from "../event-page-navigation";
 import {
   EventHighlightContext,
   QuickHighlightContext,
@@ -419,6 +420,10 @@ export function LogViewer({
     [onScrollElement],
   );
   const [positionedScope, setPositionedScope] = useState("");
+  const initialRecent = useRef<{ scope: string; active: boolean }>({ scope: "", active: false });
+  if (pagination?.scope && initialRecent.current.scope !== pagination.scope) {
+    initialRecent.current = { scope: pagination.scope, active: pagination.direction === "older" && !pagination.loadingOlder && (events.length === 0 || loading) };
+  }
   const rowsRef = useRef<string[]>([]);
   const pageAnchor = useRef<{ id: string; offset: number; firstId: string; started?: boolean } | undefined>(undefined);
   useScrollPagination(scrollRef, {
@@ -430,9 +435,21 @@ export function LogViewer({
           if (pagination.direction === "older" && scrollRef.current) {
             const scroll = scrollRef.current;
             const top = scroll.getBoundingClientRect().top;
-            const visible = [...scroll.querySelectorAll<HTMLElement>("[data-index]")].find((element) => element.getBoundingClientRect().bottom > top);
+            const header = scroll.querySelector<HTMLElement>(".log-table-header")?.getBoundingClientRect().height ?? 0;
+            const visibleRows = [...scroll.querySelectorAll<HTMLElement>(".virtual-event[data-index]")];
+            const isVisible = (element: HTMLElement) => element.getBoundingClientRect().bottom > top + header && element.getBoundingClientRect().top < top + scroll.clientHeight;
+            const visible = visibleRows.find((element) => element.dataset.current === "true" && isVisible(element)) ?? visibleRows.find(isVisible);
             const index = Number(visible?.dataset.index);
-            if (visible && Number.isInteger(index) && rowsRef.current[index]) pageAnchor.current = { id: rowsRef.current[index], offset: visible.getBoundingClientRect().top - top, firstId: rowsRef.current[0] };
+            if (visible && Number.isInteger(index) && rowsRef.current[index]) pageAnchor.current = { id: rowsRef.current[index], offset: visible.getBoundingClientRect().top - top, firstId: rowsRef.current[0], started: true };
+            else {
+              const list = scroll.querySelector<HTMLElement>(".virtual-events");
+              if (list) {
+                const base = list.getBoundingClientRect().top - top + scroll.scrollTop;
+                const position = scroll.scrollTop + header - base;
+                const item = virtualizer.measurementsCache.find((row) => row.end > position);
+                if (item && rowsRef.current[item.index]) pageAnchor.current = { id: rowsRef.current[item.index], offset: base + item.start - scroll.scrollTop, firstId: rowsRef.current[0], started: true };
+              }
+            }
           }
           pagination.onLoad();
         } }]
@@ -743,6 +760,13 @@ export function LogViewer({
     true,
     interactionState?.selection,
   );
+  useEffect(() => {
+    if (!initialRecent.current.active || pagination?.direction !== "older" || !rows.length) return;
+    let latest = rows[0]!;
+    for (const row of rows) if (row.original.event.timestamp > latest.original.event.timestamp) latest = row;
+    if (selection.selectedId !== latest.original.event.id) selection.select(latest.original.event.id);
+    if (!loading) initialRecent.current.active = false;
+  }, [rows, pagination?.direction, pagination?.scope, loading, selection.selectedId]);
   const selectedEventIds = new Set(selection.selectedIds);
   const viewerId = useId();
   const virtualizer = useVirtualizer<HTMLDivElement, HTMLDivElement>({
@@ -762,6 +786,10 @@ export function LogViewer({
     getItemKey: (index) => rows[index]!.id,
     overscan: 7,
   });
+  const measureRow = useMeasuredVirtualRows(
+    virtualizer,
+    [view.mode, view.wrap, preferences.density, preferences.fontSize, expansion.all].join(":"),
+  );
   useLayoutEffect(() => {
     if (pagination?.direction !== "older" || !scrollRef.current || !rows.length) return;
     if (positionedScope !== pagination.scope) {
@@ -772,7 +800,7 @@ export function LogViewer({
     }
     const anchor = pageAnchor.current;
     if (anchor && loading) anchor.started = true;
-    if (anchor && (rows[0]?.id !== anchor.firstId || (anchor.started && !loading))) {
+    if (anchor) {
       const index = rows.findIndex((row) => row.id === anchor.id);
       if (index >= 0) {
         const element = scrollRef.current.querySelector<HTMLElement>(".virtual-events");
@@ -784,18 +812,17 @@ export function LogViewer({
       }
       anchor.firstId = rows[0]?.id ?? "";
     } else if (shouldFollowRecentLoad(loading, Boolean(pagination?.loadingOlder), Boolean(anchor))) virtualizer.scrollToIndex(rows.length - 1, { align: "end" });
-    if (anchor?.started && !loading) pageAnchor.current = undefined;
+    if (anchor?.started && !loading) {
+      const frame = requestAnimationFrame(() => {
+        const scroll = scrollRef.current;
+        if (pageAnchor.current !== anchor || !scroll) return;
+        const element = [...scroll.querySelectorAll<HTMLElement>(".virtual-event[data-event-id]")].find((row) => row.dataset.eventId === anchor.id);
+        if (element) scroll.scrollTop += element.getBoundingClientRect().top - scroll.getBoundingClientRect().top - anchor.offset;
+        pageAnchor.current = undefined;
+      });
+      return () => cancelAnimationFrame(frame);
+    }
   }, [rows, pagination?.direction, pagination?.scope, pagination?.loadingOlder, positionedScope, loading, virtualizer]);
-  const measureRow = useMeasuredVirtualRows(
-    virtualizer,
-    [
-      view.mode,
-      view.wrap,
-      preferences.density,
-      preferences.fontSize,
-      expansion.all,
-    ].join(":"),
-  );
   const inspectedIndex = selection.index;
   useEffect(() => {
     if (!revealEvent) return;
@@ -860,6 +887,38 @@ export function LogViewer({
       })),
     [rows, overview.results],
   );
+  const pendingHighlightNavigation = useRef<{ id: string | null; direction: "next" | "previous"; needle: string } | null>(null);
+  const navigateHighlight = (direction: "next" | "previous") => {
+    const step = direction === "next" ? 1 : -1;
+    const start = selection.index < 0 ? (step > 0 ? -1 : rows.length) : selection.index;
+    for (let index = start + step; index >= 0 && index < rows.length; index += step) {
+      const result = overview.results.get(rows[index]!.original.event.id);
+      if (!result) {
+        pendingHighlightNavigation.current = { id: selection.selectedId, direction, needle: highlightText };
+        setNotice("Finding highlighted events…");
+        return;
+      }
+      if (result.quickMatch) {
+        pendingHighlightNavigation.current = null;
+        setNotice("");
+        onPauseLiveFollow?.();
+        selection.select(rows[index]!.original.event.id);
+        virtualizer.scrollToIndex(index, { align: "auto" });
+        return;
+      }
+    }
+    pendingHighlightNavigation.current = null;
+    setNotice(direction === "next" ? "No more highlighted events below." : "No more highlighted events above.");
+  };
+  useEffect(() => {
+    const pending = pendingHighlightNavigation.current;
+    if (!pending) return;
+    if (pending.id !== selection.selectedId || pending.needle !== highlightText || overview.error) {
+      pendingHighlightNavigation.current = null;
+      return;
+    }
+    navigateHighlight(pending.direction);
+  }, [overview.results, overview.error, selection.selectedId, highlightText, rows]);
   const navigateTo = (index: number) => {
     const row = rows[index];
     if (!row) return;
@@ -1040,7 +1099,18 @@ export function LogViewer({
               spellCheck={false}
               error={Boolean(localFiltered.error)}
               data-tooltip={localFiltered.error}
-              onKeyDown={(event) => matchKeys(event, "localFilter")}
+              onKeyDown={(event) => {
+                matchKeys(event, "localFilter");
+                if (!event.defaultPrevented && event.key === "Escape" && !event.nativeEvent.isComposing) {
+                  event.preventDefault(); event.stopPropagation();
+                  scrollRef.current?.focus({ preventScroll: true });
+                  return;
+                }
+                if (!event.defaultPrevented && event.key === "Enter" && !event.nativeEvent.isComposing && !event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey) {
+                  event.preventDefault();
+                  scrollRef.current?.focus({ preventScroll: true });
+                }
+              }}
               onChange={(event) =>
                 onViewChange({
                   ...view,
@@ -1105,7 +1175,18 @@ export function LogViewer({
               spellCheck={false}
               error={Boolean(quick.regex && regexError(highlightText))}
               data-tooltip={quick.regex ? regexError(highlightText) : undefined}
-              onKeyDown={(event) => matchKeys(event, "highlight")}
+              onKeyDown={(event) => {
+                matchKeys(event, "highlight");
+                if (!event.defaultPrevented && event.key === "Escape" && !event.nativeEvent.isComposing) {
+                  event.preventDefault(); event.stopPropagation();
+                  scrollRef.current?.focus({ preventScroll: true });
+                  return;
+                }
+                if (!event.defaultPrevented && event.key === "Enter" && !event.nativeEvent.isComposing && !event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey) {
+                  event.preventDefault();
+                  scrollRef.current?.focus({ preventScroll: true });
+                }
+              }}
               onChange={(event) =>
                 onViewChange({
                   ...view,
@@ -1353,6 +1434,7 @@ export function LogViewer({
                   : undefined
               }
               tabIndex={0}
+              onPointerDownCapture={() => { initialRecent.current.active = false; }}
               onWheel={(event) => {
                 if (event.deltaY < 0) onPauseLiveFollow?.();
                 else if (event.deltaY > 0) {
@@ -1430,6 +1512,7 @@ export function LogViewer({
               }}
               onKeyDown={(event) => {
                 if (event.defaultPrevented) return;
+                initialRecent.current.active = false;
                 const target = event.target as HTMLElement;
                 if (
                   target.closest(
@@ -1439,6 +1522,25 @@ export function LogViewer({
                     !target.closest(".inspect-cell,.expand-event"))
                 )
                   return;
+                if ((event.key === "PageUp" || event.key === "PageDown") && !event.ctrlKey && !event.metaKey && !event.altKey) {
+                  const scroll = scrollRef.current;
+                  const list = scroll?.querySelector<HTMLElement>(".virtual-events");
+                  if (!scroll || !list) return;
+                  const header = scroll.querySelector<HTMLElement>(".log-table-header")?.getBoundingClientRect().height ?? 0;
+                  const base = list.getBoundingClientRect().top - scroll.getBoundingClientRect().top + scroll.scrollTop;
+                  const viewport = Math.max(1, scroll.clientHeight - header);
+                  const offset = base - header;
+                  const currentTop = Math.max(0, scroll.scrollTop - offset);
+                  const maxTop = Math.max(0, scroll.scrollHeight - scroll.clientHeight - offset);
+                  const destination = eventPageDestination(virtualizer.measurementsCache, selection.index, currentTop, viewport, maxTop, event.key === "PageUp" ? "up" : "down");
+                  if (destination) {
+                    event.preventDefault();
+                    onPauseLiveFollow?.();
+                    scroll.scrollTop = Math.max(0, destination.scrollTop + offset);
+                    selection.select(rows[destination.index]!.original.event.id, { range: event.shiftKey });
+                  }
+                  return;
+                }
                 if (
                   (event.key === "ArrowLeft" || event.key === "ArrowRight") &&
                   !event.ctrlKey &&
@@ -1462,6 +1564,11 @@ export function LogViewer({
                   return;
                 }
                 if ((event.ctrlKey || event.metaKey) && !event.altKey) {
+                  if (!event.shiftKey && highlightText && (event.key === "ArrowDown" || event.key === "ArrowUp")) {
+                    event.preventDefault(); event.stopPropagation();
+                    navigateHighlight(event.key === "ArrowDown" ? "next" : "previous");
+                    return;
+                  }
                   if (event.key.toLowerCase() === "a") {
                     event.preventDefault();
                     window.getSelection()?.removeAllRanges();
@@ -1812,6 +1919,7 @@ export function LogViewer({
                       const row = tableRow.original;
                       const expanded = expansion.isExpanded(row.event.id);
                       const highlight = highlighting.results.get(row.event.id);
+                      const marker = overview.results.get(row.event.id)?.overview?.[0];
                       const highlightPending =
                         highlighting.active &&
                         !highlight &&
@@ -1822,7 +1930,7 @@ export function LogViewer({
                           value={highlight}
                         >
                           <div
-                            className={`virtual-event ${view.mode === "json" ? "json-event-card" : "table-event"} level-${row.level}${selectedEventIds.has(row.event.id) ? " event-selected" : ""}`}
+                            className={`virtual-event ${view.mode === "json" ? "json-event-card" : "table-event"}${view.mode === "json" && marker ? " has-highlight-marker" : ""} level-${row.level}${selectedEventIds.has(row.event.id) ? " event-selected" : ""}`}
                             key={tableRow.id}
                             id={`${viewerId}-event-${virtualRow.index}`}
                             role="row"
@@ -1898,6 +2006,7 @@ export function LogViewer({
                                   highlight?.row.background,
                                 "--event-highlight-fg":
                                   highlight?.row.foreground,
+                                "--event-marker-color": marker,
                                 position: "absolute",
                                 top: virtualRow.start,
                                 left: 0,
@@ -2005,7 +2114,7 @@ export function LogViewer({
                                   )}
                                   {tableRow.getVisibleCells().map((cell) => (
                                     <div
-                                      className={`log-cell ${cell.column.getIsPinned() ? "pinned" : ""}`}
+                                      className={`log-cell ${cell.column.getIsPinned() ? "pinned" : ""}${columnPath(cell.column.id) === "@message" && marker ? " has-highlight-marker" : ""}`}
                                       role="cell"
                                       key={cell.id}
                                       style={{

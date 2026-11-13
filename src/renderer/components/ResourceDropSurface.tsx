@@ -8,6 +8,8 @@ import {
   RESOURCE_DRAG_MOVE,
   RESOURCE_DRAG_END,
   type ResourceDragMove,
+  type ResourceOrigin,
+  SOURCE_MOVE_DROP,
 } from "../resource-drag";
 import { dragDestination } from "./WorkspaceTabs";
 
@@ -28,6 +30,7 @@ export function ResourceDropSurface({
     point: ResourceDragMove["point"];
     origin: string | null;
     hovered: boolean;
+    resourceOrigin?: ResourceOrigin;
   } | null>(null);
   const hover = useRef<{
     id: string;
@@ -37,6 +40,11 @@ export function ResourceDropSurface({
     useState<ReturnType<typeof dragDestination>["placement"]>(null);
   const [insertion, setInsertion] =
     useState<ReturnType<typeof dragDestination>["insertion"]>(null);
+  const [preview, setPreview] = useState<{
+    x: number;
+    y: number;
+    label: string;
+  } | null>(null);
   const refresh = () => {
     const drag = session.current;
     const sourceStrip =
@@ -76,6 +84,13 @@ export function ResourceDropSurface({
     const move = (event: Event) => {
       const { payload, point } = (event as CustomEvent<ResourceDragMove>)
         .detail;
+      setPreview({
+        x: point.x + 16,
+        y: point.y + 12,
+        label:
+          (payload.sources[0].logStreams?.[0] ?? payload.sources[0].logGroup) +
+          (payload.sources.length > 1 ? ` +${payload.sources.length - 1}` : ""),
+      });
       lastPoint.current = point;
       if (rejected.current) return;
       if (!session.current) {
@@ -94,6 +109,7 @@ export function ResourceDropSurface({
           point,
           origin: activeEntryId(current.current),
           hovered: false,
+          resourceOrigin: payload.origin,
         };
       }
       session.current.point = point;
@@ -144,11 +160,32 @@ export function ResourceDropSurface({
       rejected.current = null;
       lastPoint.current = null;
       const drag = session.current;
+      setPreview(null);
       if (!drag) return;
       const destination =
         (event as CustomEvent<{ drop: boolean }>).detail.drop &&
         refreshRef.current();
-      if (destination && destination.insertion)
+      if (destination && destination.insertion && drag.resourceOrigin)
+        dispatch({
+          type: "source/move",
+          origin: drag.resourceOrigin,
+          destination: {
+            kind: "tab",
+            beforeTabId: destination.insertion.beforeTabId,
+            pinned: destination.insertion.pinned ?? false,
+          },
+        });
+      else if (destination && destination.placement && drag.resourceOrigin)
+        dispatch({
+          type: "source/move",
+          origin: drag.resourceOrigin,
+          destination: {
+            kind: "split",
+            paneId: destination.placement.paneId,
+            edge: destination.placement.edge,
+          },
+        });
+      else if (destination && destination.insertion)
         dispatch({
           type: "tabs/insert",
           tabs: drag.tabs,
@@ -163,6 +200,10 @@ export function ResourceDropSurface({
           edge: destination.placement.edge,
         });
       else if (
+        !(
+          (event as CustomEvent<{ sourceDrop?: boolean }>).detail.sourceDrop &&
+          drag.resourceOrigin
+        ) &&
         drag.hovered &&
         drag.origin &&
         workspaceEntries(current.current).some(
@@ -175,15 +216,28 @@ export function ResourceDropSurface({
           preserveConnection: true,
         });
       session.current = null;
+      setPreview(null);
       setPlacement(null);
       setInsertion(null);
     };
     window.addEventListener(RESOURCE_DRAG_MOVE, move);
     window.addEventListener(RESOURCE_DRAG_END, finish);
+    const sourceDrop = (event: Event) => {
+      const { origin, tabId } = (
+        event as CustomEvent<{ origin: ResourceOrigin; tabId: string }>
+      ).detail;
+      dispatch({
+        type: "source/move",
+        origin,
+        destination: { kind: "sources", tabId },
+      });
+    };
+    window.addEventListener(SOURCE_MOVE_DROP, sourceDrop);
     return () => {
       clearHover();
       window.removeEventListener(RESOURCE_DRAG_MOVE, move);
       window.removeEventListener(RESOURCE_DRAG_END, finish);
+      window.removeEventListener(SOURCE_MOVE_DROP, sourceDrop);
     };
   }, [dispatch]);
   useEffect(() => {
@@ -192,9 +246,17 @@ export function ResourceDropSurface({
     return () => cancelAnimationFrame(frame);
   }, [workspace]);
   return (
-    (placement || insertion) &&
+    (placement || insertion || preview) &&
     createPortal(
       <>
+        {preview && (
+          <div
+            className="resource-drag-preview"
+            style={{ left: preview.x, top: preview.y }}
+          >
+            {preview.label}
+          </div>
+        )}
         {insertion && (
           <div
             className="workspace-tab-insertion"

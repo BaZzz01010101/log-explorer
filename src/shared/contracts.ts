@@ -173,7 +173,7 @@ export interface LogTab {
   sources: LogSource[];
   kind: "events" | "insights";
   filterPattern: string;
-  filterMode?: "plain" | "pattern" | "auto";
+  filterMode?: "plain" | "pattern" | "aws-pattern" | "gcp-pattern" | "unified" | "auto";
   gcpLogType?: "all" | "audit" | "execution";
   query: string;
   timePreset: string;
@@ -210,7 +210,7 @@ export interface SavedQuery {
   name: string;
   kind: "events" | "insights";
   text: string;
-  filterMode?: "plain" | "pattern" | "auto";
+  filterMode?: "plain" | "pattern" | "aws-pattern" | "gcp-pattern" | "unified" | "auto";
 }
 export interface Favorite {
   connectionId: string;

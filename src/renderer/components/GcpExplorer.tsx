@@ -14,6 +14,7 @@ import {
   IconHexagonLetterK,
   IconRefresh,
   IconSearch,
+  IconX,
 } from "@tabler/icons-react";
 import type {
   GcpConfiguration,
@@ -25,11 +26,13 @@ import type {
 import { collectGcpPages } from "../gcp-pagination";
 import { discoverGcpSources } from "../gcp-source-scan";
 import { matchGroupNames } from "../group-regex";
-import { gcpErrorMessage } from "../gcp-errors";
+import { gcpErrorMessage, isGcpAuthorizationError } from "../gcp-errors";
 import { shortcutMatches } from "../shortcuts";
 import { Tooltip } from "./AppTooltip";
 import { Menu } from "./AppMenu";
 import { ViewFavorites } from "./ViewFavorites";
+import { FilterMatchButtons } from "./FilterMatchButtons";
+import { clearEditControl } from "../scoped-edit-history";
 import "./gcp-explorer.css";
 
 export function GcpExplorer({
@@ -55,8 +58,16 @@ export function GcpExplorer({
   initialAccount?: string;
   onProjectChange?(project: string): void;
   onIdentityChange?(configuration: string, account: string): void;
-  onOpen?(source: GcpSource, identity: GcpIdentity, mode: "preview" | "permanent"): void;
-  onSourceAction?(source: GcpSource, identity: GcpIdentity, mode: "add-sources" | "add-splits" | "new-split" | "new-multisource"): void;
+  onOpen?(
+    source: GcpSource,
+    identity: GcpIdentity,
+    mode: "preview" | "permanent",
+  ): void;
+  onSourceAction?(
+    source: GcpSource,
+    identity: GcpIdentity,
+    mode: "add-sources" | "add-splits" | "new-split" | "new-multisource",
+  ): void;
   favorites?: ViewFavorite[];
   onOpenFavorite?(id: string): void;
   onRenameFavorite?(id: string, title: string): void;
@@ -77,12 +88,13 @@ export function GcpExplorer({
   const [error, setError] = useState("");
   const [authenticating, setAuthenticating] = useState(false);
   const [authError, setAuthError] = useState("");
-  const [authNotice, setAuthNotice] = useState("");
+  const [authorizationRequired, setAuthorizationRequired] = useState(false);
   const [configurations, setConfigurations] = useState<GcpConfiguration[]>([]);
   const [accounts, setAccounts] = useState<string[]>([]);
   const [configuration, setConfiguration] = useState(initialConfiguration);
   const [account, setAccount] = useState(initialAccount);
   const [profilesLoading, setProfilesLoading] = useState(false);
+  const [profilesAvailable, setProfilesAvailable] = useState(false);
   const profilesLoaded = useRef(false);
   const config = configurations.find((entry) => entry.name === configuration);
   const identity: GcpIdentity | undefined =
@@ -112,7 +124,6 @@ export function GcpExplorer({
 
   const selectIdentity = (nextConfiguration: string, nextAccount: string) => {
     if (nextConfiguration !== configuration || nextAccount !== account) {
-      setAuthNotice("");
       projectAbort.current?.abort();
       logAbort.current?.abort();
       setProjects([]);
@@ -133,6 +144,7 @@ export function GcpExplorer({
     setAuthError("");
     try {
       const result = await window.explorer.gcpProfiles();
+      setProfilesAvailable(true);
       setConfigurations(result.configurations);
       setAccounts(result.accounts);
       const chosen =
@@ -188,7 +200,11 @@ export function GcpExplorer({
         controller.signal,
       );
     } catch (failure) {
-      if (!controller.signal.aborted) setProjectError(gcpErrorMessage(failure));
+      if (!controller.signal.aborted) {
+        const message = gcpErrorMessage(failure);
+        if (isGcpAuthorizationError(message)) setAuthorizationRequired(true);
+        else setProjectError(message);
+      }
     } finally {
       if (!controller.signal.aborted) setProjectLoading(false);
     }
@@ -272,7 +288,11 @@ export function GcpExplorer({
         }
       }
     } catch (failure) {
-      if (!controller.signal.aborted) setError(gcpErrorMessage(failure));
+      if (!controller.signal.aborted) {
+        const message = gcpErrorMessage(failure);
+        if (isGcpAuthorizationError(message)) setAuthorizationRequired(true);
+        else setError(message);
+      }
     } finally {
       if (!controller.signal.aborted) setLoading(false);
     }
@@ -286,17 +306,19 @@ export function GcpExplorer({
   const signIn = async () => {
     setAuthenticating(true);
     setAuthError("");
-    setAuthNotice("");
     setProjectError("");
     try {
       await window.explorer.gcpSignIn();
+      setAuthorizationRequired(false);
       setProjectError("");
       setError("");
       const selected = await refreshProfiles(true);
       if (selected?.configuration && selected.account) {
-        setAuthNotice("Signed in. Refresh requested.");
         onAuthorized?.(selected.configuration, selected.account);
-        if (selected.configuration === configuration && selected.account === account) {
+        if (
+          selected.configuration === configuration &&
+          selected.account === account
+        ) {
           void discover();
           if (project) void load(project);
         }
@@ -352,6 +374,43 @@ export function GcpExplorer({
       [...counts].filter(([, count]) => count > 1).map(([label]) => label),
     );
   }, [filtered]);
+  const needsSignIn =
+    authorizationRequired ||
+    (profilesAvailable && !profilesLoading && !accounts.length);
+  if (needsSignIn)
+    return (
+      <aside
+        className="resource-sidebar gcp-sidebar"
+        aria-label="Google Cloud resources"
+      >
+        <div className="gcp-sign-in-panel">
+          <Text fw={600}>Sign in to Google Cloud</Text>
+          <Text size="sm" c="dimmed">Sign in to browse projects and logs with your Google Cloud CLI account.</Text>
+          <Button loading={authenticating} onClick={() => void signIn()}>
+            Sign in
+          </Button>
+          {authenticating && (
+            <Text size="xs" c="dimmed">
+              Complete sign-in in your browser…
+            </Text>
+          )}
+          {authError && (
+            <Text size="xs" c="red" role="alert">
+              {authError}
+            </Text>
+          )}
+          {/Google Cloud CLI was not found/i.test(authError) && (
+            <Button
+              size="compact-xs"
+              variant="subtle"
+              onClick={() => void window.explorer.gcpInstallCli()}
+            >
+              Install Google Cloud CLI
+            </Button>
+          )}
+        </div>
+      </aside>
+    );
   return (
     <aside
       className="resource-sidebar gcp-sidebar"
@@ -361,13 +420,24 @@ export function GcpExplorer({
         <Text size="xs" fw={700} tt="uppercase" c="dimmed">
           Google Cloud Explorer
         </Text>
-        <Tooltip label="Refresh sources">
+        <Tooltip label="Refresh Google Cloud Explorer">
           <ActionIcon
             size="sm"
             variant="subtle"
             aria-label="Refresh GCP sources"
-            disabled={!project || loading}
-            onClick={() => void load(project)}
+            disabled={loading || profilesLoading}
+            onClick={() =>
+              void refreshProfiles().then((selected) => {
+                if (
+                  selected?.configuration === configuration &&
+                  selected.account === account
+                ) {
+                  void discover();
+                  if (project) void load(project);
+                  onAuthorized?.(configuration, account);
+                }
+              })
+            }
           >
             <IconRefresh size={15} />
           </ActionIcon>
@@ -378,34 +448,18 @@ export function GcpExplorer({
           <Text size="xs" fw={600}>
             Google Cloud CLI
           </Text>
-          <Group gap={2} wrap="nowrap">
-            <Tooltip label="Refresh configurations and accounts">
-              <ActionIcon
-                size="sm"
-                variant="subtle"
-                aria-label="Refresh Google Cloud accounts"
-                loading={profilesLoading}
-                onClick={() => void refreshProfiles()}
-              >
-                <IconRefresh size={14} />
-              </ActionIcon>
-            </Tooltip>
-            <Button
-              size="compact-xs"
-              variant="subtle"
-              loading={authenticating}
-              onClick={() => void signIn()}
-            >
-              Sign in
-            </Button>
-          </Group>
         </Group>
         <Select
           label="Account"
           aria-label="Google Cloud account"
           size="xs"
           placeholder="Sign in to an account"
-          data={accounts.map((item) => ({ value: item, label: item.endsWith(".gserviceaccount.com") ? `${item} (service account)` : item }))}
+          data={accounts.map((item) => ({
+            value: item,
+            label: item.endsWith(".gserviceaccount.com")
+              ? `${item} (service account)`
+              : item,
+          }))}
           value={account || null}
           allowDeselect={false}
           disabled={profilesLoading || authenticating || !accounts.length}
@@ -431,17 +485,11 @@ export function GcpExplorer({
               account && accounts.includes(account)
                 ? account
                 : selected?.account && accounts.includes(selected.account)
-                ? selected.account
-                : (accounts[0] ?? ""),
+                  ? selected.account
+                  : (accounts[0] ?? ""),
             );
           }}
         />
-        {authenticating && (
-          <Text size="xs" c="dimmed">
-            Complete sign-in in your browser…
-          </Text>
-        )}
-        {!authenticating && authNotice && <Text size="xs" c="teal" role="status">{authNotice}</Text>}
         {authError && (
           <Text size="xs" c="red" role="alert">
             {authError}
@@ -456,22 +504,29 @@ export function GcpExplorer({
             Install Google Cloud CLI
           </Button>
         )}
-          <Select
-            label="Project"
-            aria-label="Google Cloud project"
-            placeholder={projectLoading ? "Loading projects…" : "Choose a project"}
-            data={[...(project && !projects.some((item) => item.id === project) ? [{ id: project, name: project }] : []), ...projects].map((item) => ({
-              value: item.id,
-              label:
-                item.name === item.id ? item.id : `${item.name} (${item.id})`,
-            }))}
-            value={project || null}
-            searchable
-            allowDeselect={false}
-            onChange={(value) => value && void load(value)}
-            disabled={authenticating || !identity}
-            size="xs"
-          />
+        <Select
+          label="Project"
+          aria-label="Google Cloud project"
+          placeholder={
+            projectLoading ? "Loading projects…" : "Choose a project"
+          }
+          data={[
+            ...(project && !projects.some((item) => item.id === project)
+              ? [{ id: project, name: project }]
+              : []),
+            ...projects,
+          ].map((item) => ({
+            value: item.id,
+            label:
+              item.name === item.id ? item.id : `${item.name} (${item.id})`,
+          }))}
+          value={project || null}
+          searchable
+          allowDeselect={false}
+          onChange={(value) => value && void load(value)}
+          disabled={authenticating || !identity}
+          size="xs"
+        />
         {projectError && (
           <Text size="xs" c="red" role="alert">
             Could not find projects: {projectError}
@@ -481,7 +536,8 @@ export function GcpExplorer({
       <div className="sidebar-search">
         <TextInput
           aria-label="Search GCP sources"
-          placeholder="Search sources…"
+          placeholder="Search logs…"
+          description={`${regex ? "Regular expression" : "Log name contains"} · ${caseSensitive ? "case-sensitive" : "ignore case"}`}
           size="xs"
           leftSection={<IconSearch size={14} />}
           value={search}
@@ -498,39 +554,25 @@ export function GcpExplorer({
             }
           }}
           error={regexError || undefined}
-          rightSectionWidth={56}
+          rightSectionWidth={search ? 82 : 56}
           rightSectionPointerEvents="all"
           rightSection={
-            <Group gap={1} wrap="nowrap">
-              <Tooltip label={`Match case (${caseShortcut || "unassigned"})`}>
-                <ActionIcon
-                  size={22}
-                  variant={caseSensitive ? "light" : "subtle"}
-                  aria-label="Match case"
-                  aria-pressed={caseSensitive}
-                  onClick={() => setCaseSensitive(!caseSensitive)}
-                >
-                  Aa
-                </ActionIcon>
-              </Tooltip>
-              <Tooltip
-                label={`Use regular expression (${regexShortcut || "unassigned"})`}
-              >
-                <ActionIcon
-                  size={22}
-                  variant={regex ? "light" : "subtle"}
-                  aria-label="Use regular expression"
-                  aria-pressed={regex}
-                  onClick={() => setRegex(!regex)}
-                >
-                  .*
-                </ActionIcon>
-              </Tooltip>
+            <Group gap={2} wrap="nowrap">
+              {search && <ActionIcon size={22} variant="subtle" aria-label="Clear log search" onMouseDown={(event) => event.preventDefault()} onClick={(event) => { clearEditControl(event.currentTarget.closest(".mantine-Input-wrapper")?.querySelector<HTMLInputElement>("input") ?? null); setSearch(""); }}><IconX size={13} /></ActionIcon>}
+              <FilterMatchButtons scope="explorer" caseSensitive={caseSensitive} regex={regex} caseShortcut={caseShortcut} regexShortcut={regexShortcut} onCaseChange={() => setCaseSensitive((value) => !value)} onRegexChange={() => setRegex((value) => !value)} />
             </Group>
           }
         />
       </div>
-      {active && <ViewFavorites dropId="gcp-view-favorites" favorites={favorites} onOpen={onOpenFavorite} onRename={onRenameFavorite} onRemove={onRemoveFavorite} />}
+      {active && (
+        <ViewFavorites
+          dropId="gcp-view-favorites"
+          favorites={favorites}
+          onOpen={onOpenFavorite}
+          onRename={onRenameFavorite}
+          onRemove={onRemoveFavorite}
+        />
+      )}
       <div
         className="gcp-log-list"
         role="listbox"
@@ -539,30 +581,55 @@ export function GcpExplorer({
       >
         {filtered.map((log) => (
           <Menu key={log.name} withinPortal>
-          <Menu.ContextMenu>
-          <button
-            type="button"
-            className="resource-row gcp-log-row"
-            role="option"
-            aria-selected={selected?.name === log.name}
-            onClick={() => { setSelected(log); if (identity) onOpen?.(log, identity, "preview"); }}
-            onDoubleClick={() => { if (identity) onOpen?.(log, identity, "permanent"); }}
-          >
-            {log.kind === "function" ? <IconCloudCode size={15} /> : <IconHexagonLetterK size={15} />}
-            <span>
-              {log.label}
-              {duplicateLabels.has(log.label)
-                ? ` (${[log.namespace, log.region].filter(Boolean).join(", ")})`
-                : ""}
-              {cachedNames.has(log.name) ? " · cached" : ""}
-            </span>
-          </button>
-          </Menu.ContextMenu>
-          <Menu.Dropdown>
-            <Menu.Item onClick={() => identity && onOpen?.(log, identity, "permanent")}>Open in new tab</Menu.Item>
-            <Menu.Item onClick={() => identity && onSourceAction?.(log, identity, "add-sources")}>Add to current tab</Menu.Item>
-            <Menu.Item onClick={() => identity && onSourceAction?.(log, identity, "add-splits")}>Add as split</Menu.Item>
-          </Menu.Dropdown>
+            <Menu.ContextMenu>
+              <button
+                type="button"
+                className="resource-row gcp-log-row"
+                role="option"
+                aria-selected={selected?.name === log.name}
+                onClick={() => {
+                  setSelected(log);
+                  if (identity) onOpen?.(log, identity, "preview");
+                }}
+                onDoubleClick={() => {
+                  if (identity) onOpen?.(log, identity, "permanent");
+                }}
+              >
+                {log.kind === "function" ? (
+                  <IconCloudCode size={15} />
+                ) : (
+                  <IconHexagonLetterK size={15} />
+                )}
+                <span>
+                  {log.label}
+                  {duplicateLabels.has(log.label)
+                    ? ` (${[log.namespace, log.region].filter(Boolean).join(", ")})`
+                    : ""}
+                  {cachedNames.has(log.name) ? " · cached" : ""}
+                </span>
+              </button>
+            </Menu.ContextMenu>
+            <Menu.Dropdown>
+              <Menu.Item
+                onClick={() => identity && onOpen?.(log, identity, "permanent")}
+              >
+                Open in new tab
+              </Menu.Item>
+              <Menu.Item
+                onClick={() =>
+                  identity && onSourceAction?.(log, identity, "add-sources")
+                }
+              >
+                Add to current tab
+              </Menu.Item>
+              <Menu.Item
+                onClick={() =>
+                  identity && onSourceAction?.(log, identity, "add-splits")
+                }
+              >
+                Add as split
+              </Menu.Item>
+            </Menu.Dropdown>
           </Menu>
         ))}
         {loading && (

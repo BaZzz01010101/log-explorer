@@ -37,6 +37,7 @@ import { SourceBadges } from "./SourceBadges";
 import { ServerFilterInput } from "./ServerFilterInput";
 import { DEFAULT_RECENT_SEARCHES_LIMIT } from "../../shared/query-history";
 import { InlineDeleteConfirmation } from "./InlineDeleteConfirmation";
+import { shortcutMatches } from "../shortcuts";
 import "./sources.css";
 
 interface Props {
@@ -130,17 +131,33 @@ export function QueryPane({
     !runtime.truncated &&
     (runtime.request.direction === "older" || !runtime.evicted) &&
     !stale &&
-    (runtime.request.direction === "older" || runtime.events.length < workspace.preferences.maxEvents),
+    (runtime.request.direction === "older" ||
+      runtime.events.length < workspace.preferences.maxEvents),
   );
   const prefetched = useRef(new Set<string>());
   useEffect(() => {
     const request = runtime?.request;
-    if (!canPage || !request || request.direction === "older" || request.cursor || (runtime?.events.length ?? 0) < 100 ||
-        !sourceConnections.some((item) => item.mode === "gcp") || prefetched.current.has(request.requestId)) return;
+    if (
+      !canPage ||
+      !request ||
+      request.direction === "older" ||
+      request.cursor ||
+      (runtime?.events.length ?? 0) < 100 ||
+      !sourceConnections.some((item) => item.mode === "gcp") ||
+      prefetched.current.has(request.requestId)
+    )
+      return;
     prefetched.current.add(request.requestId);
-    if (prefetched.current.size > 100) prefetched.current.delete(prefetched.current.values().next().value!);
+    if (prefetched.current.size > 100)
+      prefetched.current.delete(prefetched.current.values().next().value!);
     onRun(false, true);
-  }, [canPage, runtime?.request, runtime?.events.length, sourceConnections, onRun]);
+  }, [
+    canPage,
+    runtime?.request,
+    runtime?.events.length,
+    sourceConnections,
+    onRun,
+  ]);
   const currentText = tab.filterPattern;
   const savedSearches = workspace.savedQueries.filter(
     (query) => query.kind === "events",
@@ -176,6 +193,21 @@ export function QueryPane({
       id={`view-${tab.id}`}
       role="tabpanel"
       aria-label={logTabLabel(tab)}
+      onKeyDownCapture={(event) => {
+        if (event.defaultPrevented || event.nativeEvent.isComposing) return;
+        const shortcuts = workspace.preferences.shortcuts;
+        const action = [
+          ["focusLogLocalFilter", "Control+F", '[aria-label="Local filter loaded events"]'],
+          ["focusLogQuery", "Control+Q", ".server-filter-input"],
+          ["focusLogHighlight", "Control+H", '[aria-label="Highlight text in loaded events"]'],
+        ].find(([id, fallback]) => shortcutMatches(event.nativeEvent, shortcuts[id] ?? fallback));
+        if (!action) return;
+        const field = event.currentTarget.querySelector<HTMLInputElement>(action[2]);
+        if (!field) return;
+        event.preventDefault();
+        event.stopPropagation();
+        field.focus();
+      }}
     >
       <div className="query-toolbar">
         <Group gap={7} wrap="wrap" justify="space-between">
@@ -185,6 +217,7 @@ export function QueryPane({
             style={{ flex: "1 1 260px", minWidth: 0 }}
           >
             <SourceBadges
+              tabId={tab.id}
               sources={tab.sources}
               connectionId={tab.connectionId}
               connections={workspace.connections}
@@ -206,13 +239,22 @@ export function QueryPane({
         <div className="query-editor">
           <div className="query-input">
             <ServerFilterInput
-              provider={sourceConnections.length > 0 && sourceConnections.every((item) => item.mode === "gcp") ? "gcp" : "aws"}
+              provider={
+                sourceConnections.some((item) => item.mode === "gcp") &&
+                sourceConnections.some((item) => item.mode !== "gcp")
+                  ? "mixed"
+                  : sourceConnections.length > 0 &&
+                sourceConnections.every((item) => item.mode === "gcp")
+                  ? "gcp"
+                  : "aws"
+              }
               historyKey={`events-filter:${tab.id}`}
               value={tab.filterPattern}
               mode={tab.filterMode}
               onChange={(filterPattern) => onPatch({ filterPattern })}
               onModeChange={(filterMode) => onPatch({ filterMode })}
               onRun={() => onRun()}
+              onReturnToList={() => document.getElementById(`view-${tab.id}`)?.querySelector<HTMLElement>('.viewer-scroll')?.focus({ preventScroll: true })}
               onClear={() => {
                 onPatch({ filterPattern: "" });
                 onRun(false, false, "");
@@ -349,24 +391,30 @@ export function QueryPane({
                 </Button>
               </Tooltip>
             ) : (
-              <span data-tooltip={liveUnavailable} aria-label={liveUnavailable} role={liveUnavailable ? "note" : undefined} tabIndex={liveUnavailable ? 0 : undefined}>
-              <Button
-                size="xs"
-                color="teal"
-                variant="light"
-                disabled={Boolean(liveUnavailable)}
-                aria-description={
-                  liveUnavailable ?? (offlineSources
-                    ? "Start an explicitly simulated fixture stream"
-                    : sourceConnections.every((item) => item.mode === "gcp")
-                    ? "Stream new Google Cloud log entries"
-                    : "Start CloudWatch Live Tail (AWS charges apply; results may be sampled)")
-                }
-                leftSection={<IconRadio size={14} />}
-                onClick={() => onRun(true)}
+              <span
+                data-tooltip={liveUnavailable}
+                aria-label={liveUnavailable}
+                role={liveUnavailable ? "note" : undefined}
+                tabIndex={liveUnavailable ? 0 : undefined}
               >
-                Live
-              </Button>
+                <Button
+                  size="xs"
+                  color="teal"
+                  variant="light"
+                  disabled={Boolean(liveUnavailable)}
+                  aria-description={
+                    liveUnavailable ??
+                    (offlineSources
+                      ? "Start an explicitly simulated fixture stream"
+                      : sourceConnections.every((item) => item.mode === "gcp")
+                        ? "Stream new Google Cloud log entries"
+                        : "Start CloudWatch Live Tail (AWS charges apply; results may be sampled)")
+                  }
+                  leftSection={<IconRadio size={14} />}
+                  onClick={() => onRun(true)}
+                >
+                  Live
+                </Button>
               </span>
             )}
           </Group>
@@ -403,8 +451,8 @@ export function QueryPane({
       )}
       {runtime?.sampled && (
         <Alert color="yellow" p="xs" mx="xs">
-          Live Tail omitted events. This view does not contain every
-          matching event.
+          Live Tail omitted events. This view does not contain every matching
+          event.
         </Alert>
       )}
       {(runtime?.truncated || (runtime?.evicted ?? 0) > 0) && (
@@ -415,7 +463,11 @@ export function QueryPane({
           {runtime?.truncated
             ? "The service result limit was reached. Narrow the time range or query."
             : ""}
-          {runtime?.evicted && runtime.request?.direction === "older" ? <Button size="compact-xs" variant="subtle" onClick={() => onRun()}>Return to recent</Button> : null}
+          {runtime?.evicted && runtime.request?.direction === "older" ? (
+            <Button size="compact-xs" variant="subtle" onClick={() => onRun()}>
+              Return to recent
+            </Button>
+          ) : null}
         </Alert>
       )}
       <div className="viewer-container">
@@ -455,7 +507,9 @@ export function QueryPane({
           pagination={{
             scope: `${tab.id}:${paginationScope.current}`,
             direction: runtime?.request?.direction,
-            loadingOlder: runtime?.request?.direction === "older" && Boolean(runtime.request.cursor),
+            loadingOlder:
+              runtime?.request?.direction === "older" &&
+              Boolean(runtime.request.cursor),
             pageKey: canPage
               ? JSON.stringify([runtime!.cursor, runtime!.request!.requestId])
               : undefined,

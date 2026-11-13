@@ -1,12 +1,13 @@
 .server-filter-control {
   position: relative;
   min-width: 0;
+  --server-filter-inset: 84px;
 }
 .server-filter-text {
   position: relative;
 }
 .server-filter-mode {
-  width: 104px;
+  width: 76px;
   border: 0;
   padding: 2px 5px;
   border-radius: 4px;
@@ -25,7 +26,7 @@
   z-index: 1;
   top: 1px;
   bottom: 1px;
-  left: 112px;
+  left: var(--server-filter-inset);
   right: 28px;
   margin: 0;
   display: block;
@@ -37,6 +38,11 @@
     Consolas,
     monospace;
   color: var(--mantine-color-text);
+}
+.server-filter-input,
+.server-filter-paint {
+  font-variant-ligatures: none;
+  font-feature-settings: "liga" 0, "calt" 0;
 }
 .server-filter-pattern input {
   color: transparent;
@@ -94,9 +100,9 @@
   position: absolute;
   z-index: 250;
   top: calc(100% + 3px);
-  left: 112px;
+  left: var(--server-filter-inset);
   min-width: 280px;
-  max-width: calc(100% - 112px);
+  max-width: calc(100% - var(--server-filter-inset));
   border: 1px solid var(--mantine-color-default-border);
   border-radius: 4px;
   background: var(--mantine-color-body);

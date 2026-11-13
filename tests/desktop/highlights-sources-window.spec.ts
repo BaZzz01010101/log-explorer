@@ -472,7 +472,11 @@ test("source-strip drops cancel with Escape and query another region", async () 
   await launch();
   await expect(page.locator(".source-badge")).toHaveCount(2);
   await expect(page.locator(".query-status")).toContainText("1,080 loaded");
-  await page.locator(".source-badge").first().getByRole("button").click();
+  await page
+    .locator(".source-badge")
+    .first()
+    .getByRole("button", { name: /^Remove source/ })
+    .click();
   await expect(page.locator(".source-badge")).toHaveCount(1);
   await expect(page.locator(".query-status")).toContainText("540 loaded");
   await expect(page.locator(".pane-heading")).toContainText("us-east-1");

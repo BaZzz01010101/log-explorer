@@ -15,7 +15,7 @@ import type {
   VisualizationPreset,
   Workspace,
 } from "../shared/contracts";
-import { tabTitle, sourceCount } from "../shared/source-labels";
+import { tabTitle, sourceCount, removeSource } from "../shared/source-labels";
 import { historyRetentionDays, recentClosedTabs } from "./closed-tab-history";
 import { LOG_LEVELS, DEFAULT_TIMESTAMP_COLUMN_WIDTH } from "../shared/log-data";
 import { parseHighlightProfiles } from "../shared/highlights";
@@ -46,7 +46,21 @@ import {
 } from "../shared/query-history";
 
 export type WorkspaceAction =
-  | { type: "gcp/open-source"; connection: Connection; source: LogSource; mode: "preview" | "permanent" }
+  | { type: "tab/merge-sources"; tabId: string; targetTabId: string }
+  | {
+      type: "source/move";
+      origin: { tabId: string; sourceIndex: number; stream?: string };
+      destination:
+        | { kind: "sources"; tabId: string }
+        | { kind: "split"; paneId: string; edge: SplitEdge | null }
+        | { kind: "tab"; beforeTabId: string | null; pinned: boolean };
+    }
+  | {
+      type: "gcp/open-source";
+      connection: Connection;
+      source: LogSource;
+      mode: "preview" | "permanent";
+    }
   | {
       type: "resources/apply";
       payload: ResourcePayload;
@@ -334,18 +348,35 @@ function parseSources(value: unknown): LogSource[] {
     .map((value) => {
       const raw = record(value);
       const google = record(raw.gcp);
-      const googleKind: "function" | "kubernetes" | undefined = google.kind === "function" || google.kind === "kubernetes" ? google.kind : undefined;
-      const gcp: LogSource["gcp"] = googleKind ? {
-        kind: googleKind,
-        project: string(google.project, "", 30),
-        region: string(google.region, "", 40),
-        ...(typeof google.functionName === "string" ? { functionName: string(google.functionName, "", 253) } : {}),
-        ...(google.generation === "v1" || google.generation === "v2" ? { generation: google.generation } : {}),
-        ...(typeof google.service === "string" ? { service: string(google.service, "", 253) } : {}),
-        ...(typeof google.cluster === "string" ? { cluster: string(google.cluster, "", 253) } : {}),
-        ...(typeof google.namespace === "string" ? { namespace: string(google.namespace, "", 253) } : {}),
-        ...(typeof google.container === "string" ? { container: string(google.container, "", 253) } : {}),
-      } : undefined;
+      const googleKind: "function" | "kubernetes" | undefined =
+        google.kind === "function" || google.kind === "kubernetes"
+          ? google.kind
+          : undefined;
+      const gcp: LogSource["gcp"] = googleKind
+        ? {
+            kind: googleKind,
+            project: string(google.project, "", 30),
+            region: string(google.region, "", 40),
+            ...(typeof google.functionName === "string"
+              ? { functionName: string(google.functionName, "", 253) }
+              : {}),
+            ...(google.generation === "v1" || google.generation === "v2"
+              ? { generation: google.generation }
+              : {}),
+            ...(typeof google.service === "string"
+              ? { service: string(google.service, "", 253) }
+              : {}),
+            ...(typeof google.cluster === "string"
+              ? { cluster: string(google.cluster, "", 253) }
+              : {}),
+            ...(typeof google.namespace === "string"
+              ? { namespace: string(google.namespace, "", 253) }
+              : {}),
+            ...(typeof google.container === "string"
+              ? { container: string(google.container, "", 253) }
+              : {}),
+          }
+        : undefined;
       const logStreams = list(raw.logStreams, 100)
         .filter((stream): stream is string => typeof stream === "string")
         .map((stream) => stream.slice(0, 512))
@@ -420,10 +451,16 @@ function parseTab(value: unknown, connections: Connection[]): LogTab | null {
     kind: "events",
     filterPattern: string(raw.filterPattern),
     filterMode:
-      raw.filterMode === "plain" || raw.filterMode === "auto"
+      raw.filterMode === "plain" ||
+      raw.filterMode === "auto" ||
+      raw.filterMode === "unified" ||
+      raw.filterMode === "aws-pattern" ||
+      raw.filterMode === "gcp-pattern"
         ? raw.filterMode
         : "pattern",
-    ...(raw.gcpLogType === "audit" || raw.gcpLogType === "execution" ? { gcpLogType: raw.gcpLogType } : {}),
+    ...(raw.gcpLogType === "audit" || raw.gcpLogType === "execution"
+      ? { gcpLogType: raw.gcpLogType }
+      : {}),
     query: string(raw.query, defaults.query, 10000),
     timePreset:
       ["clear", "custom"].includes(String(raw.timePreset)) ||
@@ -445,13 +482,31 @@ function parseConnection(value: unknown): Connection | null {
   if (!id) return null;
   const region = string(raw.region, "eu-west-1", 40);
   const google = record(raw.gcpIdentity);
-  const googleIdentity = raw.mode === "gcp" && typeof google.configuration === "string" && !!google.configuration && typeof google.account === "string" && !!google.account ? { configuration: string(google.configuration, "", 256), account: string(google.account, "", 256), ...(typeof google.quotaProject === "string" && google.quotaProject ? { quotaProject: string(google.quotaProject, "", 256) } : {}) } : undefined;
+  const googleIdentity =
+    raw.mode === "gcp" &&
+    typeof google.configuration === "string" &&
+    !!google.configuration &&
+    typeof google.account === "string" &&
+    !!google.account
+      ? {
+          configuration: string(google.configuration, "", 256),
+          account: string(google.account, "", 256),
+          ...(typeof google.quotaProject === "string" && google.quotaProject
+            ? { quotaProject: string(google.quotaProject, "", 256) }
+            : {}),
+        }
+      : undefined;
   if (raw.mode === "gcp" && !googleIdentity) return null;
   return {
     id,
     name: string(raw.name, "Connection", 120) || "Connection",
     profile: string(raw.profile, "default", 256) || "default",
-    region: (raw.mode === "gcp" ? /^[a-z][a-z0-9-]{1,39}$/ : /^[a-z]{2}(?:-[a-z]+)+-\d+$/).test(region) ? region : "eu-west-1",
+    region: (raw.mode === "gcp"
+      ? /^[a-z][a-z0-9-]{1,39}$/
+      : /^[a-z]{2}(?:-[a-z]+)+-\d+$/
+    ).test(region)
+      ? region
+      : "eu-west-1",
     mode: raw.mode === "gcp" ? "gcp" : raw.mode === "aws" ? "aws" : "offline",
     ...(googleIdentity ? { gcpIdentity: googleIdentity } : {}),
     ...(typeof raw.enabled === "boolean" ? { enabled: raw.enabled } : {}),
@@ -557,6 +612,9 @@ function parseQuery(value: unknown): SavedQuery | null {
     text: string(raw.text, "", 10000),
     ...(raw.filterMode === "plain" ||
     raw.filterMode === "auto" ||
+    raw.filterMode === "unified" ||
+    raw.filterMode === "aws-pattern" ||
+    raw.filterMode === "gcp-pattern" ||
     raw.filterMode === "pattern"
       ? { filterMode: raw.filterMode }
       : {}),
@@ -1183,16 +1241,26 @@ function legacyWorkspaceReducer(
   switch (action.type) {
     case "gcp/open-source": {
       const requested = action.connection;
-      const connection = state.connections.find((item) =>
-        item.mode === "gcp" && item.region === requested.region &&
-        item.gcpIdentity?.configuration === requested.gcpIdentity?.configuration &&
-        item.gcpIdentity?.account === requested.gcpIdentity?.account &&
-        item.gcpIdentity?.quotaProject === requested.gcpIdentity?.quotaProject,
-      ) ?? requested;
-      if (connection === requested && state.connections.length >= 50) return state;
-      const next = connection === requested
-        ? workspaceReducer(state, { type: "connections/set", connections: [...state.connections, connection] })
-        : state;
+      const connection =
+        state.connections.find(
+          (item) =>
+            item.mode === "gcp" &&
+            item.region === requested.region &&
+            item.gcpIdentity?.configuration ===
+              requested.gcpIdentity?.configuration &&
+            item.gcpIdentity?.account === requested.gcpIdentity?.account &&
+            item.gcpIdentity?.quotaProject ===
+              requested.gcpIdentity?.quotaProject,
+        ) ?? requested;
+      if (connection === requested && state.connections.length >= 50)
+        return state;
+      const next =
+        connection === requested
+          ? workspaceReducer(state, {
+              type: "connections/set",
+              connections: [...state.connections, connection],
+            })
+          : state;
       return workspaceReducer(next, {
         type: action.mode === "preview" ? "tab/preview" : "tab/open-resource",
         tab: createTab(connection.id, [action.source]),
@@ -2457,6 +2525,117 @@ export function workspaceReducer(
     return restoreWorkspace(action.workspace);
   const state = modelState(input);
   switch (action.type) {
+    case "tab/merge-sources": {
+      const entry = workspaceEntries(state).find(
+        (item) => item.id === action.tabId,
+      );
+      const target = state.tabs.find((tab) => tab.id === action.targetTabId);
+      if (!entry || !target || entry.tabIds.includes(target.id)) return input;
+      const added = entry.tabIds.flatMap((id) => {
+        const tab = state.tabs.find((item) => item.id === id);
+        return tab
+          ? tab.sources.map((source) => ({
+              ...source,
+              connectionId: source.connectionId ?? tab.connectionId,
+            }))
+          : [];
+      });
+      try {
+        const sources = mergeSources(
+          target.sources,
+          added,
+          target.connectionId,
+        );
+        const updated = workspaceReducer(state, {
+          type: "tab/update",
+          tabId: target.id,
+          patch: { sources },
+        });
+        return {
+          ...closeViews(updated, entry.tabIds),
+          closedTabs: state.closedTabs,
+        };
+      } catch {
+        return input;
+      }
+    }
+    case "source/move": {
+      const origin = state.tabs.find((tab) => tab.id === action.origin.tabId);
+      const original = origin?.sources[action.origin.sourceIndex];
+      if (
+        !origin ||
+        !original ||
+        (action.origin.stream &&
+          !original.logStreams?.includes(action.origin.stream))
+      )
+        return input;
+      if (
+        action.destination.kind === "sources" &&
+        action.destination.tabId === origin.id
+      )
+        return input;
+      const remaining = removeSource(
+        origin.sources,
+        action.origin.sourceIndex,
+        action.origin.stream,
+      );
+      if (!remaining.length) return input;
+      const item = {
+        ...original,
+        ...(action.origin.stream ? { logStreams: [action.origin.stream] } : {}),
+      };
+      const payload = { connectionId: origin.connectionId, sources: [item] };
+      let next = state;
+      try {
+        if (action.destination.kind === "sources") {
+          const targetId = action.destination.tabId;
+          const target = state.tabs.find((tab) => tab.id === targetId);
+          if (!target) return input;
+          const scoped = [
+            { ...item, connectionId: item.connectionId ?? origin.connectionId },
+          ];
+          const sources = mergeSources(
+            target.sources,
+            scoped,
+            target.connectionId,
+          );
+          next = workspaceReducer(state, {
+            type: "tab/update",
+            tabId: target.id,
+            patch: { sources },
+          });
+        } else {
+          const tabs = createResourceTabs(payload);
+          if (action.destination.kind === "tab")
+            next = workspaceReducer(state, {
+              type: "tabs/insert",
+              tabs,
+              beforeTabId: action.destination.beforeTabId,
+              pinned: action.destination.pinned,
+            });
+          else
+            next = workspaceReducer(state, {
+              type: "pane/drop-resource",
+              tab: tabs,
+              paneId: action.destination.paneId,
+              edge: action.destination.edge,
+            });
+          if (
+            !tabs.every((tab) =>
+              next.tabs.some((candidate) => candidate.id === tab.id),
+            )
+          )
+            return input;
+        }
+      } catch {
+        return input;
+      }
+      return workspaceReducer(next, {
+        type: "tab/update",
+        tabId: origin.id,
+        patch: { sources: remaining },
+      });
+    }
     case "tab/pin": {
       const entry = entryFor(state, action.tabId);
       if (!entry) return input;

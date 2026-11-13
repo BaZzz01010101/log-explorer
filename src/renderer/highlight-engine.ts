@@ -32,6 +32,7 @@ export interface HighlightSpan {
 }
 export interface EventHighlights {
   row: HighlightColors;
+  quickMatch?: boolean;
   overview?: string[];
   text: Record<string, HighlightSpan[]>;
   manual?: Record<string, { start: number; end: number }[]>;
@@ -309,6 +310,7 @@ export function highlightEvent(
     }
   }
   if (overviewOnly) {
+    if (needle) result.quickMatch = quickMatch;
     const rowColor = result.row.background || result.row.foreground;
     if (rowColor && !result.overview!.includes(rowColor))
       result.overview!.unshift(rowColor);

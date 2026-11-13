@@ -84,6 +84,7 @@ import { atPinnedRowEdge, tabInsertionAt } from "../tab-insertion";
 import {
   RESOURCE_DRAG_MOVE,
   RESOURCE_DRAG_END,
+  announceTabSourceDrag,
   type ResourceDragMove,
 } from "../resource-drag";
 import { tabOverlapTarget } from "../tab-hover";
@@ -796,6 +797,7 @@ export function WorkspaceDragSurface({
   const originRef = useRef<string | null>(null);
   const hoverActivated = useRef(false);
   const lastPoint = useRef<{ x: number; y: number } | null>(null);
+  const sourceDropTarget = useRef<HTMLElement | null>(null);
   const grabX = useRef<number | null>(null);
   const hover = useRef<{
     id: string;
@@ -910,6 +912,26 @@ export function WorkspaceDragSurface({
     point: { x: number; y: number },
     source: DragSource,
   ) => {
+    const strip =
+      source.kind === "tab" &&
+      typeof document !== "undefined" &&
+      typeof document.elementsFromPoint === "function"
+        ? (document
+            .elementsFromPoint(point.x, point.y)
+            .map((element) =>
+              element.closest<HTMLElement>(
+                ".source-badges[data-source-tab-id]",
+              ),
+            )
+            .find(Boolean) ?? null)
+        : null;
+    if (strip !== sourceDropTarget.current) {
+      sourceDropTarget.current?.dispatchEvent(
+        new Event("explorer:source-drag-leave"),
+      );
+      sourceDropTarget.current = strip;
+      strip?.dispatchEvent(new Event("explorer:source-drag-enter"));
+    }
     if (atPinnedRowEdge(workspaceRef.current, point))
       setRevealEmptyPinnedRow(true);
     const { destination, preview } = resolveDestination(point, source);
@@ -975,6 +997,11 @@ export function WorkspaceDragSurface({
     hoverActivated.current = false;
   };
   const finishDrag = () => {
+    sourceDropTarget.current?.dispatchEvent(
+      new Event("explorer:source-drag-leave"),
+    );
+    sourceDropTarget.current = null;
+    if (typeof window !== "undefined") announceTabSourceDrag(false);
     clearHover();
     sourceRef.current = null;
     lastPoint.current = null;
@@ -1023,12 +1050,35 @@ export function WorkspaceDragSurface({
   );
   const handleDragEnd = ({ active, over }: DragEndEvent) => {
     const source = sourceRef.current;
+    const targetSourceStrip =
+      source?.kind === "tab" &&
+      lastPoint.current &&
+      typeof document !== "undefined" &&
+      typeof document.elementsFromPoint === "function"
+        ? document
+            .elementsFromPoint(lastPoint.current.x, lastPoint.current.y)
+            .map((element) =>
+              element.closest<HTMLElement>(
+                ".source-badges[data-source-tab-id]",
+              ),
+            )
+            .find(Boolean)
+        : null;
     const destination =
       source && lastPoint.current
         ? resolveDestination(lastPoint.current, source).destination
         : destinationRef.current;
     const target = over?.data.current;
     finishDrag();
+    if (source?.kind === "tab" && targetSourceStrip?.dataset.sourceTabId) {
+      dispatch({
+        type: "tab/merge-sources",
+        tabId: source.tabId,
+        targetTabId: targetSourceStrip.dataset.sourceTabId,
+      });
+      hoverActivated.current = false;
+      return;
+    }
     if ((!over || active.id === over.id) && !destination.insertion) {
       restoreActivation();
       return;
@@ -1184,6 +1234,8 @@ export function WorkspaceDragSurface({
                   }
                 : null;
             sourceRef.current = source;
+            if (source?.kind === "tab" && typeof window !== "undefined")
+              announceTabSourceDrag(true);
             const sourceNode =
               source?.kind === "tab"
                 ? [

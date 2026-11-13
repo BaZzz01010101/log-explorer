@@ -49,3 +49,12 @@ it("applies quick regex flags when processing a real worker message", async () =
     { done: true },
   ]);
 });
+
+it("reports nonmatching overview events so navigation can pass them", async () => {
+  const output: any[] = [];
+  const worker = { onmessage: (_event: { data: unknown }) => {}, postMessage: (message: unknown) => output.push(message) };
+  vi.stubGlobal("self", worker);
+  await import("../src/renderer/highlight.worker");
+  worker.onmessage({ data: { events: [{ id: "one", timestamp: 0, message: "ordinary", logGroup: "g", logStream: "s" }], profiles: [], columns: [], theme: "light", timezone: "utc", needle: "needle", overview: true } });
+  expect(output.find((item) => item.batch?.length)?.batch[0].result.quickMatch).toBe(false);
+});

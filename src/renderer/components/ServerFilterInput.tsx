@@ -1,20 +1,40 @@
 import { useId, useRef, useState } from "react";
 import { TextInput } from "@mantine/core";
-import { IconX, IconLetterT, IconRegex, IconSparkles, IconCheck } from "@tabler/icons-react";
+import {
+  IconX,
+  IconLetterT,
+  IconRegex,
+  IconSparkles,
+  IconCheck,
+} from "@tabler/icons-react";
 import { clearEditControl } from "../scoped-edit-history";
 import { Menu } from "./AppMenu";
 import {
-  compileServerFilter,
   filterCompletions,
   filterTokens,
-  serverFilterMode,
+  resolveFilterSyntax,
+  availableFilterModes,
+  type FilterProvider,
   type ServerFilterMode,
 } from "../../shared/server-filter";
 import "./server-filter.css";
-import { compileGcpServerFilter, gcpServerFilterMode } from "../../shared/gcp-server-filter";
 
-const labels = { plain: "Text", pattern: "Pattern", auto: "Auto" };
-const modeIcons = { plain: IconLetterT, pattern: IconRegex, auto: IconSparkles };
+const labels = {
+  plain: "Text",
+  pattern: "Pattern",
+  "aws-pattern": "AWS Pattern",
+  "gcp-pattern": "GCP Pattern",
+  unified: "Unified",
+  auto: "Auto",
+};
+const modeIcons = {
+  plain: IconLetterT,
+  pattern: IconRegex,
+  "aws-pattern": IconRegex,
+  "gcp-pattern": IconRegex,
+  unified: IconRegex,
+  auto: IconSparkles,
+};
 
 export function ServerFilterInput({
   value,
@@ -23,6 +43,7 @@ export function ServerFilterInput({
   onChange,
   onModeChange,
   onRun,
+  onReturnToList,
   onClear,
   provider = "aws",
 }: {
@@ -32,8 +53,9 @@ export function ServerFilterInput({
   onChange(value: string): void;
   onModeChange(mode: ServerFilterMode): void;
   onRun(): void;
+  onReturnToList?(): void;
   onClear(): void;
-  provider?: "aws" | "gcp";
+  provider?: FilterProvider;
 }) {
   const input = useRef<HTMLInputElement>(null),
     paint = useRef<HTMLPreElement>(null);
@@ -42,10 +64,15 @@ export function ServerFilterInput({
     [focused, setFocused] = useState(false),
     [selected, setSelected] = useState(0),
     [dismissed, setDismissed] = useState(false);
-  const effective = provider === "gcp" ? gcpServerFilterMode(value, mode) : serverFilterMode(value, mode);
+  const syntax = resolveFilterSyntax(
+    value,
+    mode,
+    provider === "gcp" ? "gcp" : "aws",
+  );
+  const effective = syntax === "plain" ? "plain" : "pattern";
   const providerLabels = labels;
   const suggestions =
-    provider === "aws" && focused && !dismissed && effective === "pattern"
+    syntax === "aws" && focused && !dismissed
       ? filterCompletions(value, caret)
       : [];
   const choice = Math.min(selected, Math.max(0, suggestions.length - 1));
@@ -64,10 +91,10 @@ export function ServerFilterInput({
   };
   return (
     <div
-      className={`server-filter-control ${provider === "aws" && effective === "pattern" ? "server-filter-pattern" : ""}`}
+      className={`server-filter-control ${syntax === "aws" ? "server-filter-pattern" : ""}`}
     >
       <div className="server-filter-text">
-        {provider === "aws" && effective === "pattern" && (
+        {syntax === "aws" && (
           <pre ref={paint} className="server-filter-paint" aria-hidden="true">
             {filterTokens(value).map((token, index) => (
               <span key={index} className={`aws-token-${token.kind}`}>
@@ -78,7 +105,11 @@ export function ServerFilterInput({
         )}
         <TextInput
           ref={input}
-          aria-label={provider === "gcp" ? "Google Cloud log filter" : "CloudWatch filter pattern"}
+          aria-label={
+            provider === "gcp"
+              ? "Google Cloud log filter"
+              : "CloudWatch filter pattern"
+          }
           data-edit-history-key={historyKey}
           role="combobox"
           aria-haspopup="listbox"
@@ -112,6 +143,7 @@ export function ServerFilterInput({
               event.stopPropagation();
               setDismissed(true);
               onRun();
+              if (!event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey) onReturnToList?.();
             } else if (
               suggestions.length &&
               (event.key === "ArrowDown" || event.key === "ArrowUp")
@@ -134,14 +166,22 @@ export function ServerFilterInput({
               event.preventDefault();
               accept(choice);
             } else if (event.key === "Escape") {
+              event.preventDefault();
               event.stopPropagation();
               setDismissed(true);
+              onReturnToList?.();
             }
           }}
           placeholder={
-            provider === "gcp" ? (effective === "pattern" ? 'severity>=ERROR or jsonPayload.field="value"' : "Find text in logs…") : effective === "pattern"
-              ? '{ $.level = "ERROR" } or %error|failed%'
-              : "Find text in logs…"
+            syntax === "unified"
+              ? "$.count > 10 AND $.seller IS NULL"
+              : provider === "gcp"
+                ? effective === "pattern"
+                  ? 'severity>=ERROR or jsonPayload.field="value"'
+                  : "Find text in logs…"
+                : effective === "pattern"
+                  ? '{ $.level = "ERROR" } or %error|failed%'
+                  : "Find text in logs…"
           }
           size="xs"
           leftSection={
@@ -151,24 +191,40 @@ export function ServerFilterInput({
                   type="button"
                   className="server-filter-mode"
                   aria-label={`Filter mode: ${providerLabels[mode]}`}
-                  data-tooltip={`${providerLabels[mode]}${mode === "auto" ? ` → ${providerLabels[effective]}` : ""}. Enter runs the query.\nQuery: ${(provider === "gcp" ? compileGcpServerFilter(value, mode) : compileServerFilter(value, mode)) || "(all events)"}`}
+                  data-tooltip={`${providerLabels[mode]}${mode === "auto" ? ` → ${syntax === "plain" ? "Text" : syntax === "aws" ? "AWS Pattern" : syntax === "gcp" ? "GCP Pattern" : "Unified"}` : ""}. Enter runs the query.${syntax === "unified" ? "\nExample: $.count > 10 AND $.seller IS NULL" : ""}`}
                 >
                   {mode === "auto"
-                    ? `A:${effective === "plain" ? "TXT" : "PAT"}`
-                    : effective === "plain"
+                    ? `A:${syntax === "plain" ? "TXT" : syntax === "aws" ? "AWS-PAT" : syntax === "gcp" ? "GCP-PAT" : "UNI"}`
+                    : syntax === "plain"
                       ? "TXT"
-                      : "PAT"}{" "}
+                      : syntax === "aws"
+                        ? "AWS-PAT"
+                        : syntax === "gcp"
+                          ? "GCP-PAT"
+                          : "UNI"}{" "}
                   ▾
                 </button>
               </Menu.Target>
               <Menu.Dropdown>
                 <Menu.Label>Filter mode</Menu.Label>
-                {(Object.keys(labels) as ServerFilterMode[]).map((item) => (
+                {availableFilterModes(provider).map((item) => (
                   <Menu.Item
                     key={item}
                     onClick={() => onModeChange(item)}
-                    leftSection={(() => { const Icon = modeIcons[item]; return <Icon size={14} />; })()}
-                    rightSection={item === mode ? <IconCheck size={14} /> : undefined}
+                    leftSection={(() => {
+                      const Icon = modeIcons[item];
+                      return <Icon size={14} />;
+                    })()}
+                    rightSection={
+                      item === mode ||
+                      (mode === "pattern" &&
+                        item ===
+                          (provider === "gcp"
+                            ? "gcp-pattern"
+                            : "aws-pattern")) ? (
+                        <IconCheck size={14} />
+                      ) : undefined
+                    }
                   >
                     {providerLabels[item]}
                   </Menu.Item>
@@ -176,7 +232,7 @@ export function ServerFilterInput({
               </Menu.Dropdown>
             </Menu>
           }
-          leftSectionWidth={112}
+          leftSectionWidth={84}
           leftSectionPointerEvents="auto"
           rightSection={
             value ? (

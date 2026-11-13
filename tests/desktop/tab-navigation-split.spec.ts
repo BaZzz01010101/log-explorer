@@ -52,6 +52,10 @@ test.beforeEach(async ({}, info) => {
     ];
     tab.view.wrap = index === 0;
     tab.view.localSearch = "";
+    if (info.title.includes("keyboard log")) {
+      tab.filterPattern = "";
+      tab.timePreset = "clear";
+    }
   }
   workspace.preferences.theme = info.title.startsWith("dark")
     ? "dark"
@@ -123,6 +127,61 @@ test.beforeEach(async ({}, info) => {
   });
   await expect(page.locator('[data-node-kind="group"]')).toHaveCount(9);
   await expect(page.locator(".workspace-tab")).toHaveCount(3);
+});
+
+test("keyboard log focus follows tab navigation and returns from filters", async () => {
+  await page.keyboard.press("Control+PageUp");
+  const grid = page.getByRole("grid", { name: "Log events" });
+  await expect(grid).toBeFocused();
+  await page.keyboard.press("ArrowDown");
+  await expect(grid.locator('[data-current="true"]')).toHaveCount(1);
+  await page.getByRole('tab', { name: 'Orders', exact: true }).click();
+  await expect(grid).toBeFocused();
+  for (const [key, name] of [["Control+F", "Local filter loaded events"], ["Control+H", "Highlight text in loaded events"], ["Control+Q", "CloudWatch filter pattern"]] as const) {
+    await page.keyboard.press(key);
+    const field = page.getByRole('textbox', { name }).or(page.getByRole('combobox', { name }));
+    await expect(field).toBeFocused();
+    await field.fill('test');
+    await field.press('Escape');
+    await expect(grid).toBeFocused();
+    await page.keyboard.press(key);
+    await expect(field).toBeFocused();
+    await field.press('Enter');
+    await expect(grid).toBeFocused();
+  }
+});
+
+test("keyboard log paging selects the visible edge before scrolling", async () => {
+  const grid = page.getByRole('grid', { name: 'Log events' });
+  await expect(grid.locator('.virtual-event').first()).toBeVisible();
+  for (const mode of ['Table', 'Hybrid', 'JSON']) {
+  await page.locator('.viewer-mode-control').getByText(mode, { exact: true }).click();
+  await grid.focus();
+  await page.keyboard.press('Home');
+  await expect(grid.locator('[data-current="true"]')).toHaveAttribute('data-index', '0');
+  const initialTop = await grid.evaluate(element => element.scrollTop);
+  await page.keyboard.press('PageDown');
+  const firstIndex = Number(await grid.locator('[data-current="true"]').getAttribute('data-index'));
+  expect(firstIndex).toBeGreaterThan(0);
+  const alignment = async () => grid.evaluate(element => {
+    const selected = element.querySelector<HTMLElement>('[data-current="true"]')!;
+    const header = element.querySelector<HTMLElement>('.log-table-header')?.getBoundingClientRect().height ?? 0;
+    const view = element.getBoundingClientRect(), row = selected.getBoundingClientRect();
+    return { top: row.top - view.top - header, bottom: row.bottom - view.top - element.clientHeight };
+  });
+  expect(Math.abs((await alignment()).bottom)).toBeLessThanOrEqual(2);
+  const alignedTop = await grid.evaluate(element => element.scrollTop);
+  await page.keyboard.press('PageDown');
+  expect(await grid.evaluate(element => element.scrollTop)).toBeGreaterThan(alignedTop);
+  expect(Number(await grid.locator('[data-current="true"]').getAttribute('data-index'))).toBeGreaterThan(firstIndex);
+  expect(Math.abs((await alignment()).bottom)).toBeLessThanOrEqual(2);
+  await page.keyboard.press('PageUp');
+  expect(Math.abs((await alignment()).top)).toBeLessThanOrEqual(2);
+  const alignedUp = await grid.evaluate(element => element.scrollTop);
+  await page.keyboard.press('PageUp');
+  expect(await grid.evaluate(element => element.scrollTop)).toBeLessThan(alignedUp);
+  expect(initialTop).toBeGreaterThanOrEqual(0);
+  }
 });
 
 test.afterEach(async () => {
@@ -231,7 +290,7 @@ for (const theme of ["light", "dark"]) {
       .getByRole("button", { name: "Filter mode: Text", exact: true })
       .click();
     await page
-      .getByRole("menuitem", { name: "Pattern", exact: true })
+      .getByRole("menuitem", { name: "AWS Pattern", exact: true })
       .click();
     const input = page.getByRole("combobox", {
       name: "CloudWatch filter pattern",

@@ -45,7 +45,10 @@ for (const theme of ["light", "dark"] as const)
     });
     try {
       await app.evaluate(({ ipcMain }) => {
-        const testState = globalThis as typeof globalThis & { __gcpQueryCursors?: boolean[]; __gcpScanCount?: number };
+        const testState = globalThis as typeof globalThis & {
+          __gcpQueryCursors?: boolean[];
+          __gcpScanCount?: number;
+        };
         testState.__gcpQueryCursors = [];
         testState.__gcpScanCount = 0;
         ipcMain.removeHandler("gcp:projects");
@@ -60,8 +63,29 @@ for (const theme of ["light", "dark"] as const)
         ipcMain.handle("explorer:query", async (event, request) => {
           if (request.connection.mode !== "gcp") return;
           testState.__gcpQueryCursors!.push(Boolean(request.cursor));
-          const events = Array.from({ length: request.cursor ? 1 : 101 }, (_, index) => ({ id: `${request.cursor ? "next" : "first"}-${index}`, timestamp: 2000 + index, message: '{"message":"Google event loaded"}', severity: "ERROR", logGroup: request.sources[0].logGroup, logStream: "example", connectionId: request.connection.id }));
-          setTimeout(() => event.sender.send("explorer:update", { requestId: request.requestId, state: "complete", replace: !request.cursor, cursor: request.cursor ? undefined : "next-page", events }), 20);
+          const events = Array.from(
+            { length: request.cursor ? 1 : 101 },
+            (_, index) => ({
+              id: `${request.cursor ? "next" : "first"}-${index}`,
+              timestamp: 2000 + index,
+              message: '{"message":"Google event loaded"}',
+              severity: "ERROR",
+              logGroup: request.sources[0].logGroup,
+              logStream: "example",
+              connectionId: request.connection.id,
+            }),
+          );
+          setTimeout(
+            () =>
+              event.sender.send("explorer:update", {
+                requestId: request.requestId,
+                state: "complete",
+                replace: !request.cursor,
+                cursor: request.cursor ? undefined : "next-page",
+                events,
+              }),
+            20,
+          );
         });
         ipcMain.handle("gcp:profiles", async () => ({
           configurations: [
@@ -76,13 +100,19 @@ for (const theme of ["light", "dark"] as const)
           accounts: ["user@example.com", "second@example.com"],
         }));
         let signInAttempts = 0;
+        let authorized = false;
         ipcMain.handle("gcp:signin", async () => {
           if (signInAttempts++ === 0)
             throw new Error(
               "Google sign-in was cancelled or failed. Please try again.",
             );
+          authorized = true;
         });
         ipcMain.handle("gcp:projects", async (_event, identity, cursor) => {
+          if (!authorized)
+            throw new Error(
+              "Google Cloud credentials expired. Sign in again and retry.",
+            );
           if (
             identity.configuration === "other" &&
             identity.account === "user@example.com"
@@ -208,19 +238,31 @@ for (const theme of ["light", "dark"] as const)
         name: "Google Cloud resources",
       });
       await expect(
-        explorer.getByText("Select a project to browse sources."),
+        explorer.getByRole("button", { name: "Sign in" }),
       ).toBeVisible();
+      await expect(explorer.getByText("Sign in to Google Cloud")).toBeVisible();
+      await expect(
+        explorer.getByLabel("Google Cloud account", { exact: true }),
+      ).toHaveCount(0);
+      await explorer.getByRole("button", { name: "Sign in" }).click();
+      await expect(explorer.getByRole("alert").last()).toContainText(
+        "cancelled or failed",
+      );
+      await explorer.getByRole("button", { name: "Sign in" }).click();
       await expect(
         explorer.getByLabel("Google Cloud configuration"),
       ).toHaveValue("work");
       await expect(
         explorer.getByLabel("Google Cloud account", { exact: true }),
       ).toHaveValue("user@example.com");
-      await explorer.getByRole("button", { name: "Sign in" }).click();
-      await expect(explorer.getByRole("alert").last()).toContainText(
-        "cancelled or failed",
-      );
-      await explorer.getByRole("button", { name: "Sign in" }).click();
+      await expect(
+        explorer.getByRole("button", { name: "Sign in" }),
+      ).toHaveCount(0);
+      await expect(explorer.getByText("Signed in. Refresh requested.")).toHaveCount(0);
+      await expect(explorer.getByPlaceholder("Search logs…")).toBeVisible();
+      await expect(
+        explorer.getByLabel("Refresh Google Cloud accounts"),
+      ).toHaveCount(0);
       await explorer
         .getByLabel("Google Cloud project", { exact: true })
         .click();
@@ -239,22 +281,75 @@ for (const theme of ["light", "dark"] as const)
       await explorer
         .getByRole("option", { name: "/gcp/functions/later" })
         .click();
-      await expect(page.getByText("Google event loaded", { exact: false }).first()).toBeVisible();
-      const before = await app.evaluate(() => ({ scans: (globalThis as typeof globalThis & { __gcpScanCount?: number }).__gcpScanCount!, queries: (globalThis as typeof globalThis & { __gcpQueryCursors?: boolean[] }).__gcpQueryCursors!.length }));
-      await explorer.getByRole("button", { name: "Sign in" }).click();
-      await expect(explorer.getByText("Signed in. Refresh requested.")).toBeVisible();
-      await expect.poll(() => app.evaluate(() => (globalThis as typeof globalThis & { __gcpScanCount?: number }).__gcpScanCount!)).toBeGreaterThan(before.scans);
-      await expect.poll(() => app.evaluate(() => (globalThis as typeof globalThis & { __gcpQueryCursors?: boolean[] }).__gcpQueryCursors!.length)).toBeGreaterThan(before.queries);
+      await expect(
+        page.getByText("Google event loaded", { exact: false }).first(),
+      ).toBeVisible();
+      const grid = page.getByRole("grid", { name: "Log events" });
+      await grid.focus();
+      await page.keyboard.press("Control+Q");
+      const queryField = page.getByRole("combobox", { name: "Google Cloud log filter" });
+      await expect(queryField).toBeFocused();
+      await queryField.press("Enter");
+      await expect(grid).toBeFocused();
+      const filterSelector = page.getByRole("button", { name: /^Filter mode:/ });
+      await filterSelector.click();
+      await expect(page.getByRole("menuitem", { name: "Unified" })).toBeVisible();
+      await expect(page.getByRole("menuitem", { name: "GCP Pattern" })).toBeVisible();
+      await expect(page.getByRole("menuitem", { name: "AWS Pattern" })).toHaveCount(0);
+      await page.keyboard.press("Escape");
+      const before = await app.evaluate(() => ({
+        scans: (globalThis as typeof globalThis & { __gcpScanCount?: number })
+          .__gcpScanCount!,
+        queries: (
+          globalThis as typeof globalThis & { __gcpQueryCursors?: boolean[] }
+        ).__gcpQueryCursors!.length,
+      }));
+      await explorer
+        .getByRole("button", { name: "Refresh GCP sources" })
+        .click();
+      await expect
+        .poll(() =>
+          app.evaluate(
+            () =>
+              (globalThis as typeof globalThis & { __gcpScanCount?: number })
+                .__gcpScanCount!,
+          ),
+        )
+        .toBeGreaterThan(before.scans);
+      await expect
+        .poll(() =>
+          app.evaluate(
+            () =>
+              (
+                globalThis as typeof globalThis & {
+                  __gcpQueryCursors?: boolean[];
+                }
+              ).__gcpQueryCursors!.length,
+          ),
+        )
+        .toBeGreaterThan(before.queries);
       await expect(explorer.getByLabel("Favorite views")).toBeVisible();
-      await page.getByRole("tab", { selected: true }).click({ button: "right" });
-      await page.getByRole("menuitem", { name: "Save view to Favorites" }).click();
+      await page
+        .getByRole("tab", { selected: true })
+        .click({ button: "right" });
+      await page
+        .getByRole("menuitem", { name: "Save view to Favorites" })
+        .click();
       await expect(explorer.locator(".saved-view-favorite")).toHaveCount(1);
-      await expect(page.getByRole("combobox", { name: "Google Cloud log type" })).toHaveCount(0);
+      await expect(
+        page.getByRole("combobox", { name: "Google Cloud log type" }),
+      ).toHaveCount(0);
       await explorer.getByLabel("Search GCP sources").fill("");
-      await explorer.getByRole("option", { name: "/gcp/kubernetes/worker/dev" }).click({ button: "right" });
+      await explorer
+        .getByRole("option", { name: "/gcp/kubernetes/worker/dev" })
+        .click({ button: "right" });
       await page.getByRole("menuitem", { name: "Add to current tab" }).click();
-      await expect(page.getByRole("group", { name: "Log sources" })).toContainText("2 Sources");
-      await expect(page.getByText("Google event loaded", { exact: false }).first()).toBeVisible();
+      await expect(
+        page.getByRole("group", { name: "Log sources" }),
+      ).toContainText("2 Sources");
+      await expect(
+        page.getByText("Google event loaded", { exact: false }).first(),
+      ).toBeVisible();
       await explorer.getByLabel("Search GCP sources").fill("later");
       await expect(
         explorer.getByText("/gcp/functions/later", { exact: true }).last(),

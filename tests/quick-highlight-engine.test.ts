@@ -32,6 +32,10 @@ const run = (
   );
 
 describe("quick highlight matching", () => {
+  it("exposes quick match state for navigation", () => {
+    expect(run("WARN", {}, "WARN payment", true).quickMatch).toBe(true);
+    expect(run("WARN", {}, "INFO payment", true).quickMatch).toBe(false);
+  });
   it("defaults to case-insensitive literal spans and treats regex syntax literally", () => {
     expect(
       run("failed").manual?.[textHighlightKey("@message", event.message)],
