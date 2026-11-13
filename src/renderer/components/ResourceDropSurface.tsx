@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type Dispatch } from "react";
 import { createPortal } from "react-dom";
-import type { LogTab, Workspace } from "../../shared/contracts";
+import type { Connection, LogTab, Workspace } from "../../shared/contracts";
 import { createResourceTabs, type WorkspaceAction } from "../workspace";
 import { notifications } from "@mantine/notifications";
 import { activeEntryId, workspaceEntries } from "../workspace-entries";
@@ -9,6 +9,8 @@ import {
   RESOURCE_DRAG_END,
   type ResourceDragMove,
   type ResourceOrigin,
+  RESOURCE_CONNECTION,
+  RESOURCE_DROP_TARGETS,
   SOURCE_MOVE_DROP,
 } from "../resource-drag";
 import { dragDestination } from "./WorkspaceTabs";
@@ -31,6 +33,7 @@ export function ResourceDropSurface({
     origin: string | null;
     hovered: boolean;
     resourceOrigin?: ResourceOrigin;
+    connection?: Connection;
   } | null>(null);
   const hover = useRef<{
     id: string;
@@ -51,7 +54,7 @@ export function ResourceDropSurface({
       drag &&
       document
         .elementFromPoint(drag.point.x, drag.point.y)
-        ?.closest(".source-badges");
+        ?.closest(RESOURCE_DROP_TARGETS);
     const next =
       drag && !sourceStrip
         ? dragDestination(
@@ -110,6 +113,7 @@ export function ResourceDropSurface({
           origin: activeEntryId(current.current),
           hovered: false,
           resourceOrigin: payload.origin,
+          connection: payload.connection,
         };
       }
       session.current.point = point;
@@ -142,6 +146,16 @@ export function ResourceDropSurface({
         }, 450),
       };
     };
+    /** Registers a dragged source's connection (Google Cloud) before it is used. */
+    const ensureConnection = (connection?: Connection) => {
+      const connections = current.current.connections;
+      if (!connection || connections.some((item) => item.id === connection.id)) return;
+      if (connections.length >= 50) return;
+      const next = [...connections, connection];
+      // Later dispatches in the same gesture must see the registration.
+      current.current = { ...current.current, connections: next };
+      dispatch({ type: "connections/set", connections: next });
+    };
     const finish = (event: Event) => {
       clearHover();
       if (
@@ -153,7 +167,7 @@ export function ResourceDropSurface({
           point &&
           !document
             .elementFromPoint(point.x, point.y)
-            ?.closest(".source-badges")
+            ?.closest(RESOURCE_DROP_TARGETS)
         )
           notifications.show({ color: "red", message: rejected.current });
       }
@@ -165,6 +179,8 @@ export function ResourceDropSurface({
       const destination =
         (event as CustomEvent<{ drop: boolean }>).detail.drop &&
         refreshRef.current();
+      if (destination && (destination.insertion || destination.placement) && !drag.resourceOrigin)
+        ensureConnection(drag.connection);
       if (destination && destination.insertion && drag.resourceOrigin)
         dispatch({
           type: "source/move",
@@ -233,7 +249,11 @@ export function ResourceDropSurface({
       });
     };
     window.addEventListener(SOURCE_MOVE_DROP, sourceDrop);
+    const connectionRequest = (event: Event) =>
+      ensureConnection((event as CustomEvent<Connection>).detail);
+    window.addEventListener(RESOURCE_CONNECTION, connectionRequest);
     return () => {
+      window.removeEventListener(RESOURCE_CONNECTION, connectionRequest);
       clearHover();
       window.removeEventListener(RESOURCE_DRAG_MOVE, move);
       window.removeEventListener(RESOURCE_DRAG_END, finish);

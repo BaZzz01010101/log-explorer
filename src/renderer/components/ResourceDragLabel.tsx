@@ -1,8 +1,16 @@
-import { useRef, type ReactNode, type MouseEvent } from "react";
+import {
+  useRef,
+  type ButtonHTMLAttributes,
+  type MouseEvent,
+  type ReactNode,
+  type Ref,
+} from "react";
 import {
   announceResourceDragStart,
   RESOURCE_DRAG_MOVE,
   announceResourceDragEnd,
+  RESOURCE_CONNECTION,
+  RESOURCE_DROP_TARGETS,
   type ResourcePayload,
 } from "../resource-drag";
 
@@ -19,6 +27,8 @@ export function ResourceDragLabel({
   onDoubleClick,
   className = "resource-label",
   ariaLabel,
+  ref,
+  ...rest
 }: {
   payload: ResourcePayload;
   children: ReactNode;
@@ -27,12 +37,18 @@ export function ResourceDragLabel({
   onDoubleClick(): void;
   className?: string;
   ariaLabel?: string;
-}) {
+  ref?: Ref<HTMLButtonElement>;
+} & Omit<
+  ButtonHTMLAttributes<HTMLButtonElement>,
+  "onClick" | "onDoubleClick" | "onPointerDown" | "type" | "children"
+>) {
   const cleanup = useRef<() => void>(() => {});
   const suppressClick = useRef(false);
   return (
     <>
       <button
+        {...rest}
+        ref={ref}
         type="button"
         aria-label={ariaLabel}
         className={className}
@@ -77,6 +93,10 @@ export function ResourceDragLabel({
               );
             dragging = false;
             cleanup.current();
+            // Sources joining an open view need their connection in the
+            // workspace; a favorite captures the connection itself.
+            if (wasDragging && drop && destination?.matches(".source-badges") && payload.connection)
+              window.dispatchEvent(new CustomEvent(RESOURCE_CONNECTION, { detail: payload.connection }));
             if (wasDragging && drop && destination)
               destination.dispatchEvent(
                 new CustomEvent(SOURCE_DROP_EVENT, { detail: payload }),
@@ -112,7 +132,7 @@ export function ResourceDragLabel({
             const next =
               document
                 .elementFromPoint(move.clientX, move.clientY)
-                ?.closest<HTMLElement>(".source-badges") ?? null;
+                ?.closest<HTMLElement>(RESOURCE_DROP_TARGETS) ?? null;
             if (next !== target) {
               clearTarget();
               target = next;

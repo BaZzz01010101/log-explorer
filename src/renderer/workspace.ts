@@ -125,6 +125,7 @@ export type WorkspaceAction =
   | { type: "connections/set"; connections: Connection[] }
   | { type: "preferences/update"; patch: Partial<Preferences> }
   | { type: "favorites/save"; tabId: string }
+  | { type: "favorites/save-resources"; payload: ResourcePayload }
   | { type: "favorites/rename"; favoriteId: string; title: string }
   | { type: "favorites/open" | "favorites/remove"; favoriteId: string }
   | { type: "recents/add"; favorite: Favorite }
@@ -932,6 +933,49 @@ export function projectFavoriteSave(
         "Saving this view would exceed the 5 MB workspace limit. Remove unused favorites and try again.",
     };
   return { workspace: next };
+}
+
+/**
+ * Save dragged Explorer resources as a favorite view: the selection becomes one
+ * multi-source view, exactly as "Open in new tab" would build it, without
+ * opening it or registering its connection in the live workspace.
+ */
+export function projectResourceFavorite(
+  input: Workspace,
+  payload: ResourcePayload,
+): { workspace: Workspace; error?: string } {
+  const state = modelState(input);
+  let staged = state;
+  const connection = payload.connection;
+  if (
+    connection?.id === payload.connectionId &&
+    !state.connections.some((item) => item.id === connection.id)
+  ) {
+    if (state.connections.length >= 50)
+      return {
+        workspace: input,
+        error: "Connection limit reached. Remove an unused connection and retry.",
+      };
+    staged = workspaceReducer(state, {
+      type: "connections/set",
+      connections: [...state.connections, connection],
+    });
+  }
+  const opened = projectResourceAction(staged, payload, "new-multisource");
+  if (opened.error) return { workspace: input, error: opened.error };
+  const entry = activeEntryId(opened.workspace);
+  if (!entry || opened.workspace === staged) return { workspace: input };
+  const saved = projectFavoriteSave(opened.workspace, entry);
+  if (saved.error) return { workspace: input, error: saved.error };
+  const added = saved.workspace.favorites.at(-1);
+  if (saved.workspace.favorites === opened.workspace.favorites || !added)
+    return { workspace: input };
+  // Fresh tabs get new ids, so compare the saved configuration without them.
+  const shape = ({ id: _id, title: _title, tabs, ...rest }: ViewFavorite) =>
+    JSON.stringify({ ...rest, tabs: tabs.map(({ id: _tab, ...tab }) => tab) });
+  if (state.favorites.some((favorite) => shape(favorite) === shape(added)))
+    return { workspace: input };
+  return { workspace: { ...state, favorites: saved.workspace.favorites } };
 }
 
 function openViewFavorite(input: Workspace, favorite: ViewFavorite): Workspace {
@@ -2698,6 +2742,8 @@ export function workspaceReducer(
         .workspace;
     case "favorites/save":
       return projectFavoriteSave(state, action.tabId).workspace;
+    case "favorites/save-resources":
+      return projectResourceFavorite(state, action.payload).workspace;
     case "favorites/rename": {
       const title = action.title.trim().slice(0, 120);
       if (!title) return input;

@@ -192,6 +192,9 @@ export function createOfflineAdapter(): LogAdapter {
     async events(request, signal) {
       throwIfAborted(signal);
       const started = Date.now();
+      // Verification-only latency so desktop tests can observe in-flight states.
+      const latency = Number(process.env.EXPLORER_TEST_QUERY_DELAY_MS);
+      if (Number.isFinite(latency) && latency > 0) await delay(Math.min(latency, 10000), signal);
       const items = select(request);
       if (request.direction === "older") items.reverse();
       const key = signature(request);

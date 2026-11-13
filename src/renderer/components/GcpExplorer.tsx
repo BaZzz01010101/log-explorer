@@ -31,6 +31,8 @@ import { shortcutMatches } from "../shortcuts";
 import { Tooltip } from "./AppTooltip";
 import { Menu } from "./AppMenu";
 import { ViewFavorites } from "./ViewFavorites";
+import { ResourceDragLabel } from "./ResourceDragLabel";
+import type { ResourcePayload } from "../resource-drag";
 import { FilterMatchButtons } from "./FilterMatchButtons";
 import { clearEditControl } from "../scoped-edit-history";
 import "./gcp-explorer.css";
@@ -49,6 +51,8 @@ export function GcpExplorer({
   onOpenFavorite,
   onRenameFavorite,
   onRemoveFavorite,
+  onDropFavoriteResources,
+  dragPayload,
   onAuthorized,
 }: {
   active: boolean;
@@ -72,6 +76,12 @@ export function GcpExplorer({
   onOpenFavorite?(id: string): void;
   onRenameFavorite?(id: string, title: string): void;
   onRemoveFavorite?(id: string): void;
+  onDropFavoriteResources?(payload: ResourcePayload): void;
+  /** Resolves the drag payload (and any connection to create) for a source. */
+  dragPayload?(
+    source: GcpSource,
+    identity: GcpIdentity,
+  ): ResourcePayload | undefined;
   onAuthorized?(configuration: string, account: string): void;
 }) {
   const regexShortcut = shortcuts.explorerRegex ?? "Alt+E";
@@ -571,6 +581,7 @@ export function GcpExplorer({
           onOpen={onOpenFavorite}
           onRename={onRenameFavorite}
           onRemove={onRemoveFavorite}
+          onDropResources={onDropFavoriteResources}
         />
       )}
       <div
@@ -579,35 +590,58 @@ export function GcpExplorer({
         aria-label="GCP sources"
         aria-busy={loading}
       >
-        {filtered.map((log) => (
+        {filtered.map((log) => {
+          const payload = identity && dragPayload?.(log, identity);
+          const select = () => {
+            setSelected(log);
+            if (identity) onOpen?.(log, identity, "preview");
+          };
+          const open = () => {
+            if (identity) onOpen?.(log, identity, "permanent");
+          };
+          const content = (
+            <>
+              {log.kind === "function" ? (
+                <IconCloudCode size={15} />
+              ) : (
+                <IconHexagonLetterK size={15} />
+              )}
+              <span>
+                {log.label}
+                {duplicateLabels.has(log.label)
+                  ? ` (${[log.namespace, log.region].filter(Boolean).join(", ")})`
+                  : ""}
+                {cachedNames.has(log.name) ? " · cached" : ""}
+              </span>
+            </>
+          );
+          return (
           <Menu key={log.name} withinPortal>
             <Menu.ContextMenu>
+              {payload ? (
+                // Drag to tabs, panes (splits), view sources or Favorites.
+                <ResourceDragLabel
+                  payload={payload}
+                  className="resource-row gcp-log-row"
+                  role="option"
+                  aria-selected={selected?.name === log.name}
+                  onClick={select}
+                  onDoubleClick={open}
+                >
+                  {content}
+                </ResourceDragLabel>
+              ) : (
               <button
                 type="button"
                 className="resource-row gcp-log-row"
                 role="option"
                 aria-selected={selected?.name === log.name}
-                onClick={() => {
-                  setSelected(log);
-                  if (identity) onOpen?.(log, identity, "preview");
-                }}
-                onDoubleClick={() => {
-                  if (identity) onOpen?.(log, identity, "permanent");
-                }}
+                onClick={select}
+                onDoubleClick={open}
               >
-                {log.kind === "function" ? (
-                  <IconCloudCode size={15} />
-                ) : (
-                  <IconHexagonLetterK size={15} />
-                )}
-                <span>
-                  {log.label}
-                  {duplicateLabels.has(log.label)
-                    ? ` (${[log.namespace, log.region].filter(Boolean).join(", ")})`
-                    : ""}
-                  {cachedNames.has(log.name) ? " · cached" : ""}
-                </span>
+                {content}
               </button>
+              )}
             </Menu.ContextMenu>
             <Menu.Dropdown>
               <Menu.Item
@@ -631,7 +665,8 @@ export function GcpExplorer({
               </Menu.Item>
             </Menu.Dropdown>
           </Menu>
-        ))}
+          );
+        })}
         {loading && (
           <div className="gcp-list-status">
             <Loader size="xs" /> Discovering sources…

@@ -24,6 +24,7 @@ import {
   IconX,
 } from "@tabler/icons-react";
 import type {
+  Connection,
   EnvironmentInfo,
   LogEvent,
   LogSource,
@@ -37,6 +38,7 @@ import {
   workspaceReducer,
   projectFavoriteOpen,
   projectResourceAction,
+  projectResourceFavorite,
 } from "./workspace";
 import {
   activeEntryId,
@@ -74,7 +76,7 @@ import "./floating-surfaces.css";
 import "./toggle-buttons.css";
 import { TextTooltips } from "./components/AppTooltip";
 import { shortcutMatches } from "./shortcuts";
-import { isResourceDragging, isTabSourceDragging } from "./resource-drag";
+import { isResourceDragging, isTabSourceDragging, type ResourcePayload } from "./resource-drag";
 import {
   cycleRecentTabs,
   finishRecentTabCycle,
@@ -358,15 +360,39 @@ export default function App() {
         },
       });
   };
+  // New Google Cloud connections keep one id per identity and region, so a
+  // dragged source and its later drop agree on the connection they create.
+  const gcpConnectionIds = useRef(new Map<string, string>());
+  const gcpConnectionFor = (source: GcpSource, identity: GcpIdentity): { connection: Connection; created: boolean } => {
+    const state = workspaceRef.current;
+    const existing = state.connections.find((item) => item.mode === "gcp" && item.region === source.region && item.gcpIdentity?.configuration === identity.configuration && item.gcpIdentity?.account === identity.account && item.gcpIdentity?.quotaProject === identity.quotaProject);
+    if (existing) return { connection: existing, created: false };
+    const key = JSON.stringify([source.region, identity.configuration, identity.account, identity.quotaProject ?? ""]);
+    let id = gcpConnectionIds.current.get(key);
+    if (!id) gcpConnectionIds.current.set(key, (id = `gcp-${crypto.randomUUID()}`));
+    return { connection: { id, name: `Google Cloud · ${source.region}`, profile: identity.configuration, region: source.region, mode: "gcp", gcpIdentity: { ...identity } }, created: true };
+  };
+  const gcpDragPayload = (source: GcpSource, identity: GcpIdentity): ResourcePayload | undefined => {
+    try {
+      const { connection, created } = gcpConnectionFor(source, identity);
+      return { connectionId: connection.id, sources: [gcpResourceToLogSource(source)], ...(created ? { connection } : {}) };
+    } catch {
+      return undefined;
+    }
+  };
+  const saveResourceFavorite = (payload: ResourcePayload) => {
+    const result = projectResourceFavorite(workspaceRef.current, payload);
+    if (result.error)
+      notifications.show({ title: "Favorites", message: result.error, color: "red" });
+    else if (result.workspace !== workspaceRef.current)
+      dispatch({ type: "favorites/save-resources", payload });
+  };
   const openGcpSource = (source: GcpSource, identity: GcpIdentity, mode: "preview" | "permanent") => {
     try {
       const resource = gcpResourceToLogSource(source);
       const state = workspaceRef.current;
-      let connection = state.connections.find((item) => item.mode === "gcp" && item.region === source.region && item.gcpIdentity?.configuration === identity.configuration && item.gcpIdentity?.account === identity.account && item.gcpIdentity?.quotaProject === identity.quotaProject);
-      if (!connection) {
-        if (state.connections.length >= 50) throw new Error("Connection limit reached. Remove an unused connection and retry.");
-        connection = { id: `gcp-${crypto.randomUUID()}`, name: `Google Cloud · ${source.region}`, profile: identity.configuration, region: source.region, mode: "gcp", gcpIdentity: { ...identity } };
-      }
+      const { connection, created } = gcpConnectionFor(source, identity);
+      if (created && state.connections.length >= 50) throw new Error("Connection limit reached. Remove an unused connection and retry.");
       dispatch({ type: "gcp/open-source", connection, source: resource, mode });
     } catch (error) {
       notifications.show({ color: "red", message: error instanceof Error ? error.message : "Could not open Google Cloud source." });
@@ -376,11 +402,10 @@ export default function App() {
     try {
       const resource = gcpResourceToLogSource(source);
       const state = workspaceRef.current;
-      let connection = state.connections.find((item) => item.mode === "gcp" && item.region === source.region && item.gcpIdentity?.configuration === identity.configuration && item.gcpIdentity?.account === identity.account && item.gcpIdentity?.quotaProject === identity.quotaProject);
+      const { connection, created } = gcpConnectionFor(source, identity);
       let next = state;
-      if (!connection) {
+      if (created) {
         if (state.connections.length >= 50) throw new Error("Connection limit reached.");
-        connection = { id: `gcp-${crypto.randomUUID()}`, name: `Google Cloud · ${source.region}`, profile: identity.configuration, region: source.region, mode: "gcp", gcpIdentity: { ...identity } };
         next = workspaceReducer(state, { type: "connections/set", connections: [...state.connections, connection] });
       }
       const payload = { connectionId: connection.id, sources: [resource] };
@@ -776,6 +801,7 @@ export default function App() {
                   onRemoveFavorite={(favoriteId) =>
                     dispatch({ type: "favorites/remove", favoriteId })
                   }
+                  onDropFavoriteResources={saveResourceFavorite}
                   onManage={openSettings}
                 />
               </div>
@@ -790,6 +816,8 @@ export default function App() {
                   }}
                   onRenameFavorite={(favoriteId, title) => dispatch({ type: "favorites/rename", favoriteId, title })}
                   onRemoveFavorite={(favoriteId) => dispatch({ type: "favorites/remove", favoriteId })}
+                  onDropFavoriteResources={saveResourceFavorite}
+                  dragPayload={gcpDragPayload}
                   onAuthorized={(configuration, account) => {
                     const visible = new Set(workspace.panes.map((pane) => pane.tabId));
                     for (const tab of workspace.tabs) {

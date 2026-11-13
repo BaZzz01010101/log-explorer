@@ -75,6 +75,7 @@ interface Props {
   onOpenFavorite?(id: string): void;
   onRemoveFavorite?(id: string): void;
   onRenameFavorite?(id: string, title: string): void;
+  onDropFavoriteResources?(payload: ResourcePayload): void;
   onManage(): void;
 }
 export function ExplorerSidebar(props: Props) {
@@ -554,6 +555,7 @@ export function ExplorerSidebar(props: Props) {
         onOpen={props.onOpenFavorite}
         onRemove={props.onRemoveFavorite}
         onRename={props.onRenameFavorite}
+        onDropResources={props.onDropFavoriteResources}
       />
       <div
         className="resource-tree"

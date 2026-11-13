@@ -104,7 +104,7 @@ import {
 import { eventSourceDisplay, sourceCount } from "../../shared/source-labels";
 import { useColumnHeaderDrag } from "../useColumnHeaderDrag";
 import { useScrollPagination } from "../useScrollPagination";
-import { shouldFollowRecentLoad } from "../recent-scroll";
+import { lockCorrection, newestIndex, RECENT_HOLD_MS, RECENT_START_MS, releasedByInput, type RecentScrollLock } from "../recent-scroll";
 import { useMeasuredVirtualRows } from "../useMeasuredVirtualRows";
 import {
   useMessageExpansion,
@@ -420,41 +420,111 @@ export function LogViewer({
     [onScrollElement],
   );
   const [positionedScope, setPositionedScope] = useState("");
-  const initialRecent = useRef<{ scope: string; active: boolean }>({ scope: "", active: false });
-  if (pagination?.scope && initialRecent.current.scope !== pagination.scope) {
-    initialRecent.current = { scope: pagination.scope, active: pagination.direction === "older" && !pagination.loadingOlder && (events.length === 0 || loading) };
+  const scrollLock = useRef<RecentScrollLock | null>(null);
+  const recentScope = useRef("");
+  if (pagination?.scope && recentScope.current !== pagination.scope) {
+    recentScope.current = pagination.scope;
+    // A new Recent query starts pinned to the newest event at the bottom.
+    scrollLock.current =
+      pagination.direction === "older" && !pagination.loadingOlder && (events.length === 0 || loading)
+        ? { kind: "bottom" }
+        : null;
   }
   const rowsRef = useRef<string[]>([]);
-  const pageAnchor = useRef<{ id: string; offset: number; firstId: string; started?: boolean } | undefined>(undefined);
+  /** Re-applies the active Recent lock against the current layout. */
+  const applyScrollLock = () => {
+    const scroll = scrollRef.current;
+    const lock = scrollLock.current;
+    if (!scroll || !lock) return;
+    if (lock.kind === "bottom") {
+      const bottom = Math.max(0, scroll.scrollHeight - scroll.clientHeight);
+      if (Math.abs(scroll.scrollTop - bottom) > 0.5) scroll.scrollTop = bottom;
+      return;
+    }
+    if (performance.now() > lock.expires) {
+      scrollLock.current = null;
+      return;
+    }
+    // While the page loads the anchor only follows the viewer (see onScroll).
+    if (lock.phase === "tracking") return;
+    const top = scroll.getBoundingClientRect().top;
+    const element = scroll.querySelector<HTMLElement>(`.virtual-event[data-event-id="${CSS.escape(lock.id)}"]`);
+    if (element) {
+      const correction = lockCorrection(element.getBoundingClientRect().top - top, lock.offset);
+      if (correction) scroll.scrollTop += correction;
+      return;
+    }
+    // The row is outside the rendered range: place it from measurements, then
+    // the next layout pass corrects against the rendered row.
+    const index = rowsRef.current.indexOf(lock.id);
+    const start = index >= 0 ? virtualizer.measurementsCache[index]?.start : undefined;
+    const list = scroll.querySelector<HTMLElement>(".virtual-events");
+    if (start === undefined || !list) return;
+    const base = list.getBoundingClientRect().top - top + scroll.scrollTop;
+    scroll.scrollTop = Math.max(0, base + start - lock.offset);
+  };
+  const applyScrollLockRef = useRef(applyScrollLock);
+  applyScrollLockRef.current = applyScrollLock;
+  const releaseScrollLock = () => {
+    scrollLock.current = releasedByInput(scrollLock.current);
+  };
+  const recentPaging = pagination?.direction === "older";
   useScrollPagination(scrollRef, {
     scope: pagination?.scope ?? "no-query",
-    edge: pagination?.direction === "older" ? "top" : "bottom",
-    enabled: pagination?.direction !== "older" || positionedScope === pagination.scope || events.length === 0,
-    targets: pagination?.pageKey
-      ? [{ key: pagination.pageKey, load: () => {
-          if (pagination.direction === "older" && scrollRef.current) {
-            const scroll = scrollRef.current;
-            const top = scroll.getBoundingClientRect().top;
-            const header = scroll.querySelector<HTMLElement>(".log-table-header")?.getBoundingClientRect().height ?? 0;
-            const visibleRows = [...scroll.querySelectorAll<HTMLElement>(".virtual-event[data-index]")];
-            const isVisible = (element: HTMLElement) => element.getBoundingClientRect().bottom > top + header && element.getBoundingClientRect().top < top + scroll.clientHeight;
-            const visible = visibleRows.find((element) => element.dataset.current === "true" && isVisible(element)) ?? visibleRows.find(isVisible);
-            const index = Number(visible?.dataset.index);
-            if (visible && Number.isInteger(index) && rowsRef.current[index]) pageAnchor.current = { id: rowsRef.current[index], offset: visible.getBoundingClientRect().top - top, firstId: rowsRef.current[0], started: true };
-            else {
-              const list = scroll.querySelector<HTMLElement>(".virtual-events");
-              if (list) {
-                const base = list.getBoundingClientRect().top - top + scroll.scrollTop;
-                const position = scroll.scrollTop + header - base;
-                const item = virtualizer.measurementsCache.find((row) => row.end > position);
-                if (item && rowsRef.current[item.index]) pageAnchor.current = { id: rowsRef.current[item.index], offset: base + item.start - scroll.scrollTop, firstId: rowsRef.current[0], started: true };
-              }
-            }
-          }
-          pagination.onLoad();
-        } }]
+    edge: "bottom",
+    enabled: !recentPaging,
+    targets: pagination?.pageKey && !recentPaging
+      ? [{ key: pagination.pageKey, load: pagination.onLoad }]
       : [],
   });
+  // Recent pages load only on explicit requests (see requestOlderPage). The
+  // bar shows as soon as a page is requested, before the query state arrives.
+  const [olderRequested, setOlderRequested] = useState<string | null>(null);
+  const requestedOlderKey = useRef<string | null>(null);
+  // Only the viewer's own scrolling (wheel, touch, scrollbar drag) reaching the
+  // top asks for a page; keyboard navigation has its own triggers.
+  const userScroll = useRef({ inputAt: 0, pointer: false });
+  useEffect(() => {
+    const release = () => { userScroll.current.pointer = false; };
+    window.addEventListener("pointerup", release);
+    window.addEventListener("pointercancel", release);
+    return () => {
+      window.removeEventListener("pointerup", release);
+      window.removeEventListener("pointercancel", release);
+    };
+  }, []);
+  const loadingOlder = Boolean(olderRequested) || Boolean(loading && pagination?.loadingOlder);
+  /**
+   * Requests the next older Recent page. The current first row becomes the
+   * first visible row once the page arrives; `keepBottom` keeps the initial
+   * bottom pin instead (an underfull view filling itself).
+   */
+  const requestOlderPage = (keepBottom = false) => {
+    const scroll = scrollRef.current;
+    const key = pagination?.pageKey;
+    if (!recentPaging || !scroll || !key || loading || requestedOlderKey.current === key || (rowsRef.current.length > 0 && positionedScope !== pagination.scope))
+      return false;
+    requestedOlderKey.current = key;
+    const first = rowsRef.current[0];
+    if (!keepBottom || scrollLock.current?.kind !== "bottom")
+      scrollLock.current = first
+        ? {
+            kind: "row",
+            id: first,
+            offset: scroll.querySelector<HTMLElement>(".log-table-header")?.getBoundingClientRect().height ?? 0,
+            phase: "tracking",
+            awaitingIndicator: true,
+            expires: performance.now() + RECENT_START_MS,
+          }
+        : null;
+    setOlderRequested(key);
+    pagination.onLoad();
+    return true;
+  };
+  /** Keyboard paging at the top: request a page, or keep a loading bar in view. */
+  const requestOlderFromKeyboard = () => {
+    if (!requestOlderPage() && loadingOlder && scrollRef.current) scrollRef.current.scrollTop = 0;
+  };
   const detailHeights = useRef(new WeakMap<LogEvent, number>());
   const [inspectorMode, setInspectorMode] = useState("structured");
   const [inspectorActionsTarget, setInspectorActionsTarget] =
@@ -761,12 +831,12 @@ export function LogViewer({
     interactionState?.selection,
   );
   useEffect(() => {
-    if (!initialRecent.current.active || pagination?.direction !== "older" || !rows.length) return;
-    let latest = rows[0]!;
-    for (const row of rows) if (row.original.event.timestamp > latest.original.event.timestamp) latest = row;
+    // Selection changes by the viewer release the lock first, so only row
+    // updates re-select the newest event here.
+    if (scrollLock.current?.kind !== "bottom" || pagination?.direction !== "older" || !rows.length) return;
+    const latest = rows[newestIndex(rows.map((row) => row.original.event.timestamp))]!;
     if (selection.selectedId !== latest.original.event.id) selection.select(latest.original.event.id);
-    if (!loading) initialRecent.current.active = false;
-  }, [rows, pagination?.direction, pagination?.scope, loading, selection.selectedId]);
+  }, [rows, pagination?.direction, pagination?.scope, loading]);
   const selectedEventIds = new Set(selection.selectedIds);
   const viewerId = useId();
   const virtualizer = useVirtualizer<HTMLDivElement, HTMLDivElement>({
@@ -791,38 +861,63 @@ export function LogViewer({
     [view.mode, view.wrap, preferences.density, preferences.fontSize, expansion.all].join(":"),
   );
   useLayoutEffect(() => {
-    if (pagination?.direction !== "older" || !scrollRef.current || !rows.length) return;
-    if (positionedScope !== pagination.scope) {
-      pageAnchor.current = undefined;
-      virtualizer.scrollToIndex(rows.length - 1, { align: "end" });
-      setPositionedScope(pagination.scope);
+    if (pagination?.direction !== "older" || !pagination.scope) return;
+    if (rows.length && positionedScope !== pagination.scope) setPositionedScope(pagination.scope);
+    // The requested page has started (or will not): the query state drives the bar.
+    if (olderRequested && pagination.pageKey !== olderRequested) setOlderRequested(null);
+    const lock = scrollLock.current;
+    const scroll = scrollRef.current;
+    if (lock?.kind !== "row" || !scroll) return;
+    if (lock.phase === "tracking" && loadingOlder && lock.awaitingIndicator) {
+      // The bar opens above the first row: bring it into view.
+      lock.awaitingIndicator = false;
+      scroll.scrollTop = 0;
+    }
+    if (lock.phase === "tracking" && loading && pagination.loadingOlder) lock.expires = Infinity;
+    if (lock.phase === "tracking" && lock.expires === Infinity && !loading) {
+      lock.phase = "holding";
+      lock.expires = performance.now() + RECENT_HOLD_MS;
+    }
+  }, [rows, pagination?.direction, pagination?.scope, pagination?.loadingOlder, pagination?.pageKey, positionedScope, loading, loadingOlder, olderRequested]);
+  // An underfull initial view keeps loading older pages while pinned to the bottom.
+  useEffect(() => {
+    const scroll = scrollRef.current;
+    if (scrollLock.current?.kind === "bottom" && scroll && scroll.scrollHeight <= scroll.clientHeight + 1)
+      requestOlderPage(true);
+  });
+  // Every render (row measurement, highlights, prepended pages) re-applies the lock.
+  useLayoutEffect(() => applyScrollLock());
+  useEffect(() => {
+    const scroll = scrollRef.current;
+    if (!scroll || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(() => applyScrollLockRef.current());
+    observer.observe(scroll);
+    const list = scroll.querySelector(".virtual-events");
+    if (list) observer.observe(list);
+    return () => observer.disconnect();
+  }, [rows.length > 0, view.mode]);
+  /**
+   * Scrolls the least distance that shows the whole row between the sticky
+   * header and the bottom edge. The virtualizer's "auto" alignment ignores the
+   * header and the content above the list, so it treats a row clipped by up to
+   * that height at the bottom as visible.
+   */
+  const revealIndex = (index: number) => {
+    const scroll = scrollRef.current;
+    const element = scroll?.querySelector<HTMLElement>(`.virtual-event[data-index="${index}"]`);
+    if (!scroll || !element) {
+      virtualizer.scrollToIndex(index, { align: "auto" });
       return;
     }
-    const anchor = pageAnchor.current;
-    if (anchor && loading) anchor.started = true;
-    if (anchor) {
-      const index = rows.findIndex((row) => row.id === anchor.id);
-      if (index >= 0) {
-        const element = scrollRef.current.querySelector<HTMLElement>(".virtual-events");
-        const offset = virtualizer.measurementsCache[index]?.start;
-        if (element && offset !== undefined) {
-          const base = element.getBoundingClientRect().top - scrollRef.current.getBoundingClientRect().top + scrollRef.current.scrollTop;
-          scrollRef.current.scrollTop = Math.max(0, base + offset - anchor.offset);
-        }
-      }
-      anchor.firstId = rows[0]?.id ?? "";
-    } else if (shouldFollowRecentLoad(loading, Boolean(pagination?.loadingOlder), Boolean(anchor))) virtualizer.scrollToIndex(rows.length - 1, { align: "end" });
-    if (anchor?.started && !loading) {
-      const frame = requestAnimationFrame(() => {
-        const scroll = scrollRef.current;
-        if (pageAnchor.current !== anchor || !scroll) return;
-        const element = [...scroll.querySelectorAll<HTMLElement>(".virtual-event[data-event-id]")].find((row) => row.dataset.eventId === anchor.id);
-        if (element) scroll.scrollTop += element.getBoundingClientRect().top - scroll.getBoundingClientRect().top - anchor.offset;
-        pageAnchor.current = undefined;
-      });
-      return () => cancelAnimationFrame(frame);
-    }
-  }, [rows, pagination?.direction, pagination?.scope, pagination?.loadingOlder, positionedScope, loading, virtualizer]);
+    const top = scroll.getBoundingClientRect().top;
+    const header = scroll.querySelector<HTMLElement>(".log-table-header")?.getBoundingClientRect().height ?? 0;
+    const bounds = element.getBoundingClientRect();
+    const rowTop = bounds.top - top, rowBottom = bounds.bottom - top;
+    if (rowBottom > scroll.clientHeight + 0.5)
+      // Taller-than-view rows align their top instead of their bottom.
+      scroll.scrollTop += Math.min(rowBottom - scroll.clientHeight, rowTop - header);
+    else if (rowTop < header - 0.5) scroll.scrollTop += rowTop - header;
+  };
   const inspectedIndex = selection.index;
   useEffect(() => {
     if (!revealEvent) return;
@@ -831,6 +926,7 @@ export function LogViewer({
       revealEvent,
     );
     if (index < 0) return;
+    scrollLock.current = null;
     selection.select(rows[index]!.original.event.id);
     virtualizer.scrollToIndex(index, { align: "center" });
     onEventRevealed?.();
@@ -899,11 +995,12 @@ export function LogViewer({
         return;
       }
       if (result.quickMatch) {
+        releaseScrollLock();
         pendingHighlightNavigation.current = null;
         setNotice("");
         onPauseLiveFollow?.();
         selection.select(rows[index]!.original.event.id);
-        virtualizer.scrollToIndex(index, { align: "auto" });
+        revealIndex(index);
         return;
       }
     }
@@ -922,8 +1019,9 @@ export function LogViewer({
   const navigateTo = (index: number) => {
     const row = rows[index];
     if (!row) return;
+    releaseScrollLock();
     selection.select(row.original.event.id);
-    virtualizer.scrollToIndex(index, { align: "auto" });
+    revealIndex(index);
   };
   const closeInspector = () => {
     selection.close();
@@ -1420,9 +1518,26 @@ export function LogViewer({
             <div
               className="viewer-scroll"
               ref={setScrollElement}
-              onScroll={(event) =>
-                onScrollPositionChange?.(event.currentTarget)
-              }
+              // Recent paging anchors rows explicitly; native anchoring would fight it.
+              style={pagination?.direction === "older" ? { overflowAnchor: "none" } : undefined}
+              onScroll={(event) => {
+                const scroll = event.currentTarget;
+                const lock = scrollLock.current;
+                if (lock?.kind === "row" && lock.phase === "tracking") {
+                  // At the top the first row lands just below the header;
+                  // scrolled away, the row keeps where the viewer put it.
+                  const header = scroll.querySelector<HTMLElement>(".log-table-header")?.getBoundingClientRect().height ?? 0;
+                  const row = scroll.querySelector<HTMLElement>(`.virtual-event[data-event-id="${CSS.escape(lock.id)}"]`);
+                  if (scroll.scrollTop <= 1) lock.offset = header;
+                  else if (row) lock.offset = row.getBoundingClientRect().top - scroll.getBoundingClientRect().top;
+                } else if (
+                  scroll.scrollTop <= 1 &&
+                  lock?.kind !== "bottom" &&
+                  (userScroll.current.pointer || performance.now() - userScroll.current.inputAt < 1000)
+                )
+                  requestOlderPage();
+                onScrollPositionChange?.(event.currentTarget);
+              }}
               role="grid"
               aria-label="Log events"
               aria-rowcount={rows.length}
@@ -1434,8 +1549,14 @@ export function LogViewer({
                   : undefined
               }
               tabIndex={0}
-              onPointerDownCapture={() => { initialRecent.current.active = false; }}
+              onPointerDownCapture={() => {
+                releaseScrollLock();
+                userScroll.current.pointer = true;
+              }}
               onWheel={(event) => {
+                releaseScrollLock();
+                userScroll.current.inputAt = performance.now();
+                if (event.deltaY < 0 && event.currentTarget.scrollTop <= 1) requestOlderPage();
                 if (event.deltaY < 0) onPauseLiveFollow?.();
                 else if (event.deltaY > 0) {
                   const scroll = event.currentTarget;
@@ -1464,7 +1585,10 @@ export function LogViewer({
                     onResumeLiveFollow?.();
                 }
               }}
-              onTouchMove={() => onPauseLiveFollow?.()}
+              onTouchMove={() => {
+                userScroll.current.inputAt = performance.now();
+                onPauseLiveFollow?.();
+              }}
               onPointerDown={(event) => {
                 const element = event.currentTarget;
                 if (
@@ -1512,7 +1636,7 @@ export function LogViewer({
               }}
               onKeyDown={(event) => {
                 if (event.defaultPrevented) return;
-                initialRecent.current.active = false;
+                releaseScrollLock();
                 const target = event.target as HTMLElement;
                 if (
                   target.closest(
@@ -1538,6 +1662,11 @@ export function LogViewer({
                     onPauseLiveFollow?.();
                     scroll.scrollTop = Math.max(0, destination.scrollTop + offset);
                     selection.select(rows[destination.index]!.original.event.id, { range: event.shiftKey });
+                  }
+                  // Fewer rows above than a page: the page reaches the first row.
+                  if (event.key === "PageUp" && (destination?.index ?? selection.index) === 0) {
+                    event.preventDefault();
+                    requestOlderFromKeyboard();
                   }
                   return;
                 }
@@ -1602,13 +1731,16 @@ export function LogViewer({
                 if (direction) {
                   event.preventDefault();
                   onPauseLiveFollow?.();
+                  const fromFirst = selection.index === 0;
                   const index = selection.move(direction, {
                     range: event.shiftKey,
                     additive:
                       event.shiftKey && (event.ctrlKey || event.metaKey),
                   });
-                  if (index >= 0)
-                    virtualizer.scrollToIndex(index, { align: "auto" });
+                  if (index >= 0) revealIndex(index);
+                  // Home, or Up on the first row, asks for older Recent events.
+                  if (direction === "first" || (direction === "previous" && fromFirst && !event.shiftKey))
+                    requestOlderFromKeyboard();
                 } else if (event.key === "Enter" && selection.selectedId) {
                   event.preventDefault();
                   selection.inspect(selection.selectedId);
@@ -1902,7 +2034,7 @@ export function LogViewer({
                         ))}
                     </div>
                   )}
-                  {loading && pagination?.loadingOlder && <EventLoadingIndicator position="older" />}
+                  {loadingOlder && <EventLoadingIndicator position="older" />}
                   <div
                     className="virtual-events"
                     style={{
@@ -2338,6 +2470,7 @@ export function LogViewer({
               scrollRef={scrollRef}
               onNavigate={(index) => {
                 onPauseLiveFollow?.();
+                scrollLock.current = null;
                 selection.select(rows[index]!.original.event.id);
                 virtualizer.scrollToIndex(index, { align: "center" });
               }}

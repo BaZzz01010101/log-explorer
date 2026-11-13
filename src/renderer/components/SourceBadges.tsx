@@ -68,10 +68,15 @@ export function SourceBadges({
       const payload = decodeResourceDrop(
         JSON.stringify((event as CustomEvent).detail),
       );
+      // A Google Cloud drag registers its connection just before the drop.
+      const registering = (event as CustomEvent<{ connection?: Connection }>)
+        .detail?.connection;
       if (
         !payload ||
-        !connections.some(
-          (connection) => connection.id === payload.connectionId,
+        !(
+          connections.some(
+            (connection) => connection.id === payload.connectionId,
+          ) || registering?.id === payload.connectionId
         )
       ) {
         setError("This source connection is no longer available.");

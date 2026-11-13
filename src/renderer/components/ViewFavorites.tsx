@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useDroppable } from "@dnd-kit/core";
 import { Button, Group, Modal, Text, TextInput } from "@mantine/core";
 import { Menu } from "./AppMenu";
@@ -6,6 +6,8 @@ import { IconLayoutColumns, IconStar, IconTrash } from "@tabler/icons-react";
 import type { ViewFavorite } from "../../shared/contracts";
 import { favoriteTooltip } from "../favorite-tooltip";
 import { InlineDeleteConfirmation } from "./InlineDeleteConfirmation";
+import { SOURCE_DROP_EVENT } from "./ResourceDragLabel";
+import type { ResourcePayload } from "../resource-drag";
 import "./view-favorites.css";
 
 function FavoriteItem({
@@ -171,12 +173,15 @@ export function ViewFavorites({
   onOpen,
   onRemove,
   onRename,
+  onDropResources,
   dropId = "view-favorites",
 }: {
   favorites: ViewFavorite[];
   onOpen?(id: string): void;
   onRemove?(id: string): void;
   onRename?(id: string, title: string): void;
+  /** Saves log groups, streams or sources dragged from an Explorer. */
+  onDropResources?(payload: ResourcePayload): void;
   dropId?: string;
 }) {
   const [menuId, setMenuId] = useState<string | null>(null);
@@ -184,10 +189,45 @@ export function ViewFavorites({
     id: dropId,
     data: { kind: "view-favorites" },
   });
+  // Explorer resources use a captured pointer gesture rather than dnd-kit.
+  const [resourceOver, setResourceOver] = useState(false);
+  const section = useRef<HTMLElement | null>(null);
+  const setSection = useCallback(
+    (element: HTMLElement | null) => {
+      section.current = element;
+      setNodeRef(element);
+    },
+    [setNodeRef],
+  );
+  const dropResources = useRef(onDropResources);
+  dropResources.current = onDropResources;
+  useEffect(() => {
+    const element = section.current;
+    if (!element) return;
+    const enter = () => setResourceOver(true);
+    const leave = () => setResourceOver(false);
+    const drop = (event: Event) => {
+      setResourceOver(false);
+      const payload = (event as CustomEvent<ResourcePayload>).detail;
+      // A source badge dragged from a view is saved as a copy; the view keeps it.
+      if (payload) dropResources.current?.({ ...payload, origin: undefined });
+    };
+    element.addEventListener("explorer:source-drag-enter", enter);
+    element.addEventListener("explorer:source-drag-leave", leave);
+    element.addEventListener(SOURCE_DROP_EVENT, drop);
+    return () => {
+      element.removeEventListener("explorer:source-drag-enter", enter);
+      element.removeEventListener("explorer:source-drag-leave", leave);
+      element.removeEventListener(SOURCE_DROP_EVENT, drop);
+    };
+  }, []);
   return (
     <section
-      ref={setNodeRef}
-      className={"sidebar-view-favorites" + (isOver ? " is-drop-target" : "")}
+      ref={setSection}
+      className={
+        "sidebar-view-favorites" +
+        (isOver || resourceOver ? " is-drop-target" : "")
+      }
       data-view-favorites
       aria-label="Favorite views"
     >
@@ -212,7 +252,7 @@ export function ViewFavorites({
         ))}
         {!favorites.length && (
           <Text size="xs" c="dimmed" className="favorite-views-empty">
-            Drag a tab here to save its view
+            Drag a tab or log source here to save its view
           </Text>
         )}
       </div>
