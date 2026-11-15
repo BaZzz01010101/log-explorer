@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
 import { favoriteTooltip } from "../src/renderer/favorite-tooltip";
-import { createWorkspace } from "../src/renderer/workspace";
+import { createWorkspace } from "../src/shared/workspace";
 
 function favorite() {
   const state = createWorkspace();

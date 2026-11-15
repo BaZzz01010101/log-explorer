@@ -18,9 +18,13 @@ function describeKept(kept: string[], directory: string): string {
 
 export class WorkspaceStore {
   private pending: Promise<void> = Promise.resolve();
+  /** True once workspace.json is known to hold a file this store read or wrote successfully. */
+  private primaryKnownGood = false;
   constructor(
     private readonly directory: string,
     private readonly validate: (value: unknown) => unknown = (value) => value,
+    /** Save-time check; callers that already validated pass a cheaper one. */
+    private readonly validateSave: (value: unknown) => unknown = validate,
   ) {}
   private async read(path: string): Promise<unknown> {
     if ((await stat(path)).size > 5_000_000)
@@ -39,11 +43,14 @@ export class WorkspaceStore {
   }
   async load(): Promise<WorkspaceLoad> {
     await this.pending;
+    // Trust only what this load proves; a failed primary must be re-checked
+    // before it may replace the backup.
+    this.primaryKnownGood = false;
     const stamp = new Date().toISOString().replace(/[:.]/g, "-");
     try {
-      return {
-        workspace: await this.read(join(this.directory, "workspace.json")),
-      };
+      const workspace = await this.read(join(this.directory, "workspace.json"));
+      this.primaryKnownGood = true;
+      return { workspace };
     } catch (error) {
       const primaryMissing = (error as NodeJS.ErrnoException).code === "ENOENT";
       const kept = primaryMissing
@@ -70,7 +77,7 @@ export class WorkspaceStore {
     }
   }
   async save(workspace: unknown): Promise<void> {
-    const serialized = JSON.stringify(this.validate(workspace), null, 2);
+    const serialized = JSON.stringify(this.validateSave(workspace), null, 2);
     if (Buffer.byteLength(serialized, "utf8") > 5_000_000)
       throw new Error("Workspace exceeds the size limit");
     const task = this.pending.then(async () => {
@@ -82,18 +89,21 @@ export class WorkspaceStore {
         mode: 0o600,
         flush: true,
       });
-      // Only a valid previous workspace may replace the usable backup.
-      let validPrevious = false;
-      try {
-        await this.read(target);
-        validPrevious = true;
-      } catch (error) {
-        const code = (error as NodeJS.ErrnoException).code;
-        if (code && code !== "ENOENT") throw error;
-      }
+      // Only a valid previous workspace may replace the usable backup. A file
+      // this store loaded or wrote is known valid, so it is not re-parsed.
+      let validPrevious = this.primaryKnownGood;
+      if (!validPrevious)
+        try {
+          await this.read(target);
+          validPrevious = true;
+        } catch (error) {
+          const code = (error as NodeJS.ErrnoException).code;
+          if (code && code !== "ENOENT") throw error;
+        }
       if (validPrevious)
         await copyFile(target, join(this.directory, "workspace.backup.json"));
       await rename(temporary, target);
+      this.primaryKnownGood = true;
     });
     this.pending = task.catch(() => {});
     return task;

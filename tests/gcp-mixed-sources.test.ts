@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { decodeResourceDrop, mergeSources } from "../src/renderer/source-management";
+import { decodeResourceDrop, mergeSources } from "../src/shared/source-management";
 import { eventSourceDisplay } from "../src/shared/source-labels";
 import { createMultiSourceEvents } from "../src/main/multi-source-events";
 

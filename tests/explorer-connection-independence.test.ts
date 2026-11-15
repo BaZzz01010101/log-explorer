@@ -6,7 +6,7 @@ import {
   restoreWorkspace,
   workspaceReducer,
   type WorkspaceAction,
-} from "../src/renderer/workspace";
+} from "../src/shared/workspace";
 
 function workspace() {
   let state = createWorkspace();

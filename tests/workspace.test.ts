@@ -4,7 +4,7 @@ import {
   createWorkspace,
   restoreWorkspace,
   workspaceReducer,
-} from "../src/renderer/workspace";
+} from "../src/shared/workspace";
 import type { Workspace } from "../src/shared/contracts";
 import { eventColumnValue, parseLogMessage } from "../src/shared/log-data";
 import { workspaceSchema } from "../src/main/security";

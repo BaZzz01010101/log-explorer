@@ -40,12 +40,12 @@ import {
   projectFavoriteOpen,
   projectResourceAction,
   projectResourceFavorite,
-} from "./workspace";
+} from "../shared/workspace";
 import {
   activeEntryId,
   logTabLabel,
   workspaceEntries,
-} from "./workspace-entries";
+} from "../shared/workspace-entries";
 import { useLogJobs } from "./useLogJobs";
 import { useKeyboardModality } from "./useKeyboardModality";
 import { PaneLayoutView } from "./components/PaneLayout";
@@ -76,7 +76,7 @@ import "./app.css";
 import "./floating-surfaces.css";
 import "./toggle-buttons.css";
 import { TextTooltips } from "./components/AppTooltip";
-import { shortcutMatches } from "./shortcuts";
+import { shortcutMatches } from "../shared/shortcuts";
 import { isResourceDragging, isTabSourceDragging, type ResourcePayload } from "./resource-drag";
 import {
   cycleRecentTabs,

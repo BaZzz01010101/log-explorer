@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
 import { captureSettingsPreview } from "../src/renderer/settings-preview";
-import { createTab, createWorkspace } from "../src/renderer/workspace";
+import { createTab, createWorkspace } from "../src/shared/workspace";
 import type { TabRuntime } from "../src/renderer/useLogJobs";
 
 const event = (id: string) => ({

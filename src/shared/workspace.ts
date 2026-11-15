@@ -14,11 +14,11 @@ import type {
   ViewConfig,
   VisualizationPreset,
   Workspace,
-} from "../shared/contracts";
-import { tabTitle, sourceCount, removeSource } from "../shared/source-labels";
+} from "./contracts";
+import { tabTitle, sourceCount, removeSource } from "./source-labels";
 import { historyRetentionDays, recentClosedTabs } from "./closed-tab-history";
-import { LOG_LEVELS, DEFAULT_TIMESTAMP_COLUMN_WIDTH } from "../shared/log-data";
-import { parseHighlightProfiles } from "../shared/highlights";
+import { LOG_LEVELS, DEFAULT_TIMESTAMP_COLUMN_WIDTH } from "./log-data";
+import { parseHighlightProfiles } from "./highlights";
 import {
   legacyLayout,
   normalizeLayout,
@@ -29,7 +29,7 @@ import {
   nextSplitAxis,
   MAX_SPLIT_PANES,
   MAX_LAYOUT_DEPTH,
-} from "../shared/pane-layout";
+} from "./pane-layout";
 import {
   activeEntryId,
   workspaceEntries,
@@ -37,13 +37,13 @@ import {
   type WorkspaceEntry,
 } from "./workspace-entries";
 import { parseRelativePreset } from "./query-state";
-import { normalizeRelativeTimeTemplates } from "../shared/relative-time-templates";
+import { normalizeRelativeTimeTemplates } from "./relative-time-templates";
 import { decodeResourceDrop, mergeSources } from "./source-management";
-import type { ResourcePayload, ResourceActionMode } from "./resource-drag";
+import type { ResourcePayload, ResourceActionMode } from "./resource-payload";
 import {
   DEFAULT_RECENT_SEARCHES_LIMIT,
   MAX_RECENT_SEARCHES_LIMIT,
-} from "../shared/query-history";
+} from "./query-history";
 
 export type WorkspaceAction =
   | { type: "tab/merge-sources"; tabId: string; targetTabId: string }

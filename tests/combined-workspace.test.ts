@@ -6,11 +6,11 @@ import {
   restoreWorkspace,
   workspaceReducer,
   projectWorkspaceDrop,
-} from "../src/renderer/workspace";
+} from "../src/shared/workspace";
 import {
   activeEntryId,
   workspaceEntries,
-} from "../src/renderer/workspace-entries";
+} from "../src/shared/workspace-entries";
 import type { Workspace } from "../src/shared/contracts";
 
 function views(count = 3) {

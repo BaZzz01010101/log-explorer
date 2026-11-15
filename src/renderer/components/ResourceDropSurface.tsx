@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState, type Dispatch } from "react";
 import { createPortal } from "react-dom";
 import type { Connection, LogTab, Workspace } from "../../shared/contracts";
-import { createResourceTabs, type WorkspaceAction } from "../workspace";
+import { createResourceTabs, type WorkspaceAction } from "../../shared/workspace";
 import { notifications } from "@mantine/notifications";
-import { activeEntryId, workspaceEntries } from "../workspace-entries";
+import { activeEntryId, workspaceEntries } from "../../shared/workspace-entries";
 import {
   RESOURCE_DRAG_MOVE,
   RESOURCE_DRAG_END,

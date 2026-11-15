@@ -3,12 +3,12 @@ import {
   mergeEvents,
   resolveTimeRange,
   requestMatchesTab,
-} from "../src/renderer/query-state";
+} from "../src/shared/query-state";
 import {
   createTab,
   createWorkspace,
   restoreWorkspace,
-} from "../src/renderer/workspace";
+} from "../src/shared/workspace";
 const event = (id: string, timestamp = 0) => ({
   id,
   timestamp,

@@ -4,7 +4,7 @@ import {
   createWorkspace,
   restoreWorkspace,
   workspaceReducer,
-} from "../src/renderer/workspace";
+} from "../src/shared/workspace";
 
 it("reuses the preview position while keeping permanent tabs and promotes a matching resource", () => {
   let state = createWorkspace();

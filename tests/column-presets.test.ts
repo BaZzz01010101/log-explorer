@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { createWorkspace, restoreWorkspace } from "../src/renderer/workspace";
+import { createWorkspace, restoreWorkspace } from "../src/shared/workspace";
 import { workspaceSchema } from "../src/main/security";
 
 it("preserves per-column formatting through workspace and preset restoration", () => {

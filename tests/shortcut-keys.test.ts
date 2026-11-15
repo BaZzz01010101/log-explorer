@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { shortcutKeys } from "../src/renderer/shortcuts";
+import { shortcutKeys } from "../src/shared/shortcuts";
 
 it("separates modifier and normal key badges", () => {
   expect(shortcutKeys("Control+Shift+T")).toEqual(["Ctrl", "Shift", "T"]);

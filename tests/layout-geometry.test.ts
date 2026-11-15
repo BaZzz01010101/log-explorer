@@ -6,7 +6,7 @@ import {
   projectWorkspaceDrop,
   restoreWorkspace,
   workspaceReducer,
-} from "../src/renderer/workspace";
+} from "../src/shared/workspace";
 import type { PaneLayout, Workspace } from "../src/shared/contracts";
 
 const bounds = { left: 100, top: 50, width: 1206, height: 600 };

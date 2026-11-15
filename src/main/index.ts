@@ -34,7 +34,7 @@ import { setAwsAccess } from "./aws-access-toggle";
 import { WorkspaceStore } from "./persistence";
 import { createCloseCoordinator } from "./close-coordinator";
 import { parseWorkspaceInput } from "./workspace-input";
-import { setFixturesAvailable } from "../renderer/workspace";
+import { setFixturesAvailable } from "../shared/workspace";
 import {
   loadWindowState,
   restoreWindowBounds,
@@ -81,7 +81,13 @@ let closeToken = "";
 let acknowledgeClose: ((success: boolean) => void) | null = null;
 const primaryInstance = app.requestSingleInstanceLock();
 if (!primaryInstance) app.quit();
-const store = new WorkspaceStore(app.getPath("userData"), parseWorkspaceInput);
+// Loads run the full repair path; saves are already checked against the strict
+// schema by the IPC handler, so the store does not validate them again.
+const store = new WorkspaceStore(
+  app.getPath("userData"),
+  parseWorkspaceInput,
+  (value) => value,
+);
 let startupWorkspace: WorkspaceLoad | undefined;
 let windowTheme: Workspace["preferences"]["theme"] = "dark";
 const service = createLogService(

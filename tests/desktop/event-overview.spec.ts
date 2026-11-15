@@ -8,7 +8,7 @@ import {
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { join, resolve, sep } from "node:path";
 import { desktopExecutablePath } from "./desktop-app";
-import { createWorkspace } from "../../src/renderer/workspace";
+import { createWorkspace } from "../../src/shared/workspace";
 import type { Workspace } from "../../src/shared/contracts";
 
 test.setTimeout(120000);

@@ -4,8 +4,8 @@ import {
   parseRelativePreset,
   resolveTimeRange,
   type RelativeUnit,
-} from "./query-state";
-export { parseRelativePreset, type RelativeUnit } from "./query-state";
+} from "../shared/query-state";
+export { parseRelativePreset, type RelativeUnit } from "../shared/query-state";
 
 export const RELATIVE_RANGES = [
   ["5m", "Last 5 minutes"],

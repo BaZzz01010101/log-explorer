@@ -16,7 +16,7 @@ import {
   mergeEvents,
   requestMatchesTab,
   resolveTimeRange,
-} from "./query-state";
+} from "../shared/query-state";
 
 export interface TabRuntime {
   events: LogEvent[];

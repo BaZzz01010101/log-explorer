@@ -6,7 +6,7 @@ import type {
   Workspace,
 } from "../shared/contracts";
 import type { TabRuntime } from "./useLogJobs";
-import { logTabLabel } from "./workspace-entries";
+import { logTabLabel } from "../shared/workspace-entries";
 import { ownValue } from "../shared/records";
 
 export interface SettingsPreviewSnapshot {

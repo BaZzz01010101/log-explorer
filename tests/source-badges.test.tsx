@@ -2,7 +2,7 @@ import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, expect, it, vi } from "vitest";
 import { SourceBadges } from "../src/renderer/components/SourceBadges";
 import { SOURCE_DROP_EVENT } from "../src/renderer/components/ResourceDragLabel";
-import { createWorkspace } from "../src/renderer/workspace";
+import { createWorkspace } from "../src/shared/workspace";
 import {
   RESOURCE_DRAG_START,
   RESOURCE_DRAG_END,

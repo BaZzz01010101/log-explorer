@@ -4,7 +4,7 @@ import {
   createWorkspace,
   workspaceReducer,
   restoreWorkspace,
-} from "../src/renderer/workspace";
+} from "../src/shared/workspace";
 
 it("keeps inspector and log wrapping independent across validation and restart", () => {
   const initial = createWorkspace();

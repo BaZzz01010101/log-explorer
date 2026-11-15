@@ -3,7 +3,7 @@ import {
   viewFavoriteSchema,
   legacyFavoriteSchema,
 } from "./security";
-import { restoreWorkspace } from "../renderer/workspace";
+import { restoreWorkspace } from "../shared/workspace";
 import { z } from "zod";
 
 // View data remains strict. Layout/membership references are repaired by the

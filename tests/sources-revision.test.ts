@@ -1,12 +1,12 @@
 import { expect, it } from "vitest";
-import { mergeSources } from "../src/renderer/source-management";
+import { mergeSources } from "../src/shared/source-management";
 import {
   createWorkspace,
   workspaceReducer,
   restoreWorkspace,
-} from "../src/renderer/workspace";
+} from "../src/shared/workspace";
 import { createLogService } from "../src/main/log-service";
-import { requestMatchesTab } from "../src/renderer/query-state";
+import { requestMatchesTab } from "../src/shared/query-state";
 import type { QueryRequest, QueryUpdate } from "../src/shared/contracts";
 
 it("keeps identical group names and stream selections isolated by connection", () => {

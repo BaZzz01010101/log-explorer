@@ -10,7 +10,7 @@ import { join, resolve, sep } from "node:path";
 import {
   createWorkspace,
   restoreWorkspace,
-} from "../../src/renderer/workspace";
+} from "../../src/shared/workspace";
 import { desktopExecutablePath } from "./desktop-app";
 
 // Every process, fixture and result stays within the checkout. Background mode

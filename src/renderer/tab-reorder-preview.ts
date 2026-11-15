@@ -1,8 +1,8 @@
 import type { Workspace } from "../shared/contracts";
 import type { LayoutRect } from "../shared/layout-geometry";
 import type { TabInsertion } from "./tab-insertion";
-import { workspaceReducer } from "./workspace";
-import { workspaceEntries } from "./workspace-entries";
+import { workspaceReducer } from "../shared/workspace";
+import { workspaceEntries } from "../shared/workspace-entries";
 
 interface TabSize {
   id: string;

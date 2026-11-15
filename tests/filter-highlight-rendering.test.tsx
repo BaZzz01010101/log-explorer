@@ -7,7 +7,7 @@ import {
   JsonTree,
 } from "../src/renderer/components/EventMessage";
 import { EventHighlightContext } from "../src/renderer/useEventHighlights";
-import { createWorkspace, restoreWorkspace } from "../src/renderer/workspace";
+import { createWorkspace, restoreWorkspace } from "../src/shared/workspace";
 import type { EventHighlights } from "../src/renderer/highlight-engine";
 
 let renderer: ReactTestRenderer | undefined;

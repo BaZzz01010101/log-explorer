@@ -5,7 +5,7 @@ import {
   createWorkspace,
   projectResourceDrop,
   workspaceReducer,
-} from "../src/renderer/workspace";
+} from "../src/shared/workspace";
 
 afterEach(() => vi.unstubAllGlobals());
 

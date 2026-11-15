@@ -4,7 +4,7 @@ import {
   createWorkspace,
   restoreWorkspace,
   workspaceReducer,
-} from "../src/renderer/workspace";
+} from "../src/shared/workspace";
 import type { SavedQuery } from "../src/shared/contracts";
 
 const query = (index: number): SavedQuery => ({

@@ -3,7 +3,7 @@ import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { QueryPane } from "../src/renderer/components/QueryPane";
 import { ServerFilterInput } from "../src/renderer/components/ServerFilterInput";
-import { createWorkspace } from "../src/renderer/workspace";
+import { createWorkspace } from "../src/shared/workspace";
 import type { SavedQuery } from "../src/shared/contracts";
 
 vi.mock("../src/renderer/components/LogViewer", () => ({

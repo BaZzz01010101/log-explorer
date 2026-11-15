@@ -34,7 +34,7 @@ import type {
   Preferences,
 } from "../../shared/contracts";
 import { explorerProfiles } from "../explorer-configuration";
-import { shortcutMatches } from "../shortcuts";
+import { shortcutMatches } from "../../shared/shortcuts";
 import {
   buildExplorerRows,
   navigateExplorer,

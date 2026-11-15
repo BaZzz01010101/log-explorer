@@ -2,7 +2,7 @@ import { MantineProvider } from "@mantine/core";
 import { renderToStaticMarkup } from "react-dom/server";
 import { expect, it } from "vitest";
 import { LogViewer } from "../src/renderer/components/LogViewer";
-import { createWorkspace } from "../src/renderer/workspace";
+import { createWorkspace } from "../src/shared/workspace";
 
 function markup(wrap = true) {
   const workspace = createWorkspace();

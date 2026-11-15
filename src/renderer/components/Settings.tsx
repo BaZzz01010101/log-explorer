@@ -14,7 +14,7 @@ import {
 } from "@tabler/icons-react";
 import { notifications } from "@mantine/notifications";
 import type { EnvironmentInfo, Workspace } from "../../shared/contracts";
-import type { WorkspaceAction } from "../workspace";
+import type { WorkspaceAction } from "../../shared/workspace";
 import { PreferencesEditor } from "./PreferencesEditor";
 import { ShortcutsEditor } from "./ShortcutsEditor";
 import { SettingLabel } from "./SettingLabel";

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { matchesLocalFilter, parseLogMessage } from "../src/shared/log-data";
-import { createWorkspace, restoreWorkspace } from "../src/renderer/workspace";
+import { createWorkspace, restoreWorkspace } from "../src/shared/workspace";
 import { workspaceSchema } from "../src/main/security";
 import type { LogEvent } from "../src/shared/contracts";
 

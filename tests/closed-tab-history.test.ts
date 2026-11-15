@@ -3,13 +3,13 @@ import {
   closedTabHistory,
   closedTabTooltip,
   recentClosedTabs,
-} from "../src/renderer/closed-tab-history";
+} from "../src/shared/closed-tab-history";
 import {
   createTab,
   createWorkspace,
   workspaceReducer,
   restoreWorkspace,
-} from "../src/renderer/workspace";
+} from "../src/shared/workspace";
 
 it("lists each source using its individual automatic tab name without connection details", () => {
   const workspace = createWorkspace();

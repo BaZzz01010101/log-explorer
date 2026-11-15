@@ -2,7 +2,7 @@ import { createElement, type ReactNode } from "react";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { Settings } from "../src/renderer/components/Settings";
-import { createWorkspace } from "../src/renderer/workspace";
+import { createWorkspace } from "../src/shared/workspace";
 vi.mock("../src/renderer/components/AppMenu", () => ({
   MENU_OPEN_EVENT: "explorer:menu-open",
 }));

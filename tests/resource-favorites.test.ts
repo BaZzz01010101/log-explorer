@@ -5,7 +5,7 @@ import {
   projectFavoriteOpen,
   projectResourceFavorite,
   workspaceReducer,
-} from "../src/renderer/workspace";
+} from "../src/shared/workspace";
 
 it("saves dragged log groups and streams as one favorite view without opening it", () => {
   const state = createWorkspace();

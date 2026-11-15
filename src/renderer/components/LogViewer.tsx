@@ -123,7 +123,7 @@ import { ExpandedEventDetails } from "./ExpandedEventDetails";
 import { ResizableFilterField } from "./ResizableFilterField";
 import { FilterMatchButtons } from "./FilterMatchButtons";
 import { useLocalFilter } from "../useLocalFilter";
-import { shortcutMatches } from "../shortcuts";
+import { shortcutMatches } from "../../shared/shortcuts";
 import { clearEditControl } from "../scoped-edit-history";
 import { regexError } from "../../shared/highlights";
 import { EventOverview } from "./EventOverview";

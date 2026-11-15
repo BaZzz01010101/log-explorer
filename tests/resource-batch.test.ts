@@ -6,8 +6,8 @@ import {
   createResourceTabs,
   restoreWorkspace,
   workspaceReducer,
-} from "../src/renderer/workspace";
-import { workspaceEntries } from "../src/renderer/workspace-entries";
+} from "../src/shared/workspace";
+import { workspaceEntries } from "../src/shared/workspace-entries";
 import { workspaceSchema } from "../src/main/security";
 import { paneLayoutRect } from "../src/shared/layout-geometry";
 import {

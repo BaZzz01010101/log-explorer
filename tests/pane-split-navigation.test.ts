@@ -4,8 +4,8 @@ import {
   createWorkspace,
   restoreWorkspace,
   workspaceReducer,
-} from "../src/renderer/workspace";
-import { workspaceEntries } from "../src/renderer/workspace-entries";
+} from "../src/shared/workspace";
+import { workspaceEntries } from "../src/shared/workspace-entries";
 import { workspaceSchema } from "../src/main/security";
 
 it("duplicates the current pane with independent sources and view settings and leaves neighboring tabs untouched", () => {

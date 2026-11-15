@@ -2,7 +2,7 @@ import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { ResourceSidebar } from "../src/renderer/components/ResourceSidebar";
-import { createWorkspace } from "../src/renderer/workspace";
+import { createWorkspace } from "../src/shared/workspace";
 
 vi.mock("@mantine/core", async () => {
   const { createElement } = await import("react");

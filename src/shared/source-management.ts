@@ -1,4 +1,4 @@
-import type { LogSource } from "../shared/contracts";
+import type { LogSource } from "./contracts";
 import { z } from "zod";
 
 export const RESOURCE_MIME = "application/x-aws-log-explorer-resource";

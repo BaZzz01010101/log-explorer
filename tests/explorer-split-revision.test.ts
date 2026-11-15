@@ -4,11 +4,11 @@ import {
   createWorkspace,
   projectResourceDrop,
   workspaceReducer,
-} from "../src/renderer/workspace";
+} from "../src/shared/workspace";
 import {
   workspaceEntries,
   logTabLabel,
-} from "../src/renderer/workspace-entries";
+} from "../src/shared/workspace-entries";
 import { workspaceSchema } from "../src/main/security";
 
 it("counts individual streams in generated mixed labels and totals all split panes", () => {

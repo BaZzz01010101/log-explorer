@@ -7,7 +7,7 @@ import {
   createWorkspace,
   restoreWorkspace,
   workspaceReducer,
-} from "../src/renderer/workspace";
+} from "../src/shared/workspace";
 import { workspaceSchema } from "../src/main/security";
 
 describe("GCP explorer", () => {

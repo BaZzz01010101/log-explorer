@@ -6,7 +6,7 @@ import {
   createTab,
   createWorkspace,
   workspaceReducer,
-} from "../src/renderer/workspace";
+} from "../src/shared/workspace";
 import { parseWorkspaceInput } from "../src/main/workspace-input";
 import { workspaceSchema } from "../src/main/security";
 import { WorkspaceStore } from "../src/main/persistence";

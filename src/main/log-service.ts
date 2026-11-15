@@ -15,6 +15,7 @@ import {
 import { createMultiSourceEvents, scopedQueries } from "./multi-source-events";
 import { createOfflineAdapter } from "./offline-adapter";
 import { scopedEventId } from "../shared/event-id";
+import { querySchema } from "./security";
 
 // Release builds define this as false, so the fixture adapter is dropped from the bundle.
 const fixturesBuild =
@@ -75,23 +76,13 @@ function validateQuery(request: QueryRequest, live: boolean): void {
   // Defense in depth for persisted legacy Insights requests.
   if ((request.kind as string) !== "events")
     throw new Error("Only Events queries are supported");
-  if (!request.requestId || request.requestId.length > 200)
-    throw new Error("A bounded request ID is required");
-  if (
-    !Number.isFinite(request.startTime) ||
-    !Number.isFinite(request.endTime) ||
-    request.startTime < 0 ||
-    request.endTime <= request.startTime
-  )
-    throw new Error("Choose a valid start and end time");
-  if (
-    !Number.isInteger(request.limit) ||
-    request.limit < 1 ||
-    request.limit > 10000
-  )
-    throw new Error("Result limits must be between 1 and 10000 events");
-  if (!request.sources.length || request.sources.length > 50)
-    throw new Error("Select between 1 and 50 log groups");
+  // Field bounds come from the IPC schema, the single source of truth; the
+  // checks below are the cross-field rules the schema cannot express.
+  const parsed = querySchema.safeParse(request);
+  if (!parsed.success)
+    throw new Error(
+      parsed.error.issues[0]?.message ?? "The query request is invalid",
+    );
   if (
     new Set(
       request.sources.map((source) =>
@@ -104,16 +95,6 @@ function validateQuery(request: QueryRequest, live: boolean): void {
     ).size !== request.sources.length
   )
     throw new Error("Each log group can appear only once in a query");
-  if (
-    request.sources.some(
-      (source) =>
-        !source.logGroup ||
-        (source.logStreams && source.logStreams.length > 100),
-    )
-  )
-    throw new Error(
-      "Choose a valid log group and at most 100 streams per group",
-    );
   const scoped = scopedQueries(request);
   if (scoped.some((query) => query.sources.some((source) => (query.connection.mode === "gcp") !== !!source.gcp)))
     throw new Error("A source does not match its cloud connection.");
@@ -310,7 +291,9 @@ export function createLogService(
         for (const query of scopedQueries(input)) gate(query.connection);
         update({ requestId: input.requestId, state: "running" });
         const queries = scopedQueries(input);
-        if (queries.length > 1 || (!live && input.sources.length > 1 && (input.direction === "older" || queries.some((query) => query.connection.mode === "gcp")))) {
+        // Every multi-source history query uses the k-way merge, so pages from
+        // different groups interleave chronologically instead of per batch.
+        if (queries.length > 1 || (!live && input.sources.length > 1)) {
           update(await multiSourceEvents.events(input, job.controller.signal, update));
         } else {
           const query = queries[0];

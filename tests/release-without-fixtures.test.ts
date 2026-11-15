@@ -3,7 +3,7 @@ import {
   createWorkspace,
   restoreWorkspace,
   setFixturesAvailable,
-} from "../src/renderer/workspace";
+} from "../src/shared/workspace";
 import { workspaceSchema } from "../src/main/security";
 import { createLogService } from "../src/main/log-service";
 

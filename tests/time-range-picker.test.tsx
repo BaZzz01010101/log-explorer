@@ -2,7 +2,7 @@ import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { useState, type ReactNode } from "react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { TimeRangePicker } from "../src/renderer/components/TimeRangePicker";
-import { createWorkspace } from "../src/renderer/workspace";
+import { createWorkspace } from "../src/shared/workspace";
 import type { Preferences } from "../src/shared/contracts";
 
 vi.mock("@mantine/core", async () => {

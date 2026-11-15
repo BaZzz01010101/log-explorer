@@ -4,7 +4,7 @@ import {
   compileAwsViewFilter,
 } from "../src/shared/server-filter";
 import { compileGcpViewFilter } from "../src/shared/gcp-server-filter";
-import { createWorkspace, restoreWorkspace, workspaceReducer } from "../src/renderer/workspace";
+import { createWorkspace, restoreWorkspace, workspaceReducer } from "../src/shared/workspace";
 import { workspaceSchema } from "../src/main/security";
 
 it("detects both provider pattern syntaxes and text", () => {

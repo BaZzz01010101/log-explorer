@@ -9,7 +9,7 @@ import {
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { join, resolve, sep } from "node:path";
 import { desktopExecutablePath } from "./desktop-app";
-import { createWorkspace } from "../../src/renderer/workspace";
+import { createWorkspace } from "../../src/shared/workspace";
 
 const root = resolve(".tmp", "explorer-resource-drag");
 

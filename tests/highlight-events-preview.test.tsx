@@ -4,7 +4,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { HighlightEventsPreview } from "../src/renderer/components/HighlightEventsPreview";
 import { LogViewer } from "../src/renderer/components/LogViewer";
 import type { SettingsPreviewSnapshot } from "../src/renderer/settings-preview";
-import { createWorkspace } from "../src/renderer/workspace";
+import { createWorkspace } from "../src/shared/workspace";
 import type { HighlightProfile } from "../src/shared/highlights";
 import { useEventSelection } from "../src/renderer/useEventSelection";
 import { useMessageExpansion } from "../src/renderer/useMessageExpansion";

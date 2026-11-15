@@ -3,7 +3,7 @@ import {
   createWorkspace,
   restoreWorkspace,
   workspaceReducer,
-} from "../src/renderer/workspace";
+} from "../src/shared/workspace";
 import { workspaceSchema } from "../src/main/security";
 it("persists quick highlighting per view without changing query or local search", () => {
   const initial = createWorkspace();

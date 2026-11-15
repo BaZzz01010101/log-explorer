@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { createWorkspace, restoreWorkspace } from "../src/renderer/workspace";
+import { createWorkspace, restoreWorkspace } from "../src/shared/workspace";
 import { workspaceSchema } from "../src/main/security";
 import {
   explorerProfiles,

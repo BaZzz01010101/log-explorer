@@ -9,7 +9,7 @@ import {
 import { execFileSync } from "node:child_process";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join, resolve, sep } from "node:path";
-import { createWorkspace } from "../../src/renderer/workspace";
+import { createWorkspace } from "../../src/shared/workspace";
 import { desktopExecutablePath } from "./desktop-app";
 import { openSettingsWindow } from "./settings-panel";
 

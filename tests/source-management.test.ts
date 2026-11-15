@@ -3,7 +3,7 @@ import {
   decodeResourceDrop,
   mergeSources,
   RESOURCE_MIME,
-} from "../src/renderer/source-management";
+} from "../src/shared/source-management";
 
 it("merges stream selections and suppresses duplicate source drops", () => {
   expect(

@@ -1,5 +1,5 @@
-import type { LogTab } from "../shared/contracts";
-import { sourceCount, tabTitle } from "../shared/source-labels";
+import type { LogTab } from "./contracts";
+import { sourceCount, tabTitle } from "./source-labels";
 import { logTabLabel } from "./workspace-entries";
 
 export function closedTabTooltip(tab: LogTab): string {

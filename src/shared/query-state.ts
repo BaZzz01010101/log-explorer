@@ -1,13 +1,13 @@
-import { sourceIdentity } from "../shared/source-identity";
-import { compareLogTime } from "../shared/log-order";
-import { compileAwsViewFilter } from "../shared/server-filter";
-import { compileGcpViewFilter } from "../shared/gcp-server-filter";
+import { sourceIdentity } from "./source-identity";
+import { compareLogTime } from "./log-order";
+import { compileAwsViewFilter } from "./server-filter";
+import { compileGcpViewFilter } from "./gcp-server-filter";
 import type {
   LogEvent,
   LogTab,
   QueryRequest,
   Connection,
-} from "../shared/contracts";
+} from "./contracts";
 
 export function mergeEvents(
   previous: LogEvent[],

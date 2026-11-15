@@ -72,13 +72,13 @@ import {
   projectResourceDrop,
   projectFavoriteSave,
   type WorkspaceAction,
-} from "../workspace";
+} from "../../shared/workspace";
 import {
   activeEntryId,
   logTabLabel,
   workspaceEntries,
   type WorkspaceEntry,
-} from "../workspace-entries";
+} from "../../shared/workspace-entries";
 import { selectWorkspaceEntry } from "../tab-selection";
 import { atPinnedRowEdge, tabInsertionAt } from "../tab-insertion";
 import {
@@ -92,7 +92,7 @@ import {
   closedTabHistory,
   closedTabTooltip,
   recentClosedTabs,
-} from "../closed-tab-history";
+} from "../../shared/closed-tab-history";
 import {
   tabReorderPreview,
   tabSlotRect,

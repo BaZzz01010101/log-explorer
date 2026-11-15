@@ -5,12 +5,12 @@ import {
   SHORTCUT_SCOPE_LABELS,
   findShortcutConflicts,
   validateShortcut,
-} from "../shortcut-definitions";
+} from "../../shared/shortcut-definitions";
 import {
   normalizeShortcut,
   shortcutFromKeyboardEvent,
   shortcutKeys,
-} from "../shortcuts";
+} from "../../shared/shortcuts";
 import "./shortcuts-editor.css";
 
 function KeyBadges({ shortcut }: { shortcut: string }) {

@@ -11,7 +11,7 @@ import {
   createWorkspace,
   restoreWorkspace,
   workspaceReducer,
-} from "../src/renderer/workspace";
+} from "../src/shared/workspace";
 
 vi.mock("@mantine/core", () => {
   const component = ({ children, ...props }: Record<string, unknown>) =>

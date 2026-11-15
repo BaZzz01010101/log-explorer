@@ -2,7 +2,7 @@ import { expect, it, vi } from "vitest";
 import type { LogEvent } from "../src/shared/contracts";
 import { matchesLocalFilter, parseLogMessage } from "../src/shared/log-data";
 import { evaluateFilterEvidence } from "../src/shared/filter-evidence";
-import { createWorkspace, restoreWorkspace } from "../src/renderer/workspace";
+import { createWorkspace, restoreWorkspace } from "../src/shared/workspace";
 import { workspaceSchema } from "../src/main/security";
 
 const event: LogEvent = {

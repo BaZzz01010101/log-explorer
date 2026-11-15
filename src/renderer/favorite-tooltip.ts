@@ -1,5 +1,5 @@
 import type { ViewFavorite } from "../shared/contracts";
-import { closedTabTooltip } from "./closed-tab-history";
+import { closedTabTooltip } from "../shared/closed-tab-history";
 
 export function favoriteTooltip(favorite: ViewFavorite): string {
   if (!favorite.split && favorite.tabs.length === 1) {

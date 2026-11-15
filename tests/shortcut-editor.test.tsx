@@ -5,12 +5,12 @@ import {
   DEFAULT_SHORTCUTS,
   findShortcutConflicts,
   validateShortcut,
-} from "../src/renderer/shortcut-definitions";
+} from "../src/shared/shortcut-definitions";
 import {
   normalizeShortcut,
   shortcutFromKeyboardEvent,
   shortcutMatches,
-} from "../src/renderer/shortcuts";
+} from "../src/shared/shortcuts";
 
 const key = (value: string, patch: Record<string, unknown> = {}) => ({
   key: value,

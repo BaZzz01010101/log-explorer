@@ -2,7 +2,7 @@ import { _electron as electron, expect, test } from "@playwright/test";
 import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { desktopExecutablePath } from "./desktop-app";
-import { createWorkspace } from "../../src/renderer/workspace";
+import { createWorkspace } from "../../src/shared/workspace";
 
 for (const theme of ["light", "dark"] as const)
   test(`${theme}: browses GCP source pages without disturbing AWS explorer`, async () => {

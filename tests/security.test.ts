@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createWorkspace } from "../src/renderer/workspace";
+import { createWorkspace } from "../src/shared/workspace";
 import {
   connectionSchema,
   querySchema,

@@ -1,17 +1,11 @@
-import type { Connection, LogSource } from "../shared/contracts";
+import type { ResourcePayload } from "../shared/resource-payload";
+// Payload types live in shared code because workspace parsing uses them.
+export type {
+  ResourceOrigin,
+  ResourcePayload,
+  ResourceActionMode,
+} from "../shared/resource-payload";
 
-export type ResourceOrigin = {
-  tabId: string;
-  sourceIndex: number;
-  stream?: string;
-};
-export type ResourcePayload = {
-  connectionId: string;
-  sources: LogSource[];
-  origin?: ResourceOrigin;
-  /** A connection that drops register first when the workspace lacks it (Google Cloud sources). */
-  connection?: Connection;
-};
 export const SOURCE_MOVE_DROP = "explorer:source-move-drop";
 /** Asks the workspace to register `detail` (a Connection) before a source drop applies. */
 export const RESOURCE_CONNECTION = "explorer:resource-connection";
@@ -19,8 +13,6 @@ export const RESOURCE_CONNECTION = "explorer:resource-connection";
 export const RESOURCE_DROP_TARGETS = ".source-badges, [data-view-favorites]";
 export const TAB_SOURCE_DRAG_START = "explorer:tab-source-drag-start";
 export const TAB_SOURCE_DRAG_END = "explorer:tab-source-drag-end";
-export type ResourceActionMode =
-  "new-multisource" | "new-split" | "add-sources" | "add-splits";
 export type ResourcePoint = { x: number; y: number };
 export type ResourceDragMove = {
   payload: ResourcePayload;

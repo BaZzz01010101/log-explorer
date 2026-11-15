@@ -2,7 +2,7 @@ import { createElement, useState, type ReactNode } from "react";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { HighlightTreeEditor } from "../src/renderer/components/HighlightTreeEditor";
-import { createWorkspace } from "../src/renderer/workspace";
+import { createWorkspace } from "../src/shared/workspace";
 import type { HighlightProfile } from "../src/shared/highlights";
 
 vi.mock("@mantine/core", () => {

@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { ResourceSidebar } from "../src/renderer/components/ResourceSidebar";
 import { Menu } from "../src/renderer/components/AppMenu";
-import { createWorkspace, restoreWorkspace } from "../src/renderer/workspace";
+import { createWorkspace, restoreWorkspace } from "../src/shared/workspace";
 
 // Keep the actual component state and handlers. Presentation and layout need no
 // browser for this regression: focus() must synchronously dispatch focus before

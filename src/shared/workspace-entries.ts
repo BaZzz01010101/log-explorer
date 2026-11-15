@@ -1,6 +1,6 @@
-import type { LogTab, Workspace } from "../shared/contracts";
+import type { LogTab, Workspace } from "./contracts";
 
-import { sourceCount } from "../shared/source-labels";
+import { sourceCount } from "./source-labels";
 
 export const logTabLabel = (tab: LogTab) =>
   tab.customTitle ??

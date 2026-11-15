@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { IconX } from "@tabler/icons-react";
 import type { Connection, LogSource } from "../../shared/contracts";
 import { removeSource, sourceBadges } from "../../shared/source-labels";
-import { decodeResourceDrop, mergeSources } from "../source-management";
+import { decodeResourceDrop, mergeSources } from "../../shared/source-management";
 import {
   RESOURCE_DRAG_START,
   RESOURCE_DRAG_END,

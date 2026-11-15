@@ -2,7 +2,7 @@ import { expect, it, vi } from "vitest";
 import { createLogService } from "../src/main/log-service";
 import { createOfflineAdapter } from "../src/main/offline-adapter";
 import { querySchema, workspaceSchema } from "../src/main/security";
-import { createWorkspace } from "../src/renderer/workspace";
+import { createWorkspace } from "../src/shared/workspace";
 import type { QueryRequest } from "../src/shared/contracts";
 
 function legacyRequest(mode: "offline" | "aws"): QueryRequest {

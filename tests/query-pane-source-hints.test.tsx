@@ -2,7 +2,7 @@ import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, expect, it, vi } from "vitest";
 import { QueryPane } from "../src/renderer/components/QueryPane";
 import { LogViewer } from "../src/renderer/components/LogViewer";
-import { createWorkspace } from "../src/renderer/workspace";
+import { createWorkspace } from "../src/shared/workspace";
 
 vi.mock("../src/renderer/components/LogViewer", () => ({
   LogViewer: () => null,

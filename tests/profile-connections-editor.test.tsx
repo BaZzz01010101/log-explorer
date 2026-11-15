@@ -2,7 +2,7 @@ import { createElement, useState, type ReactNode } from "react";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { ProfileConnectionsEditor } from "../src/renderer/components/ProfileConnectionsEditor";
-import { createWorkspace } from "../src/renderer/workspace";
+import { createWorkspace } from "../src/shared/workspace";
 import type { Connection } from "../src/shared/contracts";
 import { AWS_REGIONS } from "../src/shared/aws-regions";
 import { MENU_OPEN_EVENT } from "../src/renderer/components/AppMenu";

@@ -28,16 +28,16 @@ import type {
 import type { TabRuntime } from "../useLogJobs";
 import type { ContextRange } from "../../shared/context-range";
 import { LogViewer } from "./LogViewer";
-import { requestMatchesTab } from "../query-state";
+import { requestMatchesTab } from "../../shared/query-state";
 import { TimeRangePicker } from "./TimeRangePicker";
 import { EventStatus } from "./EventStatus";
-import { logTabLabel } from "../workspace-entries";
+import { logTabLabel } from "../../shared/workspace-entries";
 import { contextEventIndex } from "../context-event";
 import { SourceBadges } from "./SourceBadges";
 import { ServerFilterInput } from "./ServerFilterInput";
 import { DEFAULT_RECENT_SEARCHES_LIMIT } from "../../shared/query-history";
 import { InlineDeleteConfirmation } from "./InlineDeleteConfirmation";
-import { shortcutMatches } from "../shortcuts";
+import { shortcutMatches } from "../../shared/shortcuts";
 import "./sources.css";
 
 interface Props {

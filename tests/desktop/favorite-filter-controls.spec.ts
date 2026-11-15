@@ -11,7 +11,7 @@ import { join, resolve, sep } from "node:path";
 import {
   createWorkspace,
   restoreWorkspace,
-} from "../../src/renderer/workspace";
+} from "../../src/shared/workspace";
 import { desktopExecutablePath } from "./desktop-app";
 import { openSettingsWindow, setShortcutBinding } from "./settings-panel";
 

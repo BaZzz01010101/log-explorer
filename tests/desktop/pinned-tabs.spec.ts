@@ -14,7 +14,7 @@ import {
   createTab,
   workspaceReducer,
   restoreWorkspace,
-} from "../../src/renderer/workspace";
+} from "../../src/shared/workspace";
 import { desktopExecutablePath } from "./desktop-app";
 
 // Every process, fixture and result stays within the checkout. Background mode

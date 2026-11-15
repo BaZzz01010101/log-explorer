@@ -27,7 +27,7 @@ import { collectGcpPages } from "../gcp-pagination";
 import { discoverGcpSources } from "../gcp-source-scan";
 import { matchGroupNames } from "../group-regex";
 import { gcpErrorMessage, isGcpAuthorizationError } from "../gcp-errors";
-import { shortcutMatches } from "../shortcuts";
+import { shortcutMatches } from "../../shared/shortcuts";
 import { Tooltip } from "./AppTooltip";
 import { Menu } from "./AppMenu";
 import { ViewFavorites } from "./ViewFavorites";

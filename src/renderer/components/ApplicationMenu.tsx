@@ -11,9 +11,9 @@ import {
 import type { Dispatch } from "react";
 import type { Workspace } from "../../shared/contracts";
 import type { WindowAction } from "../../shared/window-chrome";
-import { createTab, type WorkspaceAction } from "../workspace";
+import { createTab, type WorkspaceAction } from "../../shared/workspace";
 import { Menu } from "./AppMenu";
-import { shortcutKeys } from "../shortcuts";
+import { shortcutKeys } from "../../shared/shortcuts";
 import appIcon from "../../../build/icon.svg";
 
 export function ApplicationMenu({

@@ -6,10 +6,10 @@ import {
   workspaceReducer,
   projectFavoriteSave,
   projectFavoriteOpen,
-} from "../src/renderer/workspace";
+} from "../src/shared/workspace";
 import { workspaceSchema } from "../src/main/security";
 import { parseWorkspaceInput } from "../src/main/workspace-input";
-import { workspaceEntries } from "../src/renderer/workspace-entries";
+import { workspaceEntries } from "../src/shared/workspace-entries";
 
 it("saves an entire combined view and reopens an independent copy after restart", () => {
   let state = createWorkspace();

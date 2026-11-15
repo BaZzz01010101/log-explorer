@@ -12,7 +12,7 @@ import { desktopExecutablePath } from "./desktop-app";
 import {
   createWorkspace,
   restoreWorkspace,
-} from "../../src/renderer/workspace";
+} from "../../src/shared/workspace";
 import type { Workspace } from "../../src/shared/contracts";
 
 test.setTimeout(120000);

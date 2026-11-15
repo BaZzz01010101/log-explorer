@@ -1,7 +1,7 @@
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { useEventHighlights } from "../src/renderer/useEventHighlights";
-import { createWorkspace } from "../src/renderer/workspace";
+import { createWorkspace } from "../src/shared/workspace";
 import type { HighlightProfile } from "../src/shared/highlights";
 
 const workers: FakeWorker[] = [];

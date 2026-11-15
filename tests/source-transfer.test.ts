@@ -3,7 +3,7 @@ import {
   createWorkspace,
   projectResourceAction,
   workspaceReducer,
-} from "../src/renderer/workspace";
+} from "../src/shared/workspace";
 
 it("moves a stream into another tab and removes it from the origin", () => {
   let state = createWorkspace();

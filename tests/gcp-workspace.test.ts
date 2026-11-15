@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createTab, createWorkspace, restoreWorkspace, workspaceReducer } from "../src/renderer/workspace";
+import { createTab, createWorkspace, restoreWorkspace, workspaceReducer } from "../src/shared/workspace";
 import { workspaceSchema } from "../src/main/security";
 import { scopedQueries } from "../src/main/multi-source-events";
 

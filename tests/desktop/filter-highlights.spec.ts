@@ -13,7 +13,7 @@ import type {
   QueryRequest,
   QueryUpdate,
 } from "../../src/shared/contracts";
-import { createWorkspace } from "../../src/renderer/workspace";
+import { createWorkspace } from "../../src/shared/workspace";
 import { desktopExecutablePath } from "./desktop-app";
 
 test.setTimeout(45000);

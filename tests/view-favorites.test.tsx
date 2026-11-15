@@ -8,7 +8,7 @@ import {
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { ViewFavorites } from "../src/renderer/components/ViewFavorites";
 import { Menu } from "../src/renderer/components/AppMenu";
-import { createWorkspace } from "../src/renderer/workspace";
+import { createWorkspace } from "../src/shared/workspace";
 
 vi.mock("@mantine/core", () => {
   const component =

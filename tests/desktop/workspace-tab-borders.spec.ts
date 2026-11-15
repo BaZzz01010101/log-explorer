@@ -11,7 +11,7 @@ import {
   createTab,
   createWorkspace,
   workspaceReducer,
-} from "../../src/renderer/workspace";
+} from "../../src/shared/workspace";
 import { desktopExecutablePath } from "./desktop-app";
 
 const root = resolve(".tmp/desktop-workspace-tab-borders");

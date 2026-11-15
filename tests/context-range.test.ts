@@ -4,7 +4,7 @@ import {
   contextTimeRange,
   type ContextDirection,
 } from "../src/shared/context-range";
-import { resolveTimeRange } from "../src/renderer/query-state";
+import { resolveTimeRange } from "../src/shared/query-state";
 
 const timestamp = Date.parse("2026-10-22T12:34:56.789Z");
 

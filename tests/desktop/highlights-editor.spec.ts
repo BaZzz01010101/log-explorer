@@ -1,5 +1,5 @@
 import { openSettingsWindow } from "./settings-panel";
-import { createWorkspace } from "../../src/renderer/workspace";
+import { createWorkspace } from "../../src/shared/workspace";
 import { desktopExecutablePath } from "./desktop-app";
 import {
   _electron as electron,

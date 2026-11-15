@@ -3,9 +3,9 @@ import {
   createWorkspace,
   workspaceReducer,
   restoreWorkspace,
-} from "../src/renderer/workspace";
+} from "../src/shared/workspace";
 import { workspaceSchema } from "../src/main/security";
-import { workspaceEntries } from "../src/renderer/workspace-entries";
+import { workspaceEntries } from "../src/shared/workspace-entries";
 
 it("names normal and split views after their favorite alias when reopened", () => {
   for (const split of [false, true]) {

@@ -12,7 +12,7 @@ import {
   createTab,
   createWorkspace,
   workspaceReducer,
-} from "../../src/renderer/workspace";
+} from "../../src/shared/workspace";
 import { desktopExecutablePath } from "./desktop-app";
 
 test.setTimeout(150000);

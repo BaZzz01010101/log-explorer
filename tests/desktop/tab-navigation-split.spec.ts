@@ -14,7 +14,7 @@ import {
   createWorkspace,
   restoreWorkspace,
   workspaceReducer,
-} from "../../src/renderer/workspace";
+} from "../../src/shared/workspace";
 import { desktopExecutablePath } from "./desktop-app";
 
 // Hidden native windows, isolated user data and missing AWS config keep these

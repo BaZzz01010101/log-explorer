@@ -15,7 +15,7 @@ import {
   createWorkspace,
   restoreWorkspace,
   workspaceReducer,
-} from "../../src/renderer/workspace";
+} from "../../src/shared/workspace";
 import { desktopExecutablePath } from "./desktop-app";
 
 // Keep every fixture, result and native process private to this checkout. The

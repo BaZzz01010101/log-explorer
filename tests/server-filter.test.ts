@@ -5,11 +5,11 @@ import {
   filterTokens,
   serverFilterMode,
 } from "../src/shared/server-filter";
-import { createWorkspace, restoreWorkspace } from "../src/renderer/workspace";
+import { createWorkspace, restoreWorkspace } from "../src/shared/workspace";
 import {
   requestMatchesTab,
   resolveTimeRange,
-} from "../src/renderer/query-state";
+} from "../src/shared/query-state";
 
 it.each([
   '"mediaId"',

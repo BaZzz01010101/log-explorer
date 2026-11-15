@@ -3,8 +3,8 @@ import type { ReactNode } from "react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { QueryPane } from "../src/renderer/components/QueryPane";
 import { LogViewer } from "../src/renderer/components/LogViewer";
-import { createWorkspace } from "../src/renderer/workspace";
-import { resolveTimeRange } from "../src/renderer/query-state";
+import { createWorkspace } from "../src/shared/workspace";
+import { resolveTimeRange } from "../src/shared/query-state";
 import type { TabRuntime } from "../src/renderer/useLogJobs";
 
 vi.mock("../src/renderer/components/LogViewer", () => ({

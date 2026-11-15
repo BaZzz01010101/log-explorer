@@ -13,7 +13,7 @@ import type {
   Workspace,
 } from "../../src/shared/contracts";
 import { LOG_LEVELS } from "../../src/shared/log-data";
-import { createWorkspace } from "../../src/renderer/workspace";
+import { createWorkspace } from "../../src/shared/workspace";
 import { desktopExecutablePath } from "./desktop-app";
 
 test.setTimeout(90000);

@@ -13,7 +13,7 @@ import {
   createWorkspace,
   createTab,
   workspaceReducer,
-} from "../../src/renderer/workspace";
+} from "../../src/shared/workspace";
 
 test.setTimeout(90000);
 let app: ElectronApplication;
