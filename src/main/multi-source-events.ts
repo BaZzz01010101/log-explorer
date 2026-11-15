@@ -199,7 +199,8 @@ export function createMultiSourceEvents(
           );
           while (
             continuations.size &&
-            (continuations.size >= 16 || total + retained > 16_000_000)
+            // One per view in the 100-view budget; memory stays bounded by size.
+            (continuations.size >= 128 || total + retained > 16_000_000)
           ) {
             const key = continuations.keys().next().value!;
             total -= continuations.get(key)!.characters;

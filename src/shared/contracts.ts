@@ -104,7 +104,7 @@ export interface QueryRequest {
   sources: LogSource[];
   startTime: number;
   endTime: number;
-  kind: "events" | "insights";
+  kind: "events";
   filterPattern: string;
   gcpFilterPattern?: string;
   gcpLocalFilter?: { kind: "plain" | "aws-json"; value: string };
@@ -336,12 +336,14 @@ export interface ExplorerApi {
     connection: Connection,
     prefix: string,
     cursor?: string,
+    fresh?: boolean,
   ): Promise<Page<LogGroup>>;
   listStreams(
     connection: Connection,
     logGroup: string,
     prefix: string,
     cursor?: string,
+    fresh?: boolean,
   ): Promise<Page<LogStream>>;
   query(request: QueryRequest): Promise<void>;
   live(request: QueryRequest): Promise<void>;

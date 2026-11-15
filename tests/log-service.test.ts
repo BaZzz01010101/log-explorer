@@ -119,6 +119,28 @@ describe("offline log service", () => {
     await service.shutdown();
   });
 
+  it("bypasses the metadata cache for an explicit refresh", async () => {
+    let calls = 0;
+    const service = createLogService(() => {}, {
+      allowAws: () => true,
+      awsAdapterFactory: (connection) =>
+        createAwsAdapter(connection, {
+          allowAws: () => true,
+          transportFactory: async () =>
+            transport(async () => {
+              calls++;
+              return { logGroups: [{ logGroupName: `group-${calls}` }] };
+            }),
+        }),
+    });
+    await service.listGroups(aws, "");
+    await service.listGroups(aws, "");
+    expect(calls).toBe(1);
+    const refreshed = await service.listGroups(aws, "", undefined, true);
+    expect(calls).toBe(2);
+    expect(refreshed.items[0]?.name).toBe("group-2");
+    await service.shutdown();
+  });
   it("checks authorization before serving cached AWS metadata", async () => {
     let enabled = false;
     let constructed = 0;
@@ -188,7 +210,7 @@ describe("offline log service", () => {
     await service.shutdown();
   });
 
-  it("rejects failed operation cleanup even when no renderer owns the cancelled update", async () => {
+  it("treats errors after cancellation as cancellation and never poisons shutdown", async () => {
     const updates: QueryUpdate[] = [];
     let started!: () => void;
     const running = new Promise<void>((resolve) => {
@@ -202,7 +224,7 @@ describe("offline log service", () => {
           new Promise<never>((_resolve, reject) => {
             signal.addEventListener(
               "abort",
-              () => reject(new Error("Operation cleanup failed")),
+              () => reject(new Error("x")),
               { once: true },
             );
             started();
@@ -211,104 +233,27 @@ describe("offline log service", () => {
     });
     await service.query(request());
     await running;
-    await expect(service.cancel("query-1")).rejects.toThrow(
-      /Operation cleanup failed/,
-    );
-    expect(updates.at(-1)).toMatchObject({
-      state: "cancelled",
-      error: "Operation cleanup failed",
-    });
-    await expect(service.shutdown()).rejects.toThrow(
-      /Operation cleanup failed/,
-    );
+    await expect(service.cancel("query-1")).resolves.toBeUndefined();
+    expect(updates.at(-1)).toEqual({ requestId: "query-1", state: "cancelled" });
+    await expect(service.shutdown()).resolves.toBeUndefined();
+    await expect(service.shutdown()).resolves.toBeUndefined();
   });
 
-  it("finishes shutdown but reports every failed cleanup on later close attempts", async () => {
-    let starts = 0,
-      destroyed = 0;
-    let started!: () => void;
-    const running = new Promise<void>((resolve) => {
-      started = resolve;
-    });
-    const service = createLogService(() => {}, {
-      allowAws: () => true,
-      awsAdapterFactory: () => ({
-        ...createOfflineAdapter(),
-        events: (input, signal) =>
-          new Promise<never>((_resolve, reject) => {
-            signal.addEventListener(
-              "abort",
-              () =>
-                reject(
-                  new Error(`Could not clean up operation ${input.requestId}`),
-                ),
-              { once: true },
-            );
-            if (++starts === 2) started();
-          }),
-        destroy: () => {
-          destroyed++;
-        },
-      }),
-    });
-    await service.query(request({ connection: aws, requestId: "one" }));
-    await service.query(request({ connection: aws, requestId: "two" }));
-    await running;
-    let failure: unknown;
-    try {
-      await service.shutdown();
-    } catch (error) {
-      failure = error;
-    }
-    expect(failure).toBeInstanceOf(AggregateError);
-    expect((failure as AggregateError).errors).toHaveLength(2);
-    expect((failure as Error).message).toContain("operation one");
-    expect((failure as Error).message).toContain("operation two");
-    expect(destroyed).toBe(1);
-    await expect(service.listGroups(offline, "")).resolves.toBeDefined();
-    await expect(service.shutdown()).rejects.toThrow(/operation one/);
-  });
-
-  it("bounds retained cleanup details while warning about all outstanding failures", async () => {
-    let ready = () => {};
+  it("reports adapter destroy failures only for that shutdown", async () => {
+    let fail = true;
     const service = createLogService(() => {}, {
       allowAws: () => false,
       offlineAdapterFactory: () => ({
         ...createOfflineAdapter(),
-        events: (input: QueryRequest, signal: AbortSignal) =>
-          new Promise<never>((_resolve, reject) => {
-            signal.addEventListener(
-              "abort",
-              () =>
-                reject(
-                  new Error(`Could not clean up operation ${input.requestId}.`),
-                ),
-              { once: true },
-            );
-            ready();
-          }),
+        destroy: () => {
+          if (fail) throw new Error("destroy failed");
+        },
       }),
     });
-    for (let index = 0; index < 35; index++) {
-      const reading = new Promise<void>((resolve) => {
-        ready = resolve;
-      });
-      const requestId = `operation-${index}`;
-      await service.query(request({ requestId }));
-      await reading;
-      await expect(service.cancel(requestId)).rejects.toThrow(requestId);
-    }
-    let failure: unknown;
-    try {
-      await service.shutdown();
-    } catch (error) {
-      failure = error;
-    }
-    expect(failure).toBeInstanceOf(AggregateError);
-    expect((failure as AggregateError).errors).toHaveLength(33);
-    expect((failure as Error).message).toMatch(/3 additional operation/);
-    expect((failure as Error).message).toContain("operation-0");
-    expect((failure as Error).message).not.toContain("operation-34");
+    await service.listGroups(offline, "");
+    await expect(service.shutdown()).rejects.toThrow(/destroy failed/);
+    fail = false;
+    await expect(service.shutdown()).resolves.toBeUndefined();
   });
 });
 

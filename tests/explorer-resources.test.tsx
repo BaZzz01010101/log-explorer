@@ -64,8 +64,8 @@ it("finds case-insensitive literal matches across unfiltered pages and invalidat
     renderer = create(<Probe search="orders.literal" caseSensitive={false} />);
   });
   expect(groups.mock.calls).toEqual([
-    [east, "", undefined],
-    [east, "", "next"],
+    [east, "", undefined, false],
+    [east, "", "next", false],
   ]);
   expect(result.cache.east.groups.items.map((item) => item.name)).toEqual([
     "/Orders.Literal",
@@ -114,8 +114,8 @@ it("scans unfiltered pages for regex matches beyond the first page without scrol
     renderer = create(<Probe search="orders-(api|worker)$" regex />);
   });
   expect(groups.mock.calls).toEqual([
-    [east, "", undefined],
-    [east, "", "next"],
+    [east, "", undefined, false],
+    [east, "", "next", false],
   ]);
   expect(result.cache.east.groups.items).toEqual([{ name: "/orders-api" }]);
   expect(result.cache.east.groups.loading).toBe(false);

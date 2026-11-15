@@ -68,6 +68,12 @@ it("retries AWS views once when access is enabled while leaving fixture views al
     id: "fixture-tab",
     connectionId: "fixtures",
   });
+  // Only displayed views auto-run, so show the fixture view in its own pane.
+  workspace.panes.push({
+    ...workspace.panes[0]!,
+    id: "fixture-pane",
+    tabId: "fixture-tab",
+  });
   workspace.connections[0].mode = "aws";
   queryHandler = async (request) => {
     if (request.connection.id === workspace.connections[0].id)
@@ -93,6 +99,18 @@ async function mount() {
     renderer = create(<Harness value={workspace} />);
   });
 }
+
+it("defers hidden views until they are shown", async () => {
+  workspace.tabs.push({ ...structuredClone(workspace.tabs[0]), id: "hidden" });
+  await mount();
+  expect(requests.map((request) => request.requestId)).toHaveLength(1);
+  const shown = {
+    ...workspace,
+    panes: [...workspace.panes, { ...workspace.panes[0]!, id: "p2", tabId: "hidden" }],
+  };
+  await act(async () => renderer!.update(<Harness value={shown} />));
+  expect(requests).toHaveLength(2);
+});
 
 it("compiles plain text quotes and backslashes for history and Live without changing the draft", async () => {
   const tab = workspace.tabs[0]!;

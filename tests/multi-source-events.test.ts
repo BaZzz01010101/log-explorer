@@ -419,7 +419,7 @@ it("rejects missing connections, legacy queries, cross-region Live and disabled 
   await expect(service.query(request({ connections: [] }))).rejects.toThrow(
     /no longer exists/,
   );
-  await expect(service.query(request({ kind: "insights" }))).rejects.toThrow(
+  await expect(service.query(request({ kind: "insights" as never }))).rejects.toThrow(
     /only Events/i,
   );
   await expect(service.live(request())).rejects.toThrow(

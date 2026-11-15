@@ -9,6 +9,13 @@ import {
 import { join } from "node:path";
 import type { WorkspaceLoad } from "../shared/contracts";
 
+function describeKept(kept: string[], directory: string): string {
+  const names = kept.filter(Boolean);
+  return names.length
+    ? ` The unreadable file was kept as ${names.join(" and ")} in ${directory}.`
+    : "";
+}
+
 export class WorkspaceStore {
   private pending: Promise<void> = Promise.resolve();
   constructor(
@@ -20,32 +27,44 @@ export class WorkspaceStore {
       throw new Error("Workspace exceeds the size limit");
     return this.validate(JSON.parse(await readFile(path, "utf8")));
   }
+  /** Keeps an unreadable file for manual recovery; later saves never touch it. */
+  private async quarantine(name: string, stamp: string): Promise<string> {
+    const copy = name.replace(/\.json$/, `.corrupt-${stamp}.json`);
+    try {
+      await copyFile(join(this.directory, name), join(this.directory, copy));
+      return copy;
+    } catch {
+      return "";
+    }
+  }
   async load(): Promise<WorkspaceLoad> {
     await this.pending;
+    const stamp = new Date().toISOString().replace(/[:.]/g, "-");
     try {
       return {
         workspace: await this.read(join(this.directory, "workspace.json")),
       };
     } catch (error) {
       const primaryMissing = (error as NodeJS.ErrnoException).code === "ENOENT";
+      const kept = primaryMissing
+        ? []
+        : [await this.quarantine("workspace.json", stamp)];
       try {
         return {
           workspace: await this.read(
             join(this.directory, "workspace.backup.json"),
           ),
-          warning:
-            "The workspace file was missing or unreadable. Restored the previous backup.",
+          warning: `The workspace file was missing or unreadable. Restored the previous backup.${describeKept(kept, this.directory)}`,
         };
       } catch (backupError) {
-        if (
-          primaryMissing &&
-          (backupError as NodeJS.ErrnoException).code === "ENOENT"
-        )
-          return { workspace: null };
+        const backupMissing =
+          (backupError as NodeJS.ErrnoException).code === "ENOENT";
+        if (primaryMissing && backupMissing) return { workspace: null };
+        if (!backupMissing)
+          kept.push(await this.quarantine("workspace.backup.json", stamp));
         return {
           workspace: null,
-          warning:
-            "The workspace file was missing or unreadable. Starting a fresh workspace; existing files are retained until you save.",
+          warning: `The workspace file was missing or unreadable. Starting a fresh workspace.${describeKept(kept, this.directory)}`,
         };
       }
     }

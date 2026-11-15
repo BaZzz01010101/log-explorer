@@ -121,6 +121,7 @@ export default function App() {
     createWorkspace,
   );
   const [ready, setReady] = useState(false);
+  const [loadFailed, setLoadFailed] = useState(false);
   const [environment, setEnvironment] = useState<EnvironmentInfo | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsPreview, setSettingsPreview] =
@@ -295,10 +296,13 @@ export default function App() {
       })
       .catch((error) => {
         if (!disposed) {
+          // Never autosave defaults over a workspace that could not be loaded.
+          setLoadFailed(true);
           setReady(true);
           notifications.show({
             color: "red",
-            message: String(error),
+            title: "Workspace could not be loaded",
+            message: `${String(error)} Changes will not be saved in this session; restart the app to retry.`,
             autoClose: false,
           });
         }
@@ -308,7 +312,7 @@ export default function App() {
     };
   }, []);
   useEffect(() => {
-    if (!ready) return;
+    if (!ready || loadFailed) return;
     const timer = setTimeout(() => {
       void window.explorer.saveWorkspace(workspace).catch((error) => {
         notifications.show({
@@ -319,11 +323,11 @@ export default function App() {
       });
     }, 400);
     return () => clearTimeout(timer);
-  }, [workspace, ready]);
+  }, [workspace, ready, loadFailed]);
   useEffect(
     () =>
       window.explorer.onBeforeClose(async () => {
-        if (ready) {
+        if (ready && !loadFailed) {
           // Finish the focused field before taking the final workspace snapshot.
           flushSync(() => {
             if (document.activeElement instanceof HTMLElement)
@@ -332,7 +336,7 @@ export default function App() {
           await window.explorer.saveWorkspace(workspaceRef.current);
         }
       }),
-    [ready],
+    [ready, loadFailed],
   );
 
   const openSources = (

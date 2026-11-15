@@ -394,7 +394,8 @@ export function ExplorerSidebar(props: Props) {
                 )
               }
               onClick={() => {
-                for (const id of visibleRegions) void resources.loadGroups(id);
+                for (const id of visibleRegions)
+                  void resources.loadGroups(id, false, true);
               }}
             >
               <IconRefresh size={15} />

@@ -87,7 +87,7 @@ it("preserves new modes on restart and compares compiled request patterns", () =
     requestId: "compiled",
     connection: workspace.connections[0],
     sources: tab.sources,
-    kind: tab.kind,
+    kind: "events" as const,
     filterPattern: compileServerFilter(tab.filterPattern, tab.filterMode),
     query: "",
     limit: 100,

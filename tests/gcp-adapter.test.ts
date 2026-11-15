@@ -1,3 +1,4 @@
+import type { LogEvent } from "../src/shared/contracts";
 import { describe, expect, it, vi } from "vitest";
 import { createGcpAdapter } from "../src/main/gcp-adapter";
 import { gcloudAuth } from "../src/main/gcloud-auth";
@@ -93,29 +94,38 @@ describe("GCP event adapter", () => {
     const first = await adapter.events(request, signal);
     await expect(adapter.events({ ...request, cursor: first.cursor, sources: [{ ...source, logGroup: "another" }] }, signal)).rejects.toThrow(/continuation/i);
   });
-  it("checks every selected Google source during live monitoring", async () => {
+  // A fake tail that stays open until aborted, so the production Live path runs.
+  const openTail = (onStart?: (publish: (events: LogEvent[], sampled: boolean) => void) => void) =>
+    vi.fn((_connection, _sources, _filter, signal: AbortSignal, publish: (events: LogEvent[], sampled: boolean) => void) =>
+      new Promise<void>((resolve) => {
+        onStart?.(publish);
+        signal.addEventListener("abort", () => resolve(), { once: true });
+      }));
+  it("backfills every selected Google source during live monitoring", async () => {
     const controller = new AbortController();
     const post = vi.fn().mockResolvedValue({ entries: [] });
-    const adapter = createGcpAdapter(connection, post);
+    const tail = openTail();
+    const adapter = createGcpAdapter(connection, post, tail);
     const other = { ...source, logGroup: "/gcp/functions/payments", gcp: { ...source.gcp, functionName: "payments" } };
     const run = adapter.live({ ...request, sources: [source, other] }, controller.signal, () => {});
     await vi.waitFor(() => expect(post).toHaveBeenCalledTimes(2));
-    expect(post.mock.calls.map(([body]) => body.filter).join("\n")).toContain('function_name="payments"');
+    expect(post.mock.calls.map(([body]) => body.filter).join(" ")).toContain('function_name="payments"');
+    expect(tail).toHaveBeenCalledTimes(1);
     controller.abort();
     await run.catch(() => {});
   });
-  it("does not repeatedly emit the same event from overlapping polls", async () => {
-    vi.useFakeTimers();
-    try {
-      const controller = new AbortController();
-      const post = vi.fn().mockResolvedValue({ entries: [{ timestamp: new Date().toISOString(), insertId: "same", textPayload: "message" }] });
-      const emit = vi.fn();
-      const run = createGcpAdapter(connection, post).live(request, controller.signal, emit).catch(() => {});
-      await vi.advanceTimersByTimeAsync(6500);
-      expect(post).toHaveBeenCalledTimes(3);
-      expect(emit.mock.calls.flatMap(([update]) => update.events ?? [])).toHaveLength(1);
-      controller.abort();
-      await run;
-    } finally { vi.useRealTimers(); }
+  it("does not emit the same event from both backfill and the live tail", async () => {
+    const controller = new AbortController();
+    const entry = { timestamp: new Date().toISOString(), insertId: "same", textPayload: "message" };
+    const post = vi.fn().mockResolvedValue({ entries: [entry] });
+    const emit = vi.fn();
+    let publishTail!: (events: LogEvent[], sampled: boolean) => void;
+    const run = createGcpAdapter(connection, post, openTail((publish) => { publishTail = publish; })).live(request, controller.signal, emit).catch(() => {});
+    await vi.waitFor(() => expect(emit.mock.calls.flatMap(([update]) => update.events ?? [])).toHaveLength(1));
+    const [backfilled] = emit.mock.calls.flatMap(([update]) => update.events ?? []);
+    publishTail([backfilled], false);
+    expect(emit.mock.calls.flatMap(([update]) => update.events ?? [])).toHaveLength(1);
+    controller.abort();
+    await run;
   });
 });

@@ -29,7 +29,6 @@ interface Job {
   terminal: boolean;
   cancelled: boolean;
   cancellation?: Promise<void>;
-  cleanupError?: string;
 }
 interface MetadataCache {
   expires: number;
@@ -59,7 +58,8 @@ function errorMessage(error: unknown): string {
 }
 
 function validateQuery(request: QueryRequest, live: boolean): void {
-  if (request.kind !== "events")
+  // Defense in depth for persisted legacy Insights requests.
+  if ((request.kind as string) !== "events")
     throw new Error("Only Events queries are supported");
   if (!request.requestId || request.requestId.length > 200)
     throw new Error("A bounded request ID is required");
@@ -117,8 +117,6 @@ export function createLogService(
   const adapters = new Map<string, LogAdapter>();
   const jobs = new Map<string, Job>();
   // Cleanup failures remain relevant after their local jobs are removed.
-  const cleanupFailures = new Map<string, Error>();
-  let additionalCleanupFailures = 0;
   const cache = new Map<string, MetadataCache>();
   const pending = new Map<string, Promise<Page<LogGroup> | Page<LogStream>>>();
   const metadataControllers = new Set<AbortController>();
@@ -169,8 +167,11 @@ export function createLogService(
     connection: Connection,
     key: string,
     operation: (adapter: LogAdapter, signal: AbortSignal) => Promise<Page<T>>,
+    fresh = false,
   ): Promise<Page<T>> {
     gate(connection);
+    // An explicit refresh bypasses the cache; an in-flight request is still shared.
+    if (fresh) cache.delete(key);
     const cached = cache.get(key);
     if (cached && cached.expires > Date.now())
       return structuredClone(cached.value) as Page<T>;
@@ -216,21 +217,10 @@ export function createLogService(
       job.cancelled = true;
       job.controller.abort();
       job.terminal = true;
+      // Events and Live jobs hold no server-side state, so any error after
+      // cancellation is treated as part of the cancellation.
       job.cancellation = job.done.then(() => {
-        emit({
-          requestId,
-          state: "cancelled",
-          ...(job.cleanupError ? { error: job.cleanupError } : {}),
-        });
-        // The source/tab may already be gone, so its update is not sufficient
-        // to report failed cleanup to the cancellation caller.
-        if (job.cleanupError) {
-          const failure = new Error(job.cleanupError);
-          if (cleanupFailures.size < 32 || cleanupFailures.has(requestId))
-            cleanupFailures.set(requestId, failure);
-          else additionalCleanupFailures++;
-          throw failure;
-        }
+        emit({ requestId, state: "cancelled" });
       });
       return job.cancellation;
     }
@@ -240,7 +230,8 @@ export function createLogService(
     validateQuery(request, live);
     for (const query of scopedQueries(request)) gate(query.connection);
     await cancel(request.requestId);
-    if (jobs.size >= 32)
+    // Above the 100-view workspace budget; extra jobs wait on the query slots.
+    if (jobs.size >= 128)
       throw new Error(
         "Too many active operations. Cancel a query or Live Tail session first.",
       );
@@ -302,12 +293,6 @@ export function createLogService(
         if (!job.terminal)
           update({ requestId: input.requestId, state: "complete" });
       } catch (error) {
-        if (
-          job.cancelled &&
-          error instanceof Error &&
-          error.name !== "AbortError"
-        )
-          job.cleanupError = errorMessage(error);
         if (!job.cancelled && jobs.get(input.requestId) === job) {
           const aborted =
             job.controller.signal.aborted ||
@@ -333,6 +318,7 @@ export function createLogService(
       connection: Connection,
       prefix: string,
       cursor?: string,
+      fresh?: boolean,
     ): Promise<Page<LogGroup>> {
       const key = JSON.stringify([
         connectionKey(connection),
@@ -342,6 +328,7 @@ export function createLogService(
       ]);
       return metadata(connection, key, (adapter, signal) =>
         adapter.listGroups(prefix, cursor, signal),
+        fresh,
       );
     },
     listStreams(
@@ -349,6 +336,7 @@ export function createLogService(
       group: string,
       prefix: string,
       cursor?: string,
+      fresh?: boolean,
     ): Promise<Page<LogStream>> {
       const key = JSON.stringify([
         connectionKey(connection),
@@ -359,6 +347,7 @@ export function createLogService(
       ]);
       return metadata(connection, key, (adapter, signal) =>
         adapter.listStreams(group, prefix, cursor, signal),
+        fresh,
       );
     },
     query: (request: QueryRequest) => schedule(request, false),
@@ -368,20 +357,9 @@ export function createLogService(
       stopping = true;
       try {
         for (const controller of metadataControllers) controller.abort();
-        const cancellations = await Promise.allSettled(
-          [...jobs.keys()].map(cancel),
-        );
+        await Promise.allSettled([...jobs.keys()].map(cancel));
         await Promise.allSettled([...pending.values()]);
-        const failures: unknown[] = [...cleanupFailures.values()];
-        if (additionalCleanupFailures)
-          failures.push(
-            new Error(
-              `${additionalCleanupFailures} additional operation cleanup failures occurred in this session.`,
-            ),
-          );
-        for (const result of cancellations)
-          if (result.status === "rejected" && !failures.includes(result.reason))
-            failures.push(result.reason);
+        const failures: unknown[] = [];
         // Release every connection even when earlier cleanup/destruction failed.
         for (const adapter of adapters.values()) {
           try {

@@ -165,7 +165,7 @@ it("marks changed server filters and time ranges stale without including local v
     connection,
     sources: tab.sources,
     ...resolveTimeRange(tab.timePreset),
-    kind: tab.kind,
+    kind: "events" as const,
     filterPattern: tab.filterPattern,
     query: tab.query,
     limit: 1000,

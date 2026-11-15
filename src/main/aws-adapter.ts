@@ -8,16 +8,19 @@ import type {
   QueryRequest,
   QueryUpdate,
 } from "../shared/contracts";
-import {
+import type {
   DescribeLogGroupsCommand,
   DescribeLogStreamsCommand,
   FilterLogEventsCommand,
   StartLiveTailCommand,
-  type DescribeLogGroupsCommandOutput,
-  type DescribeLogStreamsCommandOutput,
-  type FilterLogEventsCommandOutput,
-  type StartLiveTailCommandOutput,
+  DescribeLogGroupsCommandOutput,
+  DescribeLogStreamsCommandOutput,
+  FilterLogEventsCommandOutput,
+  StartLiveTailCommandOutput,
 } from "@aws-sdk/client-cloudwatch-logs";
+
+// Loaded on first use so app startup does not pay for the AWS SDK.
+const awsSdk = () => import("@aws-sdk/client-cloudwatch-logs");
 export type CloudWatchCommand =
   | DescribeLogGroupsCommand
   | DescribeLogStreamsCommand
@@ -349,7 +352,7 @@ export function createAwsAdapter(
     const seen = new Set<string>();
     for (let page = 0; page < 100; page++) {
       const response = await send<DescribeLogGroupsCommandOutput>(
-        new DescribeLogGroupsCommand({
+        new (await awsSdk()).DescribeLogGroupsCommand({
           logGroupNamePrefix: group,
           limit: 50,
           nextToken: token,
@@ -387,7 +390,7 @@ export function createAwsAdapter(
   return {
     async listGroups(search, cursor, signal) {
       const response = await send<DescribeLogGroupsCommandOutput>(
-        new DescribeLogGroupsCommand({
+        new (await awsSdk()).DescribeLogGroupsCommand({
           logGroupNamePattern: search || undefined,
           nextToken: cursor,
           limit: 50,
@@ -407,7 +410,7 @@ export function createAwsAdapter(
         let token: string | undefined;
         for (let page = 0; page < 100; page++) {
           const metadata = await send<DescribeLogGroupsCommandOutput>(
-            new DescribeLogGroupsCommand({
+            new (await awsSdk()).DescribeLogGroupsCommand({
               logGroupIdentifiers: names,
               limit: 50,
               nextToken: token,
@@ -454,7 +457,7 @@ export function createAwsAdapter(
     },
     async listStreams(group, prefix, cursor, signal) {
       const response = await send<DescribeLogStreamsCommandOutput>(
-        new DescribeLogStreamsCommand({
+        new (await awsSdk()).DescribeLogStreamsCommand({
           ...identifier(group),
           logStreamNamePrefix: prefix || undefined,
           nextToken: cursor,
@@ -505,7 +508,7 @@ export function createAwsAdapter(
           }
           if (state.phase === "old" && state.end < request.startTime) { finished = true; break; }
           if (state.phase === "old" && state.start === undefined) state.start = Math.max(request.startTime, state.end - state.span + 1);
-          const response = await send<FilterLogEventsCommandOutput>(new FilterLogEventsCommand({
+          const response = await send<FilterLogEventsCommandOutput>(new (await awsSdk()).FilterLogEventsCommand({
             ...identifier(source.logGroup), logStreamNames: source.logStreams?.length ? source.logStreams : undefined,
             startTime: state.phase === "recent" ? Math.max(boundary, request.startTime) : state.start,
             endTime: state.phase === "recent" ? request.endTime : state.end,
@@ -537,7 +540,9 @@ export function createAwsAdapter(
               state.span = Math.max(1, Math.floor((state.end - state.start! + 1) / 2));
               state.start = undefined; state.buffer = []; state.token = undefined; state.seen = [];
             } else if (!token) {
-              if (state.buffer.length) { state.buffer.reverse(); state.ready = true; }
+              // Newest first, but same-millisecond rows keep service (ingestion) order;
+              // a plain reverse would show multi-line output upside-down.
+              if (state.buffer.length) { state.buffer.sort((a, b) => b.timestamp - a.timestamp); state.ready = true; }
               else { state.end = state.start! - 1; state.start = undefined; state.span = Math.min(Number.MAX_SAFE_INTEGER, state.span * 4); }
               state.seen = [];
             }
@@ -584,7 +589,7 @@ export function createAwsAdapter(
           for (let page = 0; page < 32; page++) {
             throwIfAborted(signal);
             const response = await send<FilterLogEventsCommandOutput>(
-              new FilterLogEventsCommand({
+              new (await awsSdk()).FilterLogEventsCommand({
                 ...identifier(source.logGroup),
                 logStreamNames: source.logStreams?.length
                   ? source.logStreams
@@ -656,8 +661,6 @@ export function createAwsAdapter(
       };
     },
     async live(request, signal, emit) {
-      if (request.kind !== "events")
-        throw new Error("Only Events queries are supported");
       if (request.sources.length > 10)
         throw new Error("CloudWatch Live Tail supports at most 10 log groups");
       if (
@@ -676,7 +679,7 @@ export function createAwsAdapter(
       const streamSignal = AbortSignal.any([signal, streamController.signal]);
       try {
         const response = await send<StartLiveTailCommandOutput>(
-          new StartLiveTailCommand({
+          new (await awsSdk()).StartLiveTailCommand({
             logGroupIdentifiers: identifiers,
             logStreamNames: request.sources[0]?.logStreams?.length
               ? request.sources[0].logStreams
@@ -692,6 +695,7 @@ export function createAwsAdapter(
         const iterator = response.responseStream[Symbol.asyncIterator]();
         let session = "live";
         let sequence = 0;
+        let announced = false, lastSampled = false;
         try {
           while (true) {
             throwIfAborted(signal);
@@ -741,13 +745,19 @@ export function createAwsAdapter(
                 logGroup: nameFromIdentifier(event.logGroupIdentifier ?? ""),
                 logStream: event.logStreamName ?? "",
               }));
+              const sampled = chunk.sessionUpdate.sessionMetadata?.sampled ?? false;
+              // The service sends an update about every second; skip empty ones
+              // that change nothing, so idle live views do not re-render.
+              if (!events.length && announced && sampled === lastSampled) continue;
+              announced = true;
+              lastSampled = sampled;
               emit({
                 requestId: request.requestId,
                 state: "running",
                 events,
                 replace: false,
                 liveState: "streaming",
-                sampled: chunk.sessionUpdate.sessionMetadata?.sampled ?? false,
+                sampled,
                 truncated: false,
               });
             }

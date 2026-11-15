@@ -62,6 +62,7 @@ export function useExplorerResources(
     sequence = useRef(0),
     pending = useRef(new Map<string, number>()),
     cursors = useRef(new Map<string, Set<string>>()),
+    freshStreams = useRef(new Map<string, Set<string>>()),
     regexTasks = useRef(new Map<string, AbortController>());
   const identities = JSON.stringify(
     connections.map((connection) =>
@@ -104,7 +105,11 @@ export function useExplorerResources(
           refs.current.caseSensitive,
         ) === scope,
     );
-  const loadGroups = useCallback(async (connectionId: string, more = false) => {
+  const loadGroups = useCallback(async (
+    connectionId: string,
+    more = false,
+    fresh = false,
+  ) => {
     const connection = refs.current.connections.find(
       (item) => item.id === connectionId,
     );
@@ -124,6 +129,10 @@ export function useExplorerResources(
     const request = ++sequence.current;
     pending.current.set(key, request);
     if (!more) {
+      // After an explicit refresh, each group's first stream page bypasses
+      // the main-process cache once.
+      if (fresh) freshStreams.current.set(connectionId, new Set());
+      else freshStreams.current.delete(connectionId);
       cursors.current.set(key, new Set());
       // A region refresh invalidates stream pages from its previous snapshot.
       for (const streamKey of pending.current.keys()) {
@@ -171,7 +180,12 @@ export function useExplorerResources(
             pending.current.get(key) !== request
           )
             return;
-          const page = await window.explorer.listGroups(connection, "", cursor);
+          const page = await window.explorer.listGroups(
+            connection,
+            "",
+            cursor,
+            fresh,
+          );
           if (
             !current(connection, scope) ||
             pending.current.get(key) !== request
@@ -226,6 +240,7 @@ export function useExplorerResources(
         connection,
         refs.current.search,
         more ? prior?.groups.cursor : undefined,
+        fresh && !more,
       );
       if (!current(connection, scope) || pending.current.get(key) !== request)
         return;
@@ -302,6 +317,9 @@ export function useExplorerResources(
       const request = ++sequence.current;
       pending.current.set(key, request);
       if (!more) cursors.current.set(key, new Set());
+      const refreshed = freshStreams.current.get(connectionId);
+      const fresh = !more && Boolean(refreshed) && !refreshed!.has(group);
+      if (fresh) refreshed!.add(group);
       setCache((previous) => {
         const entry = ownValue(previous, connectionId);
         return entry?.scope !== scope
@@ -328,6 +346,7 @@ export function useExplorerResources(
           group,
           "",
           more ? prior?.cursor : undefined,
+          fresh,
         );
         if (!current(connection, scope) || pending.current.get(key) !== request)
           return;

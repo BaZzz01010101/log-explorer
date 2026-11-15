@@ -612,12 +612,18 @@ it("debounces substring searches through the server API and retains matching-pag
       connection,
       "orders",
       undefined,
+      false,
     );
     scroll.clientHeight = 320;
     await act(async () => {
       scroll.dispatchEvent(new Event("scroll"));
     });
-    expect(listGroups).toHaveBeenLastCalledWith(connection, "orders", "next");
+    expect(listGroups).toHaveBeenLastCalledWith(
+      connection,
+      "orders",
+      "next",
+      false,
+    );
     expect(
       renderer!.root
         .findAllByProps({ role: "treeitem", "data-node-kind": "group" })

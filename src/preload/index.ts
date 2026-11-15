@@ -23,10 +23,17 @@ const api: ExplorerApi = {
   environment: () => ipcRenderer.invoke("explorer:environment"),
   enableAws: (enabled) => ipcRenderer.invoke("explorer:enable-aws", enabled),
   profiles: () => ipcRenderer.invoke("explorer:profiles"),
-  listGroups: (connection, prefix, cursor) =>
-    ipcRenderer.invoke("explorer:groups", connection, prefix, cursor),
-  listStreams: (connection, group, prefix, cursor) =>
-    ipcRenderer.invoke("explorer:streams", connection, group, prefix, cursor),
+  listGroups: (connection, prefix, cursor, fresh) =>
+    ipcRenderer.invoke("explorer:groups", connection, prefix, cursor, fresh),
+  listStreams: (connection, group, prefix, cursor, fresh) =>
+    ipcRenderer.invoke(
+      "explorer:streams",
+      connection,
+      group,
+      prefix,
+      cursor,
+      fresh,
+    ),
   query: (request) => ipcRenderer.invoke("explorer:query", request),
   live: (request) => ipcRenderer.invoke("explorer:live", request),
   cancel: (requestId) => ipcRenderer.invoke("explorer:cancel", requestId),

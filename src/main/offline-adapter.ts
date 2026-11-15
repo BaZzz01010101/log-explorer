@@ -196,7 +196,8 @@ export function createOfflineAdapter(): LogAdapter {
       const latency = Number(process.env.EXPLORER_TEST_QUERY_DELAY_MS);
       if (Number.isFinite(latency) && latency > 0) await delay(Math.min(latency, 10000), signal);
       const items = select(request);
-      if (request.direction === "older") items.reverse();
+      // Stable: same-millisecond rows keep ascending order, matching AWS.
+      if (request.direction === "older") items.sort((a, b) => b.timestamp - a.timestamp);
       const key = signature(request);
       const match = request.cursor?.match(/^events:([a-f0-9]{16}):(\d+)$/);
       if (request.cursor && (!match || match[1] !== key))

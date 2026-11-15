@@ -75,7 +75,7 @@ function setup() {
       connection: workspace.connections[0],
       sources: tab.sources,
       ...resolveTimeRange(tab.timePreset),
-      kind: tab.kind,
+      kind: "events",
       filterPattern: tab.filterPattern,
       query: tab.query,
       limit: 1000,

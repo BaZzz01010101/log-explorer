@@ -40,16 +40,29 @@ import {
   saveWindowState,
 } from "./window-state";
 
+// Verification switches exist only in development and in builds made with
+// `--mode verification`; release builds ignore and strip them.
+const verificationSwitches =
+  !app.isPackaged ||
+  (typeof __VERIFICATION_BUILD__ !== "undefined" && __VERIFICATION_BUILD__);
+if (!verificationSwitches) {
+  delete process.env.EXPLORER_TEST_USER_DATA;
+  delete process.env.EXPLORER_TEST_QUERY_DELAY_MS;
+}
 // Isolate verification storage before reading local application preferences.
 if (process.env.EXPLORER_TEST_USER_DATA)
   app.setPath("userData", process.env.EXPLORER_TEST_USER_DATA);
 app.setAppUserModelId("dev.awslogexplorer.desktop");
-const backgroundVerification = process.argv.includes(
-  "--background-verification",
-);
+const backgroundVerification =
+  verificationSwitches && process.argv.includes("--background-verification");
+const offlineVerification =
+  verificationSwitches && process.argv.includes("--offline-verification");
+// Like AWS, development and unpackaged builds never reach Google Cloud.
+const canUseGcp =
+  app.isPackaged && !offlineVerification && !backgroundVerification;
 const canEnableAws =
   app.isPackaged &&
-  !process.argv.includes("--offline-verification") &&
+  !offlineVerification &&
   !backgroundVerification;
 const gate = new AwsAccessPreference(
   canEnableAws,
@@ -70,7 +83,7 @@ const service = createLogService(
     if (window && !window.isDestroyed())
       window.webContents.send("explorer:update", update);
   },
-  { allowAws: () => gate.enabled, allowGcp: () => !process.argv.includes("--offline-verification") && !backgroundVerification },
+  { allowAws: () => gate.enabled, allowGcp: () => canUseGcp },
 );
 const environment = () => ({
   version: app.getVersion(),
@@ -156,11 +169,9 @@ const closeCoordinator = createCloseCoordinator(
       if (!window || window.isDestroyed()) return true;
       const choice = await dialog.showMessageBox(window, {
         type: "warning",
-        title: "Query cleanup failed",
-        message: "A CloudWatch query could not be stopped",
-        detail:
-          (error instanceof Error ? error.message : String(error)) +
-          "\nThe query may continue running in AWS. Closing the application does not confirm that it has stopped.",
+        title: "Shutdown cleanup failed",
+        message: "Some log connections could not be closed cleanly",
+        detail: error instanceof Error ? error.message : String(error),
         buttons: ["Keep working", "Close anyway"],
         defaultId: 0,
         cancelId: 0,
@@ -192,8 +203,12 @@ function handle(channel: string, operation: (...args: any[]) => unknown): void {
 const boundedString = z.string().max(512);
 const cursorSchema = z.string().max(100000).optional();
 function allowGcpDiscovery() {
-  if (process.argv.includes("--offline-verification") || backgroundVerification)
-    throw new Error("Google Cloud access is disabled in verification mode.");
+  if (!canUseGcp)
+    throw new Error(
+      app.isPackaged
+        ? "Google Cloud access is disabled in verification mode."
+        : "Google Cloud access is available only in the packaged application.",
+    );
 }
 const signInToGoogle = createGcpSignIn(launchGoogleLogin, () => gcloudAuth.clearTokens());
 const gcpIdentity = z.object({
@@ -316,19 +331,21 @@ handle("explorer:profiles", async () => {
     ...new Set([...Object.keys(configFile), ...Object.keys(credentialsFile)]),
   ].sort();
 });
-handle("explorer:groups", (connection, prefix, cursor) =>
+handle("explorer:groups", (connection, prefix, cursor, fresh) =>
   service.listGroups(
     connectionSchema.parse(connection),
     boundedString.parse(prefix),
     cursorSchema.parse(cursor),
+    z.boolean().optional().parse(fresh),
   ),
 );
-handle("explorer:streams", (connection, group, prefix, cursor) =>
+handle("explorer:streams", (connection, group, prefix, cursor, fresh) =>
   service.listStreams(
     connectionSchema.parse(connection),
     boundedString.parse(group),
     boundedString.parse(prefix),
     cursorSchema.parse(cursor),
+    z.boolean().optional().parse(fresh),
   ),
 );
 handle("explorer:query", (request) =>
@@ -437,6 +454,56 @@ function createWindow(): void {
     }
   });
   const currentWindow = window;
+  // A crashed renderer cannot answer the close handshake or own its jobs.
+  let reloadRequested = false;
+  currentWindow.webContents.on("render-process-gone", (_event, details) => {
+    if (details.reason === "clean-exit") return;
+    void service
+      .shutdown()
+      .catch((error) => console.error("Cleanup after renderer crash", error))
+      .then(async () => {
+        if (currentWindow.isDestroyed()) return;
+        if (reloadRequested || backgroundVerification) {
+          reloadRequested = false;
+          currentWindow.webContents.reload();
+          return;
+        }
+        const choice = await dialog.showMessageBox(currentWindow, {
+          type: "error",
+          title: "Window stopped",
+          message: "The application window stopped unexpectedly",
+          detail: `Reason: ${details.reason}. Reloading restores the last saved workspace.`,
+          buttons: ["Reload", "Close"],
+          defaultId: 0,
+          cancelId: 0,
+        });
+        if (currentWindow.isDestroyed()) return;
+        if (choice.response === 0) currentWindow.webContents.reload();
+        else {
+          allowWindowClose = true;
+          currentWindow.close();
+        }
+      });
+  });
+  currentWindow.on("unresponsive", () => {
+    if (backgroundVerification) return;
+    void dialog
+      .showMessageBox(currentWindow, {
+        type: "warning",
+        title: "Window not responding",
+        message: "The application window is not responding",
+        detail: "Wait for it to recover, or reload the last saved workspace.",
+        buttons: ["Wait", "Reload"],
+        defaultId: 0,
+        cancelId: 0,
+      })
+      .then((choice) => {
+        if (choice.response === 1 && !currentWindow.isDestroyed()) {
+          reloadRequested = true;
+          currentWindow.webContents.forcefullyCrashRenderer();
+        }
+      });
+  });
   let stateTimer: ReturnType<typeof setTimeout> | undefined;
   const persistState = () => {
     clearTimeout(stateTimer);

@@ -3,7 +3,6 @@ import type { Connection, LogEvent, QueryRequest, QueryUpdate } from "../shared/
 import { delay, throwIfAborted, type LogAdapter } from "./aws-adapter";
 import { gcloudAuth } from "./gcloud-auth";
 import { gcpSourceFilter, normalizeGcpEntry } from "./gcp-log-query";
-import { streamGcpProject } from "./gcp-live";
 import { waitForGcpRequest } from "./gcp-request-gate";
 import { matchAwsCompatibleFilter, parseAwsCompatibleFilter } from "../shared/aws-compatible-filter";
 
@@ -11,7 +10,11 @@ type Body = { resourceNames: string[]; filter: string; orderBy: string; pageSize
 type Post = (body: Body, signal: AbortSignal) => Promise<{ entries?: unknown[]; nextPageToken?: string }>;
 const quote = (value: string) => JSON.stringify(value);
 
-export function createGcpAdapter(connection: Connection, transport?: Post): LogAdapter {
+type StreamProject = typeof import("./gcp-live").streamGcpProject;
+// Loaded on first use so app startup does not pay for the Cloud Logging SDK.
+const defaultStream: StreamProject = (...args) => import("./gcp-live").then(({ streamGcpProject }) => streamGcpProject(...args));
+
+export function createGcpAdapter(connection: Connection, transport?: Post, stream: StreamProject = defaultStream): LogAdapter {
   const cursors = new Map<string, { token: string; signature: string; expires: number }>();
   const post: Post = transport ?? (async (body, signal) => {
     if (!connection.gcpIdentity) throw new Error("Google Cloud account is not configured.");
@@ -89,7 +92,7 @@ export function createGcpAdapter(connection: Connection, transport?: Post): LogA
   return {
     events,
     async live(request, signal, emit) {
-      if (!transport) {
+      {
         const stop = new AbortController();
         const activeSignal = AbortSignal.any([signal, stop.signal]);
         const recent = new Map<string, number>();
@@ -120,7 +123,7 @@ export function createGcpAdapter(connection: Connection, transport?: Post): LogA
               const started = Date.now();
               const attempt = new AbortController();
               const attemptSignal = AbortSignal.any([activeSignal, attempt.signal]);
-              const stream = streamGcpProject(connection, sources, request.gcpFilterPattern ?? "", attemptSignal, (events, sampled) => { failures = 0; publish(events, sampled); }).catch((error) => { streamFailure = error; streamFailureAt = Date.now(); });
+              const tail = stream(connection, sources, request.gcpFilterPattern ?? "", attemptSignal, (events, sampled) => { failures = 0; publish(events, sampled); }).catch((error) => { streamFailure = error; streamFailureAt = Date.now(); });
               try {
                 await Promise.all(sources.map(async (source) => {
                   let cursor: string | undefined;
@@ -131,7 +134,7 @@ export function createGcpAdapter(connection: Connection, transport?: Post): LogA
                   } while (cursor && !activeSignal.aborted);
                 }));
                 emit({ requestId: request.requestId, state: "running", liveState: "streaming" });
-                await stream;
+                await tail;
                 if (activeSignal.aborted) return;
                 throw streamFailure ?? new Error("Google Cloud live stream ended.");
               } catch (error) {
@@ -147,31 +150,6 @@ export function createGcpAdapter(connection: Connection, transport?: Post): LogA
           }));
         } finally { stop.abort(); }
         return;
-      }
-      // Poll with an overlapping window and stable IDs, so events arriving after an empty initial query are included.
-      let since = Date.now() - 30000;
-      const recent = new Map<string, number>();
-      emit({ requestId: request.requestId, state: "running", liveState: "connecting" });
-      while (!signal.aborted) {
-        const end = Date.now();
-        await Promise.all(request.sources.map(async (source) => {
-          let cursor: string | undefined;
-          do {
-            const result = await events({ ...request, sources: [source], startTime: Math.max(0, since), endTime: Math.max(since + 1, end), cursor }, signal);
-            const fresh = (result.events ?? []).filter((event) => {
-              if (recent.has(event.id)) return false;
-              recent.set(event.id, Date.now());
-              if (recent.size > 100000) recent.delete(recent.keys().next().value!);
-              return true;
-            });
-            if (fresh.length) emit({ requestId: request.requestId, state: "running", liveState: "streaming", events: fresh });
-            cursor = result.cursor;
-          } while (cursor && !signal.aborted);
-        }));
-        emit({ requestId: request.requestId, state: "running", liveState: "streaming" });
-        for (const [id, seen] of recent) if (seen < end - 120000) recent.delete(id);
-        since = Math.max(0, end - 30000);
-        await delay(3000, signal);
       }
     },
     async listGroups() { throw new Error("Use the Google Cloud explorer to select sources."); },

@@ -74,6 +74,8 @@ export function useLogJobs(
   );
   const autoStarted = useRef(new Set<string>());
   const sleepingLive = useRef(new Set<string>());
+  // Hidden tabs defer their automatic run until they are first shown.
+  const staleHidden = useRef(new Set<string>());
   const isVisible = useCallback(
     (tabId: string) =>
       workspaceRef.current.panes.some((pane) => pane.tabId === tabId),
@@ -691,7 +693,10 @@ export function useLogJobs(
         // This run already applies the current time fields; the date effect
         // must not issue a second query for the same workspace update.
         observedTimeRanges.current.set(tab.id, timeIdentity(tab));
-        void run(tab);
+        if (isVisible(tab.id)) {
+          staleHidden.current.delete(tab.id);
+          void run(tab);
+        } else staleHidden.current.add(tab.id);
       }
     }
   }, [
@@ -787,6 +792,10 @@ export function useLogJobs(
     for (const tab of workspace.tabs) {
       if (isVisible(tab.id)) {
         if (sleepingLive.current.has(tab.id)) void run(tab, true, false, true);
+        else if (staleHidden.current.delete(tab.id)) {
+          observedTimeRanges.current.set(tab.id, timeIdentity(tab));
+          void run(tab);
+        }
       } else {
         const id = current.current.get(tab.id);
         if (
@@ -819,8 +828,10 @@ export function useLogJobs(
         workspaceRef.current.connections.some(
           (connection) => ids.has(connection.id) && connection.mode === "aws",
         )
-      )
-        void run(tab);
+      ) {
+        if (isVisible(tab.id)) void run(tab);
+        else staleHidden.current.add(tab.id);
+      }
     }
   }, [ready, awsEnabled, run]);
   return { runtimes, run, cancel };

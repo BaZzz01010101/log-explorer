@@ -18,7 +18,7 @@ function legacyRequest(mode: "offline" | "aws"): QueryRequest {
     sources: [{ logGroup: "/aws/lambda/orders-api" }],
     startTime: 0,
     endTime: Date.now(),
-    kind: "insights",
+    kind: "insights" as never,
     filterPattern: "",
     query: "fields @message",
     limit: 10,
