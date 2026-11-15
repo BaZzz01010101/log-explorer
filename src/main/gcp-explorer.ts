@@ -5,11 +5,13 @@ import type {
   Page,
 } from "../shared/contracts";
 import { gcloudAuth } from "./gcloud-auth";
+import { googleFetch, type GoogleAuth } from "./gcp-http";
 
 type Request = (options: {
   url: string;
   params: Record<string, string | number>;
   timeout: number;
+  signal?: AbortSignal;
 }) => Promise<{ data: unknown }>;
 
 const projectId = /^(?:[a-z][a-z0-9-]{4,28}[a-z0-9]|[0-9]{1,30})$/;
@@ -91,41 +93,32 @@ export function createGcpExplorer(request: Request) {
 }
 
 export function createGoogleRequest(
-  getToken: (identity: GcpIdentity) => Promise<string>,
+  auth: GoogleAuth | GoogleAuth["token"],
   transport: typeof fetch = fetch,
 ) {
+  const client: GoogleAuth = typeof auth === "function" ? { token: auth } : auth;
   return async (
     options: Parameters<Request>[0],
     identity: GcpIdentity,
   ): Promise<{ data: unknown }> => {
-    const token = await getToken(identity);
     const url = new URL(options.url);
     for (const [key, value] of Object.entries(options.params))
       url.searchParams.set(key, String(value));
-    const headers: Record<string, string> = {
-      Authorization: `Bearer ${token}`,
-    };
-    if (identity.quotaProject)
-      headers["X-Goog-User-Project"] = identity.quotaProject;
-    const response = await transport(url, {
-      headers,
-      signal: AbortSignal.timeout(options.timeout),
-      redirect: "error",
-    });
-    if (!response.ok) {
-      if (response.status === 401)
-        throw new Error(
-          "Google Cloud credentials expired. Sign in again and retry.",
-        );
-      if (response.status === 403)
-        throw new Error(
+    const data = await googleFetch<unknown>(
+      client,
+      identity,
+      {
+        url,
+        signal: options.signal,
+        timeout: options.timeout,
+        forbidden:
           "Google Cloud denied access. Check project permissions, API enablement and the configuration's quota project.",
-        );
-      throw new Error(`Google Cloud request failed (HTTP ${response.status}).`);
-    }
-    return { data: await response.json() };
+      },
+      transport,
+    );
+    return { data };
   };
 }
-const googleRequest = createGoogleRequest(gcloudAuth.token);
-export const gcpExplorer = (identity: GcpIdentity) =>
-  createGcpExplorer((options) => googleRequest(options, identity));
+const googleRequest = createGoogleRequest(gcloudAuth);
+export const gcpExplorer = (identity: GcpIdentity, signal?: AbortSignal) =>
+  createGcpExplorer((options) => googleRequest({ ...options, signal }, identity));

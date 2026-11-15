@@ -235,54 +235,77 @@ handle("gcp:install-cli", () => {
   allowGcpDiscovery();
   return shell.openExternal("https://cloud.google.com/sdk/docs/install");
 });
+// Discovery runs through the log service: cache, concurrency limit, timeout
+// and cancellation on shutdown, like AWS resource listing.
+const discover = <T>(
+  parts: unknown[],
+  operation: (signal: AbortSignal) => Promise<T>,
+  timeout?: number,
+) => service.discover(JSON.stringify(parts), operation, { timeout });
+handle("gcp:refresh", () => service.clearDiscovery());
 handle("gcp:projects", (identity, cursor) => {
   allowGcpDiscovery();
-  return gcpExplorer(gcpIdentity.parse(identity)).projects(
-    cursorSchema.parse(cursor),
+  const selected = gcpIdentity.parse(identity);
+  const page = cursorSchema.parse(cursor);
+  return discover(["projects", selected, page], (signal) =>
+    gcpExplorer(selected, signal).projects(page),
   );
 });
 handle("gcp:logs", (identity, project, cursor) => {
   allowGcpDiscovery();
-  return gcpExplorer(gcpIdentity.parse(identity)).logs(
-    z.string().max(30).parse(project),
-    cursorSchema.parse(cursor),
+  const selected = gcpIdentity.parse(identity);
+  const id = z.string().max(30).parse(project);
+  const page = cursorSchema.parse(cursor);
+  return discover(["logs", selected, id, page], (signal) =>
+    gcpExplorer(selected, signal).logs(id, page),
   );
 });
-const sourceRequest = createGoogleRequest(gcloudAuth.token);
-const gcpSourceDiscovery = (identity: z.infer<typeof gcpIdentity>) =>
+const sourceRequest = createGoogleRequest(gcloudAuth);
+const gcpSourceDiscovery = (
+  identity: z.infer<typeof gcpIdentity>,
+  signal: AbortSignal,
+) =>
   createSourceDiscovery(
-    (options) => sourceRequest(options, identity),
-    runKubectl,
+    (options) => sourceRequest({ ...options, signal }, identity),
+    (args, selected) => runKubectl(args, selected, signal),
   );
 handle("gcp:functions", (identity, project, generation, cursor) => {
   allowGcpDiscovery();
-  return gcpSourceDiscovery(gcpIdentity.parse(identity)).functions(
-    z.string().max(30).parse(project),
-    z.enum(["v1", "v2"]).parse(generation),
-    cursorSchema.parse(cursor),
+  const selected = gcpIdentity.parse(identity);
+  const id = z.string().max(30).parse(project);
+  const kind = z.enum(["v1", "v2"]).parse(generation);
+  const page = cursorSchema.parse(cursor);
+  return discover(["functions", selected, id, kind, page], (signal) =>
+    gcpSourceDiscovery(selected, signal).functions(id, kind, page),
   );
 });
 handle("gcp:contexts", (identity, project) => {
   allowGcpDiscovery();
   const selected = gcpIdentity.parse(identity);
-  return gcpSourceDiscovery(selected).contexts(
-    z.string().max(30).parse(project),
-    selected,
+  const id = z.string().max(30).parse(project);
+  return discover(
+    ["contexts", selected, id],
+    (signal) => gcpSourceDiscovery(selected, signal).contexts(id, selected),
+    70000,
   );
 });
 handle("gcp:clusters", (identity, project) => {
   allowGcpDiscovery();
-  return gcpSourceDiscovery(gcpIdentity.parse(identity)).clusters(
-    z.string().max(30).parse(project),
+  const selected = gcpIdentity.parse(identity);
+  const id = z.string().max(30).parse(project);
+  return discover(["clusters", selected, id], (signal) =>
+    gcpSourceDiscovery(selected, signal).clusters(id),
   );
 });
 handle("gcp:workloads", (identity, project, context) => {
   allowGcpDiscovery();
   const selected = gcpIdentity.parse(identity);
-  return gcpSourceDiscovery(selected).workloads(
-    z.string().max(30).parse(project),
-    z.string().max(256).parse(context),
-    selected,
+  const id = z.string().max(30).parse(project);
+  const name = z.string().max(256).parse(context);
+  return discover(
+    ["workloads", selected, id, name],
+    (signal) => gcpSourceDiscovery(selected, signal).workloads(id, name, selected),
+    70000,
   );
 });
 handle("explorer:environment", environment);

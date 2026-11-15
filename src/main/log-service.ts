@@ -14,6 +14,7 @@ import {
 } from "./aws-adapter";
 import { createMultiSourceEvents, scopedQueries } from "./multi-source-events";
 import { createOfflineAdapter } from "./offline-adapter";
+import { scopedEventId } from "../shared/event-id";
 
 // Release builds define this as false, so the fixture adapter is dropped from the bundle.
 const fixturesBuild =
@@ -42,14 +43,17 @@ interface Job {
 }
 interface MetadataCache {
   expires: number;
-  value: Page<LogGroup> | Page<LogStream>;
+  value: unknown;
 }
 
-function errorMessage(error: unknown): string {
+function errorMessage(error: unknown, provider?: Connection["mode"]): string {
   const name =
     error && typeof error === "object" && "name" in error
       ? String(error.name)
       : "";
+  // AWS SDK exception names only; Google errors already carry readable text.
+  if (provider === "gcp")
+    return error instanceof Error ? error.message : "Google Cloud operation failed";
   if (
     /Credentials|Token|SSO|Unauthorized|UnrecognizedClient|ExpiredToken/.test(
       name,
@@ -128,7 +132,7 @@ export function createLogService(
   const jobs = new Map<string, Job>();
   // Cleanup failures remain relevant after their local jobs are removed.
   const cache = new Map<string, MetadataCache>();
-  const pending = new Map<string, Promise<Page<LogGroup> | Page<LogStream>>>();
+  const pending = new Map<string, Promise<unknown>>();
   const metadataControllers = new Set<AbortController>();
   const querySlots = new Semaphore(4);
   const liveSlots = new Semaphore(2);
@@ -158,11 +162,20 @@ export function createLogService(
     gate(connection);
     const key = connectionKey(connection);
     let adapter = adapters.get(key);
-    if (!adapter) {
-      if (adapters.size >= 32)
-        throw new Error(
-          "Connection limit reached. Close and reopen the workspace to release unused connections.",
-        );
+    if (adapter) {
+      // Keep Map order as least-recently-used first.
+      adapters.delete(key);
+      adapters.set(key, adapter);
+    } else {
+      if (adapters.size >= 32) {
+        const [oldestKey, oldest] = adapters.entries().next().value!;
+        adapters.delete(oldestKey);
+        try {
+          oldest.destroy();
+        } catch {
+          /* A failed release must not block the connection being opened. */
+        }
+      }
       adapter =
         connection.mode === "gcp"
           ? (options.gcpAdapterFactory?.(connection) ?? createGcpAdapter(connection))
@@ -175,33 +188,35 @@ export function createLogService(
     return adapter;
   }
   const multiSourceEvents = createMultiSourceEvents(adapterFor);
-  async function metadata<T extends LogGroup | LogStream>(
-    connection: Connection,
+  /**
+   * Shared path for every cloud metadata/discovery read: 60 s cache, request
+   * de-duplication, the metadata concurrency limit, a timeout, and cancellation
+   * on shutdown.
+   */
+  async function limited<T>(
     key: string,
-    operation: (adapter: LogAdapter, signal: AbortSignal) => Promise<Page<T>>,
-    fresh = false,
-  ): Promise<Page<T>> {
-    gate(connection);
+    check: () => void,
+    operation: (signal: AbortSignal) => Promise<T>,
+    options: { fresh?: boolean; timeout?: number; provider?: Connection["mode"] } = {},
+  ): Promise<T> {
+    check();
     // An explicit refresh bypasses the cache; an in-flight request is still shared.
-    if (fresh) cache.delete(key);
+    if (options.fresh) cache.delete(key);
     const cached = cache.get(key);
     if (cached && cached.expires > Date.now())
-      return structuredClone(cached.value) as Page<T>;
+      return structuredClone(cached.value) as T;
     const existing = pending.get(key);
-    if (existing) return structuredClone(await existing) as Page<T>;
+    if (existing) return structuredClone(await existing) as T;
     const controller = new AbortController();
     metadataControllers.add(controller);
-    const timer = setTimeout(() => controller.abort(), 30000);
+    const timer = setTimeout(() => controller.abort(), options.timeout ?? 30000);
     const task = (async () => {
       const release = await metadataSlots.acquire(controller.signal);
       try {
-        gate(connection);
-        const value = await operation(
-          adapterFor(connection),
-          controller.signal,
-        );
+        check();
+        const value = await operation(controller.signal);
         throwIfAborted(controller.signal);
-        gate(connection);
+        check();
         if (cache.size >= 150) cache.delete(cache.keys().next().value!);
         cache.set(key, {
           value: structuredClone(value),
@@ -209,7 +224,7 @@ export function createLogService(
         });
         return value;
       } catch (error) {
-        throw new Error(errorMessage(error));
+        throw new Error(errorMessage(error, options.provider));
       } finally {
         release();
       }
@@ -219,7 +234,20 @@ export function createLogService(
       pending.delete(key);
     });
     pending.set(key, task);
-    return structuredClone(await task) as Page<T>;
+    return structuredClone(await task) as T;
+  }
+  function metadata<T extends LogGroup | LogStream>(
+    connection: Connection,
+    key: string,
+    operation: (adapter: LogAdapter, signal: AbortSignal) => Promise<Page<T>>,
+    fresh = false,
+  ): Promise<Page<T>> {
+    return limited(
+      key,
+      () => gate(connection),
+      (signal) => operation(adapterFor(connection), signal),
+      { fresh, provider: connection.mode },
+    );
   }
   async function cancel(requestId: string): Promise<void> {
     const job = jobs.get(requestId);
@@ -293,9 +321,7 @@ export function createLogService(
               events: value.events?.map((event) => ({
                 ...event,
                 connectionId: query.connection.id,
-                ...(live && query.connection.mode === "gcp" && input.sources.length > 1
-                  ? { id: JSON.stringify([query.connection.id, event.id]) }
-                  : {}),
+                id: scopedEventId(query.connection.id, event.id),
               })),
             });
           if (live)
@@ -316,7 +342,7 @@ export function createLogService(
           emit({
             requestId: input.requestId,
             state: aborted ? "cancelled" : "error",
-            ...(aborted ? {} : { error: errorMessage(error) }),
+            ...(aborted ? {} : { error: errorMessage(error, input.connection.mode) }),
           });
         }
       } finally {
@@ -362,6 +388,28 @@ export function createLogService(
         fresh,
       );
     },
+    clearDiscovery(): void {
+      for (const key of cache.keys())
+        if (key.startsWith('["gcp-discovery"')) cache.delete(key);
+    },
+    /** Google Cloud discovery through the same limits, cache and shutdown path. */
+    discover<T>(
+      key: string,
+      operation: (signal: AbortSignal) => Promise<T>,
+      settings: { fresh?: boolean; timeout?: number } = {},
+    ): Promise<T> {
+      return limited(
+        JSON.stringify(["gcp-discovery", key]),
+        () => {
+          if (stopping)
+            throw new Error("Log connections are closing; retry shortly");
+          if (options.allowGcp && !options.allowGcp())
+            throw new Error("Google Cloud access is disabled in this build.");
+        },
+        operation,
+        { ...settings, provider: "gcp" },
+      );
+    },
     query: (request: QueryRequest) => schedule(request, false),
     live: (request: QueryRequest) => schedule(request, true),
     cancel,
@@ -386,7 +434,7 @@ export function createLogService(
         if (failures.length)
           throw new AggregateError(
             failures,
-            `Could not finish all log operation cleanup.\n${failures.map(errorMessage).join("\n")}`,
+            `Could not finish all log operation cleanup.\n${failures.map((failure) => errorMessage(failure)).join("\n")}`,
           );
       } finally {
         stopping = false;

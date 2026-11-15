@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import type { Connection, LogEvent, QueryRequest, QueryUpdate } from "../shared/contracts";
 import { delay, throwIfAborted, type LogAdapter } from "./aws-adapter";
 import { gcloudAuth } from "./gcloud-auth";
+import { googleFetch } from "./gcp-http";
 import { gcpSourceFilter, normalizeGcpEntry } from "./gcp-log-query";
 import { waitForGcpRequest } from "./gcp-request-gate";
 import { matchAwsCompatibleFilter, parseAwsCompatibleFilter } from "../shared/aws-compatible-filter";
@@ -18,41 +19,15 @@ export function createGcpAdapter(connection: Connection, transport?: Post, strea
   const cursors = new Map<string, { token: string; signature: string; expires: number }>();
   const post: Post = transport ?? (async (body, signal) => {
     if (!connection.gcpIdentity) throw new Error("Google Cloud account is not configured.");
-    throwIfAborted(signal);
-    let token = await gcloudAuth.token(connection.gcpIdentity);
-    const send = () => fetch("https://logging.googleapis.com/v2/entries:list", {
-      method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json", ...(connection.gcpIdentity!.quotaProject ? { "X-Goog-User-Project": connection.gcpIdentity!.quotaProject } : {}) },
-      body: JSON.stringify(body), signal: AbortSignal.any([signal, AbortSignal.timeout(30000)]), redirect: "error",
+    return googleFetch(gcloudAuth, connection.gcpIdentity, {
+      url: "https://logging.googleapis.com/v2/entries:list",
+      method: "POST",
+      body,
+      signal,
+      beforeAttempt: (attemptSignal) => waitForGcpRequest(body.resourceNames[0], attemptSignal),
+      forbidden: "Google Cloud denied log access. Check logging permissions and the selected account.",
+      failure: "Google Cloud log query failed",
     });
-    throwIfAborted(signal);
-    let response: Response;
-    let refreshed = false, retries = 0;
-    for (;;) {
-      await waitForGcpRequest(body.resourceNames[0], signal);
-      response = await send();
-      if (response.status === 401 && !refreshed) {
-        refreshed = true;
-        gcloudAuth.invalidateToken(connection.gcpIdentity, token);
-        token = await gcloudAuth.token(connection.gcpIdentity);
-        throwIfAborted(signal);
-        continue;
-      }
-      if ((response.status === 429 || response.status === 503) && retries < 3) {
-        const retryAfter = Number(response.headers.get("retry-after"));
-        await delay(Math.min(30000, Math.max(1000 * 2 ** retries, Number.isFinite(retryAfter) ? retryAfter * 1000 : 0)), signal);
-        retries++;
-        continue;
-      }
-      break;
-    }
-    if (response.status === 401) throw new Error("Google Cloud credentials expired. Sign in again and retry.");
-    if (response.status === 403) throw new Error("Google Cloud denied log access. Check logging permissions and the selected account.");
-    if (!response.ok) {
-      const details = await response.json().catch(() => null) as { error?: { message?: unknown } } | null;
-      const message = typeof details?.error?.message === "string" ? details.error.message.slice(0, 500) : "";
-      throw new Error(`Google Cloud log query failed (HTTP ${response.status})${message ? `: ${message}` : "."}`);
-    }
-    return await response.json() as { entries?: unknown[]; nextPageToken?: string };
   });
   async function events(request: QueryRequest, signal: AbortSignal): Promise<QueryUpdate> {
     throwIfAborted(signal);

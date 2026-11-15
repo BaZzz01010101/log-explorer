@@ -329,6 +329,8 @@ export interface ExplorerApi {
     project: string,
     context: string,
   ): Promise<GcpSourcePage>;
+  /** Drops cached Google Cloud discovery results before an explicit refresh. */
+  gcpRefresh(): Promise<void>;
   windowAction(action: import("./window-chrome").WindowAction): Promise<void>;
   setWindowTheme(theme: "light" | "dark"): Promise<void>;
   environment(): Promise<EnvironmentInfo>;

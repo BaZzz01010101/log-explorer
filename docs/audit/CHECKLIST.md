@@ -16,11 +16,11 @@ Tick a box when the finding is fixed and verified. Order follows [README.md](REA
 - [~] AUD-013 — Release process unversioned; daily app runs from `release/`; no CI/lint *(partial: `.github/workflows/ci.yml` runs typecheck + unit tests; desktop tests use `release/verification/` (AUD-010); not done: release scripts out of `.tmp/`, moving the installed app out of `release/`, `release/` cleanup, format check (90 files unformatted — needs a separate format-only commit))*
 - [ ] AUD-014 — Test gaps: no DOM, deprecated `react-test-renderer`, IPC untested
 - [ ] AUD-008 — Main bundles renderer code; types vs zod; workspace validated 4× per save
-- [ ] AUD-007 — Nominal provider abstraction; GCP bypasses job service
+- [~] AUD-007 — Nominal provider abstraction; GCP bypasses job service *(done: one event-ID minter `src/shared/event-id.ts` used for every query shape; one Google HTTP client `gcp-http.ts` (401 refresh, 429/503 retry, cancellation); all GCP discovery runs through `service.discover` (cache, limits, timeout, shutdown cancel, `gcp:refresh` for the Refresh button); GCP errors no longer get AWS advice; adapter cap → LRU eviction. Not done: formal `CloudProvider` interface, `kubectl` JSON parsed off the main thread, real token lifetime instead of fixed 5 min; AWS Live IDs still differ from history because Live Tail has no event ID)*
 - [ ] AUD-009 — Oversized central modules; persisted layout checked by `JSON.stringify`
 
 ## Low
-- [~] AUD-011 — GCP has no consent gate *(partial: GCP blocked outside packaged builds, docs corrected; a Settings opt-in like AWS is a product decision — not done)*
+- [x] AUD-011 — GCP has no consent gate *(both providers now packaged-only with no opt-in switch — AWS switch removed after fixtures were dropped)*
 - [x] AUD-016 — Cloud SDKs load eagerly *(AWS client and `gcp-live` now loaded on first use; main bundle has no static SDK require)*
 - [x] AUD-017 — Insights leftovers in contracts, schemas, UI text *(`QueryRequest.kind` narrowed to `"events"`; dead adapter check and dialog text removed; persisted `LogTab`/`SavedQuery` kinds and `query` field kept for old workspaces)*
 - [x] AUD-019 — Test-only GCP Live code path *(polling loop removed; tail function injectable; tests run the production backfill/dedup path)*

@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
+import { scopedEventId } from "../shared/event-id";
 import { compareLogTime } from "../shared/log-order";
 import type {
   Connection,
@@ -127,7 +128,7 @@ export function createMultiSourceEvents(
               .map((event) => ({
                 ...event,
                 connectionId: query.connection.id,
-                id: JSON.stringify([query.connection.id, event.id]),
+                id: scopedEventId(query.connection.id, event.id),
               }))
               .sort(
                 (a, b) => request.direction === "older" ? compareLogTime(b, a) : compareLogTime(a, b) || a.id.localeCompare(b.id),

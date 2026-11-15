@@ -17,6 +17,7 @@ const api: ExplorerApi = {
     ipcRenderer.invoke("gcp:clusters", identity, project),
   gcpWorkloads: (identity, project, context) =>
     ipcRenderer.invoke("gcp:workloads", identity, project, context),
+  gcpRefresh: () => ipcRenderer.invoke("gcp:refresh"),
   windowAction: (action) =>
     ipcRenderer.invoke("explorer:window-action", action),
   setWindowTheme: (theme) => ipcRenderer.invoke("explorer:window-theme", theme),

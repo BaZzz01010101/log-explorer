@@ -437,7 +437,10 @@ export function GcpExplorer({
             aria-label="Refresh GCP sources"
             disabled={loading || profilesLoading}
             onClick={() =>
-              void refreshProfiles().then((selected) => {
+              void Promise.resolve(window.explorer.gcpRefresh?.())
+                .catch(() => {})
+                .then(() => refreshProfiles())
+                .then((selected) => {
                 if (
                   selected?.configuration === configuration &&
                   selected.account === account

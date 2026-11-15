@@ -240,6 +240,7 @@ export function createSourceDiscovery(request: Request, kubectl: Kubectl) {
 export function runKubectl(
   args: string[],
   identity: GcpIdentity,
+  signal?: AbortSignal,
 ): Promise<string> {
   const env = {
     ...process.env,
@@ -270,6 +271,13 @@ export function runKubectl(
       child.kill();
       finish(new Error("Kubernetes discovery timed out."));
     }, 60000);
+    // Shutdown and timeouts in the log service stop kubectl as well.
+    const abort = () => {
+      child.kill();
+      finish(new DOMException("Kubernetes discovery was cancelled.", "AbortError") as Error);
+    };
+    if (signal?.aborted) abort();
+    else signal?.addEventListener("abort", abort, { once: true });
     child.stdout.setEncoding("utf8");
     child.stderr.setEncoding("utf8");
     child.stdout.on("data", (part: string) => {
