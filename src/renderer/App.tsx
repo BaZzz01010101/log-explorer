@@ -1,4 +1,5 @@
 import { useEffect, useReducer, useRef, useState } from "react";
+import { AppCommandsContext, type AppCommands } from "./app-commands";
 import { flushSync } from "react-dom";
 import {
   ActionIcon,
@@ -226,31 +227,24 @@ export default function App() {
       patch: { sidebarVisible: !workspace.sidebarVisible },
     });
   };
-  useEffect(() => {
-    const showTimeRanges = () => {
-      if (!settingsVisibleRef.current)
-        setSettingsPreview(
-          captureSettingsPreview(workspaceRef.current, runtimesRef.current),
-        );
-      setSettingsPage("time-ranges");
-      setSettingsPageRequest((request) => request + 1);
-      const detached =
-        workspaceRef.current.preferences.settingsDetached === true;
-      setSettingsOpen(detached);
-      setSidePanel(detached ? "explorer" : "settings");
-      if (!detached)
-        dispatch({ type: "workspace/update", patch: { sidebarVisible: true } });
-    };
-    window.addEventListener(
-      "explorer:open-time-range-settings",
-      showTimeRanges,
-    );
-    return () =>
-      window.removeEventListener(
-        "explorer:open-time-range-settings",
-        showTimeRanges,
+  const showTimeRangesRef = useRef(() => {});
+  showTimeRangesRef.current = () => {
+    if (!settingsVisibleRef.current)
+      setSettingsPreview(
+        captureSettingsPreview(workspaceRef.current, runtimesRef.current),
       );
-  }, []);
+    setSettingsPage("time-ranges");
+    setSettingsPageRequest((request) => request + 1);
+    const detached =
+      workspaceRef.current.preferences.settingsDetached === true;
+    setSettingsOpen(detached);
+    setSidePanel(detached ? "explorer" : "settings");
+    if (!detached)
+      dispatch({ type: "workspace/update", patch: { sidebarVisible: true } });
+  };
+  const appCommands = useRef<AppCommands>({
+    openTimeRangeSettings: () => showTimeRangesRef.current(),
+  }).current;
   const toggleExplorer = () => {
     const visible = workspace.sidebarVisible && sidePanel === "explorer";
     setSidePanel("explorer");
@@ -681,6 +675,7 @@ export default function App() {
   // The native window already has the matching startup background.
   if (!ready) return null;
   return (
+    <AppCommandsContext.Provider value={appCommands}>
     <MantineProvider
       theme={theme}
       forceColorScheme={workspace.preferences.theme}
@@ -1174,5 +1169,6 @@ export default function App() {
         </div>
       </WorkspaceDragSurface>
     </MantineProvider>
+    </AppCommandsContext.Provider>
   );
 }

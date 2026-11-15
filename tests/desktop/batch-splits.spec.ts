@@ -8,7 +8,8 @@ import {
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join, resolve, sep } from "node:path";
 import { desktopExecutablePath } from "./desktop-app";
-import { createWorkspace } from "../../src/shared/workspace";
+// Saved files omit the pane projection; restoring derives it.
+import { createWorkspace, restoreWorkspace } from "../../src/shared/workspace";
 
 test.setTimeout(120000);
 const temporaryRoot = resolve(".tmp/desktop-batch-splits");
@@ -188,7 +189,7 @@ test("selected groups and streams drop as seven panes with matching batch previe
   const saved = JSON.parse(
     await readFile(join(directory, "workspace.json"), "utf8"),
   );
-  expect(saved.panes).toHaveLength(7);
+  expect(restoreWorkspace(saved).panes).toHaveLength(7);
   expect(saved.splitTabs[0].panes).toHaveLength(7);
   expect(saved.favorites[0].tabs).toHaveLength(7);
   await launch();

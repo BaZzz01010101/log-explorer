@@ -1,4 +1,6 @@
 import { openSettingsWindow } from "./settings-panel";
+// Saved files omit the pane projection; restoring derives it.
+import { restoreWorkspace } from "../../src/shared/workspace";
 import { desktopExecutablePath } from "./desktop-app";
 import {
   _electron as electron,
@@ -434,8 +436,8 @@ test("whole tabs reorder near the strip and create highlighted nested splits awa
   const saved = JSON.parse(
     await readFile(join(directory, "workspace.json"), "utf8"),
   );
-  expect(saved.panes).toHaveLength(4);
-  expect(saved.layout.second.second.axis).toBe("horizontal");
+  expect(restoreWorkspace(saved).panes).toHaveLength(4);
+  expect((restoreWorkspace(saved).layout as any).second.second.axis).toBe("horizontal");
 });
 
 test("right clicking a selection shows those tabs in split mode", async () => {
@@ -527,9 +529,9 @@ test("trusted settings edits and final workspace changes survive a natural resta
     timezone: "utc",
     density: "comfortable",
   });
-  expect(saved.layout.axis).toBe("horizontal");
-  expect(saved.layout.ratio).toBeCloseTo(0.6, 1);
-  expect(saved.panes).toHaveLength(2);
+  expect((restoreWorkspace(saved).layout as any).axis).toBe("horizontal");
+  expect((restoreWorkspace(saved).layout as any).ratio).toBeCloseTo(0.6, 1);
+  expect(restoreWorkspace(saved).panes).toHaveLength(2);
   expect(saved).not.toHaveProperty("events");
   await launch();
   await expect(page.locator(".workspace-pane")).toHaveCount(2);

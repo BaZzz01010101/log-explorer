@@ -34,7 +34,11 @@ import { setAwsAccess } from "./aws-access-toggle";
 import { WorkspaceStore } from "./persistence";
 import { createCloseCoordinator } from "./close-coordinator";
 import { parseWorkspaceInput } from "./workspace-input";
-import { setFixturesAvailable } from "../shared/workspace";
+import {
+  consistentProjection,
+  persistedWorkspace,
+  setFixturesAvailable,
+} from "../shared/workspace";
 import {
   loadWindowState,
   restoreWindowBounds,
@@ -396,8 +400,16 @@ handle("explorer:load", () => {
   startupWorkspace = undefined;
   return loaded ?? store.load();
 });
+// The projection is re-derived from the active entry before validation, so a
+// reducer path that leaves it stale can no longer make every save fail.
 handle("explorer:save", (workspace) =>
-  store.save(workspaceSchema.parse(workspace)),
+  store.save(
+    persistedWorkspace(
+      workspaceSchema.parse(
+        consistentProjection(workspace as Workspace),
+      ) as Workspace,
+    ),
+  ),
 );
 handle("explorer:copy", (text) =>
   clipboard.writeText(z.string().max(COPY_TEXT_LIMIT).parse(text)),

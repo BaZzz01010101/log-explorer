@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useAppCommands } from "../app-commands";
 import { Button, Group, Popover, Select, Tabs, Text } from "@mantine/core";
 import {
   IconChevronDown,
@@ -43,6 +44,7 @@ export function TimeRangePicker({
   relativeTimeTemplates,
   onOpenTimeRangeSettings,
 }: Props) {
+  const commands = useAppCommands();
   const [opened, setOpened] = useState(false);
   const [mode, setMode] = useState<string | null>(
     tab.timePreset === "custom" ? "absolute" : "relative",
@@ -316,11 +318,10 @@ export function TimeRangePicker({
                     data-tooltip="Time range settings"
                     onClick={() => {
                       setOpened(false);
-                      if (onOpenTimeRangeSettings) onOpenTimeRangeSettings();
-                      else
-                        window.dispatchEvent(
-                          new Event("explorer:open-time-range-settings"),
-                        );
+                      (
+                        onOpenTimeRangeSettings ??
+                        commands.openTimeRangeSettings
+                      )();
                     }}
                   >
                     <IconSettings size={16} />
