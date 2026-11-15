@@ -151,6 +151,32 @@ const OFFLINE_CONNECTION: Connection = {
   region: "eu-west-1",
   mode: "offline",
 };
+const AWS_DEFAULT_CONNECTION: Connection = {
+  id: "aws-default",
+  name: "AWS",
+  profile: "default",
+  region: "eu-west-1",
+  mode: "aws",
+};
+// Offline fixtures exist only in development, verification builds and tests.
+let fixturesAvailable = true;
+export function setFixturesAvailable(value: boolean): void {
+  fixturesAvailable = value;
+}
+/** Drops fixture sources from a raw tab; a tab with only fixture sources is removed. */
+function withoutFixtureSources(value: unknown, offline: Set<string>): unknown {
+  const raw = record(value);
+  const primary = string(raw.connectionId, "", 160);
+  const sources = (Array.isArray(raw.sources) ? raw.sources : []).filter(
+    (source) => {
+      const id = record(source).connectionId;
+      return !offline.has(typeof id === "string" && id ? id : primary);
+    },
+  );
+  if (!sources.length) return null;
+  if (!offline.has(primary)) return { ...raw, sources };
+  return { ...raw, connectionId: record(sources[0]).connectionId, sources };
+}
 const DEFAULT_PREFERENCES: Preferences = {
   profileVisibility: {},
   theme: "dark",
@@ -749,6 +775,30 @@ function parseSplitSizes(value: unknown): {
 }
 
 export function createWorkspace(): Workspace {
+  if (!fixturesAvailable)
+    return {
+      version: 1,
+      name: "Investigation workspace",
+      connections: [{ ...AWS_DEFAULT_CONNECTION }],
+      tabs: [],
+      splitTabs: [],
+      tabOrder: [],
+      activeTabId: null,
+      activeConnectionId: AWS_DEFAULT_CONNECTION.id,
+      closedTabs: [],
+      panes: [{ id: "pane-1", tabId: null }],
+      activePaneId: "pane-1",
+      layout: { type: "leaf", paneId: "pane-1" },
+      sidebarWidth: 280,
+      sidebarVisible: true,
+      splitSizes: parseSplitSizes(undefined),
+      favorites: [],
+      recents: [],
+      savedQueries: [],
+      history: [],
+      presets: [],
+      preferences: parsePreferences(DEFAULT_PREFERENCES),
+    };
   const tab = baseTab("tab-orders", "offline", [
     { logGroup: "/aws/lambda/orders-api" },
   ]);
@@ -1094,13 +1144,29 @@ export function restoreWorkspace(value: unknown): Workspace {
   )
     return defaults;
   const valid = <T>(item: T | null): item is T => item !== null;
-  const connections = unique(
+  const parsedConnections = unique(
     list(raw.connections, 50).map(parseConnection).filter(valid),
   );
-  if (!connections.length) connections.push({ ...OFFLINE_CONNECTION });
+  const offline = new Set(
+    fixturesAvailable
+      ? []
+      : parsedConnections
+          .filter((connection) => connection.mode === "offline")
+          .map((connection) => connection.id),
+  );
+  const connections = parsedConnections.filter(
+    (connection) => !offline.has(connection.id),
+  );
+  if (!connections.length)
+    connections.push(
+      fixturesAvailable ? { ...OFFLINE_CONNECTION } : { ...AWS_DEFAULT_CONNECTION },
+    );
+  const stripFixtures = (tab: unknown) =>
+    offline.size ? withoutFixtureSources(tab, offline) : tab;
   const tabs = Array.isArray(raw.tabs)
     ? unique(
         list(raw.tabs, 100)
+          .map(stripFixtures)
           .map((tab) => parseTab(tab, connections))
           .filter(valid),
       )
@@ -1111,6 +1177,7 @@ export function restoreWorkspace(value: unknown): Workspace {
   const closedTabs = recentClosedTabs(
     unique(
       list(raw.closedTabs, 30)
+        .map(stripFixtures)
         .map((tab) => parseTab(tab, connections))
         .filter(valid),
     )

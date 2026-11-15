@@ -35,6 +35,7 @@ import type {
 import {
   createTab,
   createWorkspace,
+  setFixturesAvailable,
   workspaceReducer,
   projectFavoriteOpen,
   projectResourceAction,
@@ -282,8 +283,14 @@ export default function App() {
     ])
       .then(([loaded, info]) => {
         if (disposed) return;
-        if (loaded.workspace)
-          dispatch({ type: "workspace/restore", workspace: loaded.workspace });
+        // Release builds have no offline fixtures; the initial state was
+        // created before the build kind was known, so rebuild it without them.
+        setFixturesAvailable(info.fixtures ?? true);
+        if (loaded.workspace || info.fixtures === false)
+          dispatch({
+            type: "workspace/restore",
+            workspace: loaded.workspace ?? createWorkspace(),
+          });
         setEnvironment(info);
         setReady(true);
         if (loaded.warning)

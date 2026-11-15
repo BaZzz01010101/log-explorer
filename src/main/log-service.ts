@@ -14,6 +14,15 @@ import {
 } from "./aws-adapter";
 import { createMultiSourceEvents, scopedQueries } from "./multi-source-events";
 import { createOfflineAdapter } from "./offline-adapter";
+
+// Release builds define this as false, so the fixture adapter is dropped from the bundle.
+const fixturesBuild =
+  typeof __VERIFICATION_BUILD__ === "undefined" || __VERIFICATION_BUILD__;
+function offlineFixtures(): LogAdapter {
+  if (!fixturesBuild)
+    throw new Error("Offline fixtures are not available in this build.");
+  return createOfflineAdapter();
+}
 import { createGcpAdapter } from "./gcp-adapter";
 
 export interface LogServiceOptions {
@@ -22,6 +31,7 @@ export interface LogServiceOptions {
   offlineAdapterFactory?: () => LogAdapter;
   gcpAdapterFactory?: (connection: Connection) => LogAdapter;
   allowGcp?: () => boolean;
+  allowOffline?: () => boolean;
 }
 interface Job {
   controller: AbortController;
@@ -126,6 +136,8 @@ export function createLogService(
   let stopping = false;
   function gate(connection: Connection) {
     if (stopping) throw new Error("Log connections are closing; retry shortly");
+    if (connection.mode === "offline" && options.allowOffline && !options.allowOffline())
+      throw new Error("Offline fixtures are not available in this build.");
     if (connection.mode === "aws" && !options.allowAws())
       throw new Error(
         "AWS access is disabled. Enable it explicitly in a packaged application.",
@@ -157,7 +169,7 @@ export function createLogService(
           : connection.mode === "aws"
           ? (options.awsAdapterFactory?.(connection) ??
             createAwsAdapter(connection, { allowAws: options.allowAws }))
-          : (options.offlineAdapterFactory?.() ?? createOfflineAdapter());
+          : (options.offlineAdapterFactory?.() ?? offlineFixtures());
       adapters.set(key, adapter);
     }
     return adapter;

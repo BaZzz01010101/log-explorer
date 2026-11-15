@@ -293,6 +293,8 @@ export interface EnvironmentInfo {
   packaged: boolean;
   awsEnabled: boolean;
   canEnableAws?: boolean;
+  /** Offline fixtures exist only in development and verification builds. */
+  fixtures?: boolean;
 }
 export interface WorkspaceLoad {
   workspace: unknown | null;

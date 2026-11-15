@@ -34,6 +34,7 @@ import { setAwsAccess } from "./aws-access-toggle";
 import { WorkspaceStore } from "./persistence";
 import { createCloseCoordinator } from "./close-coordinator";
 import { parseWorkspaceInput } from "./workspace-input";
+import { setFixturesAvailable } from "../renderer/workspace";
 import {
   loadWindowState,
   restoreWindowBounds,
@@ -45,6 +46,8 @@ import {
 const verificationSwitches =
   !app.isPackaged ||
   (typeof __VERIFICATION_BUILD__ !== "undefined" && __VERIFICATION_BUILD__);
+// Saved workspaces lose their offline fixture connections in release builds.
+setFixturesAvailable(verificationSwitches);
 if (!verificationSwitches) {
   delete process.env.EXPLORER_TEST_USER_DATA;
   delete process.env.EXPLORER_TEST_QUERY_DELAY_MS;
@@ -68,6 +71,9 @@ const gate = new AwsAccessPreference(
   canEnableAws,
   join(app.getPath("userData"), "access-settings.json"),
 );
+// With offline fixtures removed, the packaged app always uses AWS; development
+// and verification builds still never reach it.
+if (canEnableAws && !gate.enabled) gate.setEnabled(true);
 let window: BrowserWindow | null = null;
 let quitting = false;
 let allowWindowClose = false;
@@ -83,7 +89,7 @@ const service = createLogService(
     if (window && !window.isDestroyed())
       window.webContents.send("explorer:update", update);
   },
-  { allowAws: () => gate.enabled, allowGcp: () => canUseGcp },
+  { allowAws: () => gate.enabled, allowGcp: () => canUseGcp, allowOffline: () => verificationSwitches },
 );
 const environment = () => ({
   version: app.getVersion(),
@@ -91,6 +97,7 @@ const environment = () => ({
   packaged: app.isPackaged,
   awsEnabled: gate.enabled,
   canEnableAws,
+  fixtures: verificationSwitches,
 });
 const rendererFile = join(__dirname, "../renderer/index.html");
 const developmentUrl = !app.isPackaged

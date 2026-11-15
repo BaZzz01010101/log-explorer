@@ -2,7 +2,7 @@
 
 ## Intent and constraints
 
-A local, keyboard-friendly desktop workspace for everyday CloudWatch investigation. Resource navigation, queries, live monitoring and structured event inspection share one actual data path. Offline fixtures are explicitly labeled; they never imply verified AWS behavior. Development, tests and unpackaged builds must not read AWS configuration or connect to AWS. The same rule applies to Google Cloud: only the packaged application runs the gcloud CLI, kubectl or Cloud Logging requests. AWS additionally requires an explicit opt-in in Settings; Google Cloud is used as soon as a Google Cloud view or the Google Cloud explorer is opened. No backend infrastructure is needed.
+A local, keyboard-friendly desktop workspace for everyday CloudWatch investigation. Resource navigation, queries, live monitoring and structured event inspection share one actual data path. Offline fixtures exist only in development and verification builds (`npm run package:verification`) for tests; release builds compile them out and drop fixture connections and fixture-only views from saved workspaces. Development, tests and unpackaged builds must not read AWS configuration or connect to AWS. The same rule applies to Google Cloud: only the packaged application runs the gcloud CLI, kubectl or Cloud Logging requests. AWS additionally requires an explicit opt-in in Settings; Google Cloud is used as soon as a Google Cloud view or the Google Cloud explorer is opened. No backend infrastructure is needed.
 
 ## Architecture
 

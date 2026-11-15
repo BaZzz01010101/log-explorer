@@ -508,17 +508,11 @@ for (const theme of ["light", "dark"])
       await expect(page.locator(".app-footer")).toHaveCount(0);
       const connections = await choose(presentation, "Connections");
       const switches = connections.locator(".settings-access-switches");
-      await expect(switches.getByRole("switch")).toHaveCount(2);
-      const aws = switches.getByRole("switch", {
-        name: "Enable AWS access",
-        exact: true,
-      });
+      await expect(switches.getByRole("switch")).toHaveCount(1);
       const fixtures = switches.getByRole("switch", {
         name: "Offline fixtures",
         exact: true,
       });
-      await expect(aws).toBeDisabled();
-      await expect(aws).not.toBeChecked();
       await expect(fixtures).toBeChecked();
       await expect(connections.locator(".mantine-Alert-root")).toHaveCount(0);
       await fixtures.uncheck();

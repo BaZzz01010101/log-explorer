@@ -1111,7 +1111,7 @@ test("advanced connection settings are removed and remembered AWS access stays h
   ).toHaveCount(0);
   await expect(
     page.getByLabel("Enable AWS access", { exact: true }),
-  ).toBeDisabled();
+  ).toHaveCount(0);
   expect(
     await page.evaluate(async () => {
       try {
@@ -1133,121 +1133,6 @@ test("advanced connection settings are removed and remembered AWS access stays h
   expect(
     (await page.evaluate(() => window.explorer.environment())).awsEnabled,
   ).toBe(false);
-});
-
-test("enabling access refreshes failed Explorer data and log views through an isolated IPC fixture", async () => {
-  await close();
-  const workspace = createWorkspace();
-  workspace.connections[0].mode = "aws";
-  workspace.tabs[0].filterPattern = "";
-  await writeFile(join(directory, "workspace.json"), JSON.stringify(workspace));
-  await launch("error");
-  await app.evaluate(({ ipcMain, BrowserWindow }) => {
-    const fixture = { enabled: false, groups: 0, queries: 0 };
-    (globalThis as any).__accessRefreshFixture = fixture;
-    for (const name of [
-      "environment",
-      "enable-aws",
-      "profiles",
-      "groups",
-      "streams",
-      "query",
-    ])
-      ipcMain.removeHandler("explorer:" + name);
-    ipcMain.handle("explorer:environment", () => ({
-      version: "fixture",
-      platform: process.platform,
-      packaged: true,
-      canEnableAws: true,
-      awsEnabled: fixture.enabled,
-    }));
-    ipcMain.handle("explorer:enable-aws", (_event, enabled) => {
-      fixture.enabled = enabled;
-      return {
-        version: "fixture",
-        platform: process.platform,
-        packaged: true,
-        canEnableAws: true,
-        awsEnabled: enabled,
-      };
-    });
-    ipcMain.handle("explorer:profiles", () => ["fixture-profile"]);
-    ipcMain.handle("explorer:groups", () => {
-      fixture.groups++;
-      if (!fixture.enabled)
-        throw new Error("AWS access is disabled (injected fixture)");
-      return { items: [{ name: "/aws/lambda/orders-api" }] };
-    });
-    ipcMain.handle("explorer:streams", () => ({
-      items: [{ name: "fixture-stream" }],
-    }));
-    ipcMain.handle("explorer:query", (_event, request) => {
-      fixture.queries++;
-      const window = BrowserWindow.getAllWindows()[0];
-      window.webContents.send(
-        "explorer:update",
-        fixture.enabled
-          ? {
-              requestId: request.requestId,
-              state: "complete",
-              events: [
-                {
-                  id: "access-refresh-event",
-                  timestamp: Date.now(),
-                  message: "Loaded after enabling access",
-                  logGroup: "/aws/lambda/orders-api",
-                  logStream: "fixture-stream",
-                },
-              ],
-              stats: { scanned: 1, matched: 1, elapsedMs: 1 },
-            }
-          : {
-              requestId: request.requestId,
-              state: "error",
-              error: "AWS access is disabled (injected fixture)",
-            },
-      );
-    });
-  });
-  await page.reload();
-  await expect(page.locator(".query-status")).toHaveAttribute(
-    "data-query-state",
-    "error",
-  );
-  await expect(page.locator(".resource-tree")).toContainText(
-    "AWS access is disabled",
-  );
-  const before = await app.evaluate(() => ({
-    ...(globalThis as any).__accessRefreshFixture,
-  }));
-  await openSettingsWindow(page);
-  await page.getByLabel("Enable AWS access", { exact: true }).click();
-  await expect(
-    page.getByLabel("Enable AWS access", { exact: true }),
-  ).toBeChecked();
-  await dialog().locator(".mantine-Modal-close").click();
-  await expect(page.locator(".query-status")).toHaveAttribute(
-    "data-query-state",
-    "complete",
-  );
-  await expect(page.locator(".query-status")).toContainText("1 loaded");
-  await expect(
-    page.getByRole("button", { name: "/aws/lambda/orders-api", exact: true }),
-  ).toBeVisible();
-  const after = await app.evaluate(() => ({
-    ...(globalThis as any).__accessRefreshFixture,
-  }));
-  expect(after.groups).toBeGreaterThan(before.groups);
-  expect(after.queries).toBe(before.queries + 1);
-  // The immutable process arguments keep the real gate off; only these test IPC handlers emulate access.
-  expect(
-    await app.evaluate(
-      () =>
-        process.argv.includes("--offline-verification") &&
-        process.argv.includes("--background-verification"),
-    ),
-  ).toBe(true);
-  await capture("access-enabling-refresh.png");
 });
 
 test("favorite context menus track the pointer and rename aliases persist without changing saved tabs", async () => {

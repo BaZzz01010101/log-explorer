@@ -61,7 +61,6 @@ export function Settings({
   previewSnapshot?: SettingsPreviewSnapshot | null;
 }) {
   const [profiles, setProfiles] = useState<string[]>([]);
-  const [accessPending, setAccessPending] = useState(false);
   const [activeTab, setActiveTab] = useState<string | null>("connections");
   const [previewPointer, setPreviewPointer] = useState<number | null>(null);
   const settingsWindow = useSettingsWindow(opened && presentation === "modal");
@@ -158,25 +157,6 @@ export function Settings({
         .catch((e) => notifications.show({ color: "red", message: String(e) }));
     else setProfiles([]);
   }, [environment?.awsEnabled]);
-  const setAws = async (enabled: boolean) => {
-    setAccessPending(true);
-    try {
-      onEnvironment(await window.explorer.enableAws(enabled));
-    } catch (error) {
-      // Revoking authorization still takes effect when query cleanup fails.
-      const current = await window.explorer
-        .environment()
-        .catch(() => undefined);
-      if (current) onEnvironment(current);
-      notifications.show({
-        color: "red",
-        title: "AWS access",
-        message: error instanceof Error ? error.message : String(error),
-      });
-    } finally {
-      setAccessPending(false);
-    }
-  };
   const content = (
     <Tabs
       className="settings-tabs"
@@ -196,63 +176,50 @@ export function Settings({
           gap="sm"
           className="settings-form-content settings-connections-form"
         >
-          <Group gap="xl" className="settings-access-switches">
-            <Switch
-              aria-label="Enable AWS access"
-              label={
-                <SettingLabel
-                  label="Enable AWS access"
-                  help={
-                    environment?.canEnableAws
-                      ? "Use your configured AWS profiles to read CloudWatch Logs."
-                      : "AWS access is unavailable in development and offline verification builds."
-                  }
-                />
-              }
-              checked={environment?.awsEnabled ?? false}
-              disabled={!environment?.canEnableAws || accessPending}
-              onChange={(event) => void setAws(event.currentTarget.checked)}
-            />
-            <Switch
-              aria-label="Offline fixtures"
-              label={
-                <SettingLabel
-                  label="Offline fixtures"
-                  help="Show local sample log sources in Explorer. These sources do not connect to AWS."
-                />
-              }
-              checked={workspace.connections.some(
-                (connection) =>
-                  connection.mode === "offline" && connection.enabled !== false,
-              )}
-              onChange={(event) => {
-                const enabled = event.currentTarget.checked;
-                const hasFixtures = workspace.connections.some(
-                  (connection) => connection.mode === "offline",
-                );
-                dispatch({
-                  type: "connections/set",
-                  connections: hasFixtures
-                    ? workspace.connections.map((connection) =>
-                        connection.mode === "offline"
-                          ? { ...connection, enabled }
-                          : connection,
-                      )
-                    : [
-                        ...workspace.connections,
-                        {
-                          id: crypto.randomUUID(),
-                          name: "Offline fixtures",
-                          profile: "default",
-                          region: "eu-west-1",
-                          mode: "offline",
-                          enabled,
-                        },
-                      ],
-                });
-              }}
-            />
-          </Group>
+          {/* Fixtures exist only in development and verification builds. */}
+          {environment?.fixtures !== false && (
+            <Group gap="xl" className="settings-access-switches">
+              <Switch
+                aria-label="Offline fixtures"
+                label={
+                  <SettingLabel
+                    label="Offline fixtures"
+                    help="Show local sample log sources in Explorer. These sources do not connect to AWS."
+                  />
+                }
+                checked={workspace.connections.some(
+                  (connection) =>
+                    connection.mode === "offline" && connection.enabled !== false,
+                )}
+                onChange={(event) => {
+                  const enabled = event.currentTarget.checked;
+                  const hasFixtures = workspace.connections.some(
+                    (connection) => connection.mode === "offline",
+                  );
+                  dispatch({
+                    type: "connections/set",
+                    connections: hasFixtures
+                      ? workspace.connections.map((connection) =>
+                          connection.mode === "offline"
+                            ? { ...connection, enabled }
+                            : connection,
+                        )
+                      : [
+                          ...workspace.connections,
+                          {
+                            id: crypto.randomUUID(),
+                            name: "Offline fixtures",
+                            profile: "default",
+                            region: "eu-west-1",
+                            mode: "offline",
+                            enabled,
+                          },
+                        ],
+                  });
+                }}
+              />
+            </Group>
+          )}
           <ProfileConnectionsEditor
             uiState={connectionsEditorState}
             onUiStateChange={setConnectionsEditorState}

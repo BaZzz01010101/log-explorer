@@ -231,7 +231,8 @@ test("desktop vertical slice stays isolated and supports investigation", async (
     "cancelled",
   );
   await openSettingsWindow(page);
-  await expect(page.getByLabel("Enable AWS access")).toBeDisabled();
+  // AWS has no opt-in switch any more; packaged release builds always use it.
+  await expect(page.getByLabel("Enable AWS access")).toHaveCount(0);
   await click(page.getByRole("tab", { name: "Preferences", exact: true }));
   await expect(page.getByLabel("Maximum events per view")).toBeVisible();
   await key("Escape");
