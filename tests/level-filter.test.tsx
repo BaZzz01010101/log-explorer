@@ -1,121 +1,67 @@
-import { act, create, type ReactTestRenderer } from "react-test-renderer";
-import { useState, type ReactNode } from "react";
-import { afterEach, beforeEach, expect, it, vi } from "vitest";
+// @vitest-environment happy-dom
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { MantineProvider } from "@mantine/core";
+import { useState } from "react";
+import { afterEach, expect, it, vi } from "vitest";
 import { LevelFilter } from "../src/renderer/components/LevelFilter";
 
-vi.mock("@mantine/core", async () => {
-  const { createElement } = await import("react");
-  const component = ({ children, ...props }: Record<string, unknown>) =>
-    createElement("div", props, children as ReactNode);
-  const button = ({ children, ...props }: Record<string, unknown>) =>
-    createElement("button", props, children as ReactNode);
-  return {
-    Button: button,
-    Checkbox: (props: Record<string, unknown>) =>
-      createElement("input", { ...props, type: "checkbox" }),
-    Group: component,
-    Stack: component,
-    Popover: Object.assign(component, {
-      Target: component,
-      Dropdown: component,
-    }),
-  };
-});
-
-let renderer: ReactTestRenderer | undefined;
+// Real Mantine components in a DOM: clicks go through the rendered elements,
+// so a broken handler, label or popover wiring fails here.
 const changed = vi.fn();
 function Harness({ initial = undefined }: { initial?: string[] }) {
   const [levels, setLevels] = useState(initial);
   return (
-    <LevelFilter
-      level="all"
-      levels={levels}
-      onChange={(next) => {
-        changed(next);
-        setLevels(next);
-      }}
-    />
+    <MantineProvider env="test">
+      <LevelFilter
+        level="all"
+        levels={levels}
+        onChange={(next) => {
+          changed(next);
+          setLevels(next);
+        }}
+      />
+    </MantineProvider>
   );
 }
-const element = (label: string) =>
-  renderer!.root
-    .findAllByProps({ "aria-label": label })
-    .find((node) => typeof node.type === "string")!;
-const isOpened = () =>
-  renderer!.root
-    .findAllByType("div")
-    .some((node) => node.props.opened === true);
-beforeEach(() => {
+const control = (label: string) => screen.getByLabelText(label);
+const opened = () => screen.queryByLabelText("Include ERROR") !== null;
+const openMenu = () => fireEvent.click(control("Local level filter"));
+afterEach(() => {
+  cleanup();
   changed.mockClear();
-  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-  const original = console.error.bind(console);
-  vi.spyOn(console, "error").mockImplementation((...args) => {
-    if (!String(args[0]).startsWith("react-test-renderer is deprecated"))
-      original(...args);
-  });
 });
-afterEach(async () => {
-  await act(async () => renderer?.unmount());
-  renderer = undefined;
-  vi.restoreAllMocks();
-  vi.unstubAllGlobals();
-});
-it("starts with every level checked and supports exclusive text selection", async () => {
-  await act(async () => {
-    renderer = create(<Harness />);
-  });
-  await act(async () => element("Local level filter").props.onClick());
-  expect(element("Include ERROR").props.checked).toBe(true);
-  expect(element("Include UNKNOWN").props.checked).toBe(true);
-  await act(async () =>
-    element("Select only ERROR").props.onClick({
-      ctrlKey: false,
-      metaKey: false,
-    }),
-  );
+
+it("starts with every level checked and supports exclusive text selection", () => {
+  render(<Harness />);
+  openMenu();
+  expect((control("Include ERROR") as HTMLInputElement).checked).toBe(true);
+  expect((control("Include UNKNOWN") as HTMLInputElement).checked).toBe(true);
+  fireEvent.click(control("Select only ERROR"));
   expect(changed).toHaveBeenLastCalledWith(["error"]);
-  expect(isOpened()).toBe(false);
+  expect(opened()).toBe(false);
 });
-it("toggles checkbox selections without closing and can explicitly select none", async () => {
-  await act(async () => {
-    renderer = create(<Harness initial={["error"]} />);
-  });
-  await act(async () => element("Local level filter").props.onClick());
-  await act(async () =>
-    element("Include INFO").props.onChange({
-      currentTarget: { checked: true },
-    }),
-  );
+
+it("toggles checkbox selections without closing and can explicitly select none", () => {
+  render(<Harness initial={["error"]} />);
+  openMenu();
+  fireEvent.click(control("Include INFO"));
   expect(changed).toHaveBeenLastCalledWith(["error", "info"]);
-  expect(isOpened()).toBe(true);
-  await act(async () =>
-    element("Include ERROR").props.onChange({
-      currentTarget: { checked: false },
-    }),
-  );
-  await act(async () =>
-    element("Include INFO").props.onChange({
-      currentTarget: { checked: false },
-    }),
-  );
+  expect(opened()).toBe(true);
+  fireEvent.click(control("Include ERROR"));
+  fireEvent.click(control("Include INFO"));
   expect(changed).toHaveBeenLastCalledWith([]);
-  expect(element("Local level filter").props["data-tooltip"]).toBe("No levels");
+  expect(control("Local level filter").dataset.tooltip).toBe("No levels");
 });
+
 it.each(["ctrlKey", "metaKey"])(
   "uses %s text clicks to toggle levels without closing",
-  async (modifier) => {
-    await act(async () => {
-      renderer = create(<Harness initial={["error"]} />);
-    });
-    await act(async () => element("Local level filter").props.onClick());
-    await act(async () =>
-      element("Select only INFO").props.onClick({ [modifier]: true }),
-    );
+  (modifier) => {
+    render(<Harness initial={["error"]} />);
+    openMenu();
+    fireEvent.click(control("Select only INFO"), { [modifier]: true });
     expect(changed).toHaveBeenLastCalledWith(["error", "info"]);
-    expect(isOpened()).toBe(true);
-    await act(async () =>
-      element("Select only ERROR").props.onClick({ [modifier]: true }),
-    );
+    expect(opened()).toBe(true);
+    fireEvent.click(control("Select only ERROR"), { [modifier]: true });
     expect(changed).toHaveBeenLastCalledWith(["info"]);
   },
 );

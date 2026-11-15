@@ -9,7 +9,7 @@ import {
   shell,
 } from "electron";
 import { join } from "node:path";
-import { pathToFileURL } from "node:url";
+import { assertTrustedSender } from "./ipc-trust";
 import { randomUUID } from "node:crypto";
 import { writeFile } from "node:fs/promises";
 import { z } from "zod";
@@ -117,19 +117,7 @@ const developmentUrl = !app.isPackaged
 function trusted(
   event: Electron.IpcMainInvokeEvent | Electron.IpcMainEvent,
 ): void {
-  if (
-    !window ||
-    event.sender !== window.webContents ||
-    event.senderFrame !== window.webContents.mainFrame
-  )
-    throw new Error("Untrusted renderer");
-  const url = event.senderFrame?.url;
-  if (
-    developmentUrl
-      ? url !== developmentUrl && url !== `${developmentUrl}/`
-      : url !== pathToFileURL(rendererFile).href
-  )
-    throw new Error("Untrusted renderer URL");
+  assertTrustedSender(event, window, { developmentUrl, rendererFile });
 }
 ipcMain.on("explorer:close-ready", (event, token, success) => {
   try {
