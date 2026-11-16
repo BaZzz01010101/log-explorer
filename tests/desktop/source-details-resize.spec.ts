@@ -12,7 +12,11 @@ import {
   createWorkspace,
   restoreWorkspace,
 } from "../../src/shared/workspace";
-import { closeAppNaturally, desktopExecutablePath } from "./desktop-app";
+import {
+  closeAppNaturally,
+  desktopExecutablePath,
+  behaviorThemes,
+} from "./desktop-app";
 
 // The native process, profile, credentials and results stay within this checkout.
 // Both verification flags are mandatory: no visible window or real AWS access.
@@ -173,7 +177,7 @@ async function capture(name: string) {
   await writeFile(test.info().outputPath(name), Buffer.from(png, "base64"));
 }
 
-for (const theme of ["light", "dark"]) {
+for (const theme of behaviorThemes) {
   test(`${theme} source details keep selection geometry and persist resizing across short hidden windows`, async () => {
     await sized(220);
     await expect(details().locator(".source-details-heading")).toHaveText(

@@ -14,7 +14,11 @@ import {
   createWorkspace,
   workspaceReducer,
 } from "../../src/shared/workspace";
-import { closeAppNaturally, desktopExecutablePath } from "./desktop-app";
+import {
+  closeAppNaturally,
+  desktopExecutablePath,
+  runsBehaviorTest,
+} from "./desktop-app";
 
 // Keep every fixture, result and native process private to this checkout. The
 // background/offline flags prohibit visible windows and AWS credential access.
@@ -352,138 +356,140 @@ for (const theme of ["light", "dark"]) {
     expect((await contrast(row)).background).not.toBe(confirming.background);
   });
 
-  test(`${theme} automatic names suppress redundant tooltips while clipped and descriptive favorite or tab hints remain`, async () => {
-    const automatic = favoriteName("auto", "orders-api");
-    await expect(automatic).toHaveAttribute("data-tooltip", "orders-api");
-    const favoriteLabel = automatic.locator("span").last();
-    expect(
-      await favoriteLabel.evaluate(
-        (element) => element.scrollWidth <= element.clientWidth,
-      ),
-    ).toBe(true);
-    await absent(automatic);
-    const automaticTab = tab("orders-api");
-    const tabLabel = automaticTab.locator("span").first();
-    expect(
-      await tabLabel.evaluate(
-        (element) => element.scrollWidth <= element.clientWidth,
-      ),
-    ).toBe(true);
-    await absent(automaticTab);
-
-    await leave();
-    await clipText(favoriteLabel);
-    await automatic.hover();
-    await expect(tooltip()).toHaveText("orders-api");
-    await leave();
-    await favoriteLabel.evaluate((element) => element.removeAttribute("style"));
-    await clipText(tabLabel);
-    await automaticTab.hover();
-    await expect(tooltip()).toHaveText("orders-api");
-    await leave();
-    await tabLabel.evaluate((element) => element.removeAttribute("style"));
-
-    for (const [target, sources] of [
-      [favoriteName("renamed", "Incident review"), ["payments-worker"]],
-      [tab("Incident review"), ["payments-worker"]],
-      [
-        favoriteName("multiple", "Mixed Sources"),
-        ["orders-api", "media-pipeline"],
-      ],
-      [tab("Mixed Sources"), ["orders-api", "media-pipeline"]],
-    ] as const) {
-      await target.hover();
-      await expect(tooltip()).toContainText("Sources:");
-      for (const source of sources)
-        await expect(tooltip()).toContainText(source);
-      await expect(tooltip()).not.toContainText("/aws/lambda/");
-      await leave();
-    }
-    await expect(page.locator("[title]")).toHaveCount(0);
-  });
-
-  test(`${theme} wrapped inspector metadata stays quiet while clipped values and actionable hints remain selectable`, async () => {
-    await page
-      .locator('.virtual-event[data-event-id="tooltip-event"] .inspect-cell')
-      .first()
-      .click();
-    await page
-      .getByRole("grid", { name: "Log events", exact: true })
-      .press("Enter");
-    const inspector = page.getByRole("region", {
-      name: "Event inspector",
-      exact: true,
-    });
-    const code = inspector.locator(".inspector-source code").first();
-    await expect(code).toHaveText(groupName);
-    await code.scrollIntoViewIfNeeded();
-    const geometry = await code.evaluate((element) => {
-      const range = document.createRange();
-      range.selectNodeContents(element);
-      const box = element.getBoundingClientRect();
-      const lines = Array.from(range.getClientRects());
-      return {
-        lines: lines.length,
-        contained: lines.every(
-          (line) =>
-            line.left >= box.left - 1 &&
-            line.right <= box.right + 1 &&
-            line.top >= box.top - 1 &&
-            line.bottom <= box.bottom + 1,
+  if (runsBehaviorTest(theme))
+    test(`${theme} automatic names suppress redundant tooltips while clipped and descriptive favorite or tab hints remain`, async () => {
+      const automatic = favoriteName("auto", "orders-api");
+      await expect(automatic).toHaveAttribute("data-tooltip", "orders-api");
+      const favoriteLabel = automatic.locator("span").last();
+      expect(
+        await favoriteLabel.evaluate(
+          (element) => element.scrollWidth <= element.clientWidth,
         ),
-        fits:
-          element.scrollWidth <= element.clientWidth + 1 &&
-          element.scrollHeight <= element.clientHeight + 1,
-      };
-    });
-    expect(geometry.lines).toBeGreaterThan(1);
-    expect(geometry.contained).toBe(true);
-    expect(geometry.fits).toBe(true);
-    await absent(code);
-    await leave();
-    await clipText(code);
-    await code.hover();
-    await expect(tooltip()).toHaveText(groupName);
-    await capture(`${theme}-clipped-inspector-tooltip.png`);
-    await leave();
+      ).toBe(true);
+      await absent(automatic);
+      const automaticTab = tab("orders-api");
+      const tabLabel = automaticTab.locator("span").first();
+      expect(
+        await tabLabel.evaluate(
+          (element) => element.scrollWidth <= element.clientWidth,
+        ),
+      ).toBe(true);
+      await absent(automaticTab);
 
-    await page.getByRole("button", { name: "Settings", exact: true }).hover();
-    await expect(tooltip()).toContainText("Settings");
-    await leave();
-    await page
-      .getByRole("button", { name: "Match local filter case", exact: true })
-      .hover();
-    await expect(tooltip()).toContainText("Alt+C");
-    await tooltip().hover();
-    await page.waitForTimeout(550);
-    await expect(tooltip()).toBeVisible();
-    expect(
-      await tooltip().evaluate(
-        (element) => getComputedStyle(element).userSelect,
-      ),
-    ).toBe("text");
-    const textRects = await tooltip().evaluate((element) => {
-      const range = document.createRange();
-      range.selectNodeContents(element);
-      return Array.from(range.getClientRects()).map((rect) => ({
-        x: rect.x,
-        y: rect.y,
-        width: rect.width,
-        height: rect.height,
-      }));
+      await leave();
+      await clipText(favoriteLabel);
+      await automatic.hover();
+      await expect(tooltip()).toHaveText("orders-api");
+      await leave();
+      await favoriteLabel.evaluate((element) => element.removeAttribute("style"));
+      await clipText(tabLabel);
+      await automaticTab.hover();
+      await expect(tooltip()).toHaveText("orders-api");
+      await leave();
+      await tabLabel.evaluate((element) => element.removeAttribute("style"));
+
+      for (const [target, sources] of [
+        [favoriteName("renamed", "Incident review"), ["payments-worker"]],
+        [tab("Incident review"), ["payments-worker"]],
+        [
+          favoriteName("multiple", "Mixed Sources"),
+          ["orders-api", "media-pipeline"],
+        ],
+        [tab("Mixed Sources"), ["orders-api", "media-pipeline"]],
+      ] as const) {
+        await target.hover();
+        await expect(tooltip()).toContainText("Sources:");
+        for (const source of sources)
+          await expect(tooltip()).toContainText(source);
+        await expect(tooltip()).not.toContainText("/aws/lambda/");
+        await leave();
+      }
+      await expect(page.locator("[title]")).toHaveCount(0);
     });
-    const first = textRects[0],
-      last = textRects.at(-1)!;
-    await page.mouse.move(first.x + 1, first.y + first.height / 2);
-    await page.mouse.down();
-    await page.mouse.move(last.x + last.width - 1, last.y + last.height / 2, {
-      steps: 8,
+
+  if (runsBehaviorTest(theme))
+    test(`${theme} wrapped inspector metadata stays quiet while clipped values and actionable hints remain selectable`, async () => {
+      await page
+        .locator('.virtual-event[data-event-id="tooltip-event"] .inspect-cell')
+        .first()
+        .click();
+      await page
+        .getByRole("grid", { name: "Log events", exact: true })
+        .press("Enter");
+      const inspector = page.getByRole("region", {
+        name: "Event inspector",
+        exact: true,
+      });
+      const code = inspector.locator(".inspector-source code").first();
+      await expect(code).toHaveText(groupName);
+      await code.scrollIntoViewIfNeeded();
+      const geometry = await code.evaluate((element) => {
+        const range = document.createRange();
+        range.selectNodeContents(element);
+        const box = element.getBoundingClientRect();
+        const lines = Array.from(range.getClientRects());
+        return {
+          lines: lines.length,
+          contained: lines.every(
+            (line) =>
+              line.left >= box.left - 1 &&
+              line.right <= box.right + 1 &&
+              line.top >= box.top - 1 &&
+              line.bottom <= box.bottom + 1,
+          ),
+          fits:
+            element.scrollWidth <= element.clientWidth + 1 &&
+            element.scrollHeight <= element.clientHeight + 1,
+        };
+      });
+      expect(geometry.lines).toBeGreaterThan(1);
+      expect(geometry.contained).toBe(true);
+      expect(geometry.fits).toBe(true);
+      await absent(code);
+      await leave();
+      await clipText(code);
+      await code.hover();
+      await expect(tooltip()).toHaveText(groupName);
+      await capture(`${theme}-clipped-inspector-tooltip.png`);
+      await leave();
+
+      await page.getByRole("button", { name: "Settings", exact: true }).hover();
+      await expect(tooltip()).toContainText("Settings");
+      await leave();
+      await page
+        .getByRole("button", { name: "Match local filter case", exact: true })
+        .hover();
+      await expect(tooltip()).toContainText("Alt+C");
+      await tooltip().hover();
+      await page.waitForTimeout(550);
+      await expect(tooltip()).toBeVisible();
+      expect(
+        await tooltip().evaluate(
+          (element) => getComputedStyle(element).userSelect,
+        ),
+      ).toBe("text");
+      const textRects = await tooltip().evaluate((element) => {
+        const range = document.createRange();
+        range.selectNodeContents(element);
+        return Array.from(range.getClientRects()).map((rect) => ({
+          x: rect.x,
+          y: rect.y,
+          width: rect.width,
+          height: rect.height,
+        }));
+      });
+      const first = textRects[0],
+        last = textRects.at(-1)!;
+      await page.mouse.move(first.x + 1, first.y + first.height / 2);
+      await page.mouse.down();
+      await page.mouse.move(last.x + last.width - 1, last.y + last.height / 2, {
+        steps: 8,
+      });
+      await page.mouse.up();
+      expect(await page.evaluate(() => getSelection()?.toString())).toContain(
+        "Alt+C",
+      );
+      await expect(tooltip()).toBeVisible();
+      await expect(page.locator("[title]")).toHaveCount(0);
     });
-    await page.mouse.up();
-    expect(await page.evaluate(() => getSelection()?.toString())).toContain(
-      "Alt+C",
-    );
-    await expect(tooltip()).toBeVisible();
-    await expect(page.locator("[title]")).toHaveCount(0);
-  });
 }

@@ -62,6 +62,9 @@ if (process.env.EXPLORER_TEST_USER_DATA)
 app.setAppUserModelId("dev.awslogexplorer.desktop");
 const backgroundVerification =
   verificationSwitches && process.argv.includes("--background-verification");
+// Desktop tests run many hidden app instances at once. Software compositing
+// spares each one a GPU process, which made the suite about 30% faster.
+if (backgroundVerification) app.disableHardwareAcceleration();
 const offlineVerification =
   verificationSwitches && process.argv.includes("--offline-verification");
 // Like AWS, development and unpackaged builds never reach Google Cloud.

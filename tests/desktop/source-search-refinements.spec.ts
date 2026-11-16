@@ -12,7 +12,11 @@ import {
   createWorkspace,
   restoreWorkspace,
 } from "../../src/shared/workspace";
-import { closeAppNaturally, desktopExecutablePath } from "./desktop-app";
+import {
+  closeAppNaturally,
+  desktopExecutablePath,
+  runsBehaviorTest,
+} from "./desktop-app";
 
 // Every process, fixture and result stays within the checkout. Background mode
 // prevents native windows and the offline flag prevents AWS credential access.
@@ -213,258 +217,262 @@ const manualMarks = () =>
   page.locator('.virtual-event mark[data-highlight-origins~="manual"]');
 
 for (const theme of ["light", "dark"]) {
-  test(`${theme} protected columns can only be hidden in the columns editor`, async () => {
-    await page
-      .getByRole("button", { name: "Configure columns", exact: true })
-      .click();
-    const dialog = page.getByRole("dialog", { name: "Customize columns" });
-    await expect(dialog).toBeVisible();
-    await expect(
-      dialog.locator(".column-list").getByRole("checkbox"),
-    ).toHaveCount(0);
-    for (const label of ["Timestamp", "Level", "Message", "Source"]) {
-      await expect(
-        dialog.getByRole("button", { name: `Remove ${label}`, exact: true }),
-      ).toHaveCount(0);
-      const hide = dialog.getByRole("button", {
-        name: `Hide ${label}`,
-        exact: true,
-      });
-      await expect(hide).toBeEnabled();
-      await expect(hide).toHaveAttribute("aria-pressed", "true");
-      const entry = dialog.locator(".column-config").filter({
-        has: page.getByRole("button", { name: `Hide ${label}`, exact: true }),
-      });
-      const color = await entry
-        .locator(".column-path")
-        .evaluate((el) => getComputedStyle(el).color);
-      const toggleBox = (await hide.boundingBox())!,
-        labelBox = (await entry.locator(".column-path").boundingBox())!;
-      expect(toggleBox.x + toggleBox.width).toBeLessThanOrEqual(labelBox.x);
-      await hide.click();
-      const show = dialog.getByRole("button", {
-        name: `Show ${label}`,
-        exact: true,
-      });
-      await expect(show).toBeEnabled();
-      await expect(show).toHaveAttribute("aria-pressed", "false");
-      const hidden = dialog.locator(".column-config").filter({
-        has: page.getByRole("button", { name: `Show ${label}`, exact: true }),
-      });
-      await expect(hidden).toHaveClass(/column-hidden/);
-      expect(
-        await hidden
-          .locator(".column-path")
-          .evaluate((el) => getComputedStyle(el).color),
-      ).not.toBe(color);
-      await show.click();
-      await expect(hide).toBeEnabled();
-      await expect(hide).toHaveAttribute("aria-pressed", "true");
-    }
-    await dialog
-      .getByRole("button", { name: "Hide /payload", exact: true })
-      .click();
-    await expect(
-      dialog.getByRole("button", { name: "Show /payload", exact: true }),
-    ).toBeEnabled();
-    await dialog
-      .getByRole("button", { name: "Show /payload", exact: true })
-      .click();
-    await dialog
-      .getByRole("button", { name: "Remove /payload", exact: true })
-      .click();
-    await expect(
-      dialog.getByRole("button", { name: "Hide /payload", exact: true }),
-    ).toHaveCount(0);
-    for (const label of ["Timestamp", "Level", "Source"])
-      await dialog
-        .getByRole("button", { name: `Hide ${label}`, exact: true })
+  if (runsBehaviorTest(theme))
+    test(`${theme} protected columns can only be hidden in the columns editor`, async () => {
+      await page
+        .getByRole("button", { name: "Configure columns", exact: true })
         .click();
-    const last = dialog.getByRole("button", {
-      name: "Hide Message",
-      exact: true,
-    });
-    await expect(last).toBeEnabled();
-    await last.click();
-    await expect(last).toHaveAttribute("aria-pressed", "true");
-    await expect(dialog.getByRole("status")).toHaveText(
-      "Keep at least one column visible.",
-    );
-    await dialog
-      .getByRole("button", { name: "Show Timestamp", exact: true })
-      .click();
-    await expect(dialog.getByRole("status")).toHaveCount(0);
-    let png = "";
-    for (let frame = 0; frame < 3; frame++) {
-      png = await app.evaluate(async ({ BrowserWindow }) => {
-        const win = BrowserWindow.getAllWindows()[0];
-        if (win.isVisible()) throw new Error("Verification became visible");
-        return (
-          await win.webContents.capturePage(undefined, {
-            stayHidden: true,
-            stayAwake: true,
-          })
-        )
-          .toPNG()
-          .toString("base64");
-      });
-    }
-    await mkdir(test.info().outputDir, { recursive: true });
-    await writeFile(
-      test.info().outputPath(`${theme}-column-visibility.png`),
-      Buffer.from(png, "base64"),
-    );
-  });
-
-  test(`${theme} Left and Right fold only the current event and leave nested controls alone`, async () => {
-    const first = page.locator('.virtual-event[data-event-id="refinement-0"]');
-    const second = page.locator('.virtual-event[data-event-id="refinement-1"]');
-    const grid = page.getByRole("grid", { name: "Log events", exact: true });
-    await first.locator(".inspect-cell").first().click();
-    await grid.press("ArrowRight");
-    await expect(
-      first.getByRole("region", { name: "Expanded event content" }),
-    ).toBeVisible();
-    const resize = first.getByRole("separator", {
-      name: "Resize expanded event",
-      exact: true,
-    });
-    await resize.press("ArrowLeft");
-    await expect(
-      first.getByRole("region", { name: "Expanded event content" }),
-    ).toBeVisible();
-    await resize.press("ArrowRight");
-    await expect(
-      first.getByRole("region", { name: "Expanded event content" }),
-    ).toBeVisible();
-    await grid.press("ArrowRight");
-    await expect(
-      first.getByRole("region", { name: "Expanded event content" }),
-    ).toBeVisible();
-    await grid.press("ArrowDown");
-    await grid.press("ArrowRight");
-    await expect(
-      second.getByRole("region", { name: "Expanded event content" }),
-    ).toBeVisible();
-    await grid.press("ArrowLeft");
-    await expect(
-      second.getByRole("region", { name: "Expanded event content" }),
-    ).toHaveCount(0);
-    await expect(
-      first.getByRole("region", { name: "Expanded event content" }),
-    ).toBeVisible();
-    const nested = first.getByRole("button", {
-      name: "Expand /payload",
-      exact: true,
-    });
-    await nested.press("ArrowLeft");
-    await expect(
-      first.getByRole("region", { name: "Expanded event content" }),
-    ).toBeVisible();
-    await first
-      .getByRole("button", { name: "Collapse event details", exact: true })
-      .press("ArrowLeft");
-    await expect(
-      first.getByRole("region", { name: "Expanded event content" }),
-    ).toHaveCount(0);
-    // Table has no expanded-details area since Stage 15 (messages unfold
-    // inline), so this keyboard folding applies to Hybrid only.
-  });
-
-  test(`${theme} event contents and source cells do not open hover tooltips`, async () => {
-    const cells = page.locator(".virtual-event .log-cell");
-    await expect(cells).not.toHaveCount(0);
-    await expect(cells.locator("[data-tooltip], [title]")).toHaveCount(0);
-    await page
-      .locator("label")
-      .filter({ hasText: /^JSON$/ })
-      .click();
-    await expect(
-      page.locator(".virtual-event .event-source[data-tooltip]"),
-    ).toHaveCount(0);
-    await expect(
-      page.locator(".virtual-event .event-source[title]"),
-    ).toHaveCount(0);
-  });
-
-  test(`${theme} Explorer shows only the last source in a collapsible details pane`, async () => {
-    const details = page.getByRole("region", {
-      name: "Current source details",
-      exact: true,
-    });
-    await expect(page.getByText("Recent sources", { exact: true })).toHaveCount(
-      0,
-    );
-    await page
-      .getByRole("button", { name: "/aws/lambda/orders-api", exact: true })
-      .click();
-    await expect(details.locator(".source-details-name")).toHaveText(
-      "/aws/lambda/orders-api",
-    );
-    await page
-      .getByRole("checkbox", {
-        name: "Select /aws/lambda/payments-worker",
+      const dialog = page.getByRole("dialog", { name: "Customize columns" });
+      await expect(dialog).toBeVisible();
+      await expect(
+        dialog.locator(".column-list").getByRole("checkbox"),
+      ).toHaveCount(0);
+      for (const label of ["Timestamp", "Level", "Message", "Source"]) {
+        await expect(
+          dialog.getByRole("button", { name: `Remove ${label}`, exact: true }),
+        ).toHaveCount(0);
+        const hide = dialog.getByRole("button", {
+          name: `Hide ${label}`,
+          exact: true,
+        });
+        await expect(hide).toBeEnabled();
+        await expect(hide).toHaveAttribute("aria-pressed", "true");
+        const entry = dialog.locator(".column-config").filter({
+          has: page.getByRole("button", { name: `Hide ${label}`, exact: true }),
+        });
+        const color = await entry
+          .locator(".column-path")
+          .evaluate((el) => getComputedStyle(el).color);
+        const toggleBox = (await hide.boundingBox())!,
+          labelBox = (await entry.locator(".column-path").boundingBox())!;
+        expect(toggleBox.x + toggleBox.width).toBeLessThanOrEqual(labelBox.x);
+        await hide.click();
+        const show = dialog.getByRole("button", {
+          name: `Show ${label}`,
+          exact: true,
+        });
+        await expect(show).toBeEnabled();
+        await expect(show).toHaveAttribute("aria-pressed", "false");
+        const hidden = dialog.locator(".column-config").filter({
+          has: page.getByRole("button", { name: `Show ${label}`, exact: true }),
+        });
+        await expect(hidden).toHaveClass(/column-hidden/);
+        expect(
+          await hidden
+            .locator(".column-path")
+            .evaluate((el) => getComputedStyle(el).color),
+        ).not.toBe(color);
+        await show.click();
+        await expect(hide).toBeEnabled();
+        await expect(hide).toHaveAttribute("aria-pressed", "true");
+      }
+      await dialog
+        .getByRole("button", { name: "Hide /payload", exact: true })
+        .click();
+      await expect(
+        dialog.getByRole("button", { name: "Show /payload", exact: true }),
+      ).toBeEnabled();
+      await dialog
+        .getByRole("button", { name: "Show /payload", exact: true })
+        .click();
+      await dialog
+        .getByRole("button", { name: "Remove /payload", exact: true })
+        .click();
+      await expect(
+        dialog.getByRole("button", { name: "Hide /payload", exact: true }),
+      ).toHaveCount(0);
+      for (const label of ["Timestamp", "Level", "Source"])
+        await dialog
+          .getByRole("button", { name: `Hide ${label}`, exact: true })
+          .click();
+      const last = dialog.getByRole("button", {
+        name: "Hide Message",
         exact: true,
-      })
-      .check();
-    await expect(details.locator(".source-details-name")).toHaveText(
-      "/aws/lambda/payments-worker",
-    );
-    await expect(details).toContainText("Retention");
-    await expect(details).toContainText("Stored in group");
-    await expect(details).toContainText("eu-west-1");
-    await expect(
-      page.locator(".resource-label[data-tooltip],.resource-label[title]"),
-    ).toHaveCount(0);
-    await details
-      .getByRole("button", { name: "Copy source name", exact: true })
-      .click();
-    expect(
-      await app.evaluate(() => (globalThis as any).__refinementCopies.at(-1)),
-    ).toBe("/aws/lambda/payments-worker");
-    const disclosure = details.getByRole("button", {
-      name: "Toggle source details",
-      exact: true,
-    });
-    await disclosure.click();
-    await expect(details.locator(".source-details-body")).toHaveCount(0);
-    await disclosure.click();
-    await page
-      .getByRole("button", {
-        name: "Expand /aws/lambda/payments-worker",
-        exact: true,
-      })
-      .click();
-    const stream = page
-      .locator('[data-node-kind="stream"] .resource-label')
-      .first();
-    await expect(stream).toBeVisible();
-    const name = await stream.innerText();
-    await stream.click({ modifiers: ["Control"] });
-    await expect(details.locator(".source-details-name")).toHaveText(name);
-    await expect(details).toContainText("Last event");
-    await expect(details).toContainText("/aws/lambda/payments-worker");
-    let png = "";
-    for (let frame = 0; frame < 3; frame++) {
-      png = await app.evaluate(async ({ BrowserWindow }) => {
-        const win = BrowserWindow.getAllWindows()[0];
-        if (win.isVisible()) throw new Error("Verification became visible");
-        return (
-          await win.webContents.capturePage(undefined, {
-            stayHidden: true,
-            stayAwake: true,
-          })
-        )
-          .toPNG()
-          .toString("base64");
       });
-    }
-    await mkdir(test.info().outputDir, { recursive: true });
-    await writeFile(
-      test.info().outputPath(`${theme}-source-details.png`),
-      Buffer.from(png, "base64"),
-    );
-  });
+      await expect(last).toBeEnabled();
+      await last.click();
+      await expect(last).toHaveAttribute("aria-pressed", "true");
+      await expect(dialog.getByRole("status")).toHaveText(
+        "Keep at least one column visible.",
+      );
+      await dialog
+        .getByRole("button", { name: "Show Timestamp", exact: true })
+        .click();
+      await expect(dialog.getByRole("status")).toHaveCount(0);
+      let png = "";
+      for (let frame = 0; frame < 3; frame++) {
+        png = await app.evaluate(async ({ BrowserWindow }) => {
+          const win = BrowserWindow.getAllWindows()[0];
+          if (win.isVisible()) throw new Error("Verification became visible");
+          return (
+            await win.webContents.capturePage(undefined, {
+              stayHidden: true,
+              stayAwake: true,
+            })
+          )
+            .toPNG()
+            .toString("base64");
+        });
+      }
+      await mkdir(test.info().outputDir, { recursive: true });
+      await writeFile(
+        test.info().outputPath(`${theme}-column-visibility.png`),
+        Buffer.from(png, "base64"),
+      );
+    });
+
+  if (runsBehaviorTest(theme))
+    test(`${theme} Left and Right fold only the current event and leave nested controls alone`, async () => {
+      const first = page.locator('.virtual-event[data-event-id="refinement-0"]');
+      const second = page.locator('.virtual-event[data-event-id="refinement-1"]');
+      const grid = page.getByRole("grid", { name: "Log events", exact: true });
+      await first.locator(".inspect-cell").first().click();
+      await grid.press("ArrowRight");
+      await expect(
+        first.getByRole("region", { name: "Expanded event content" }),
+      ).toBeVisible();
+      const resize = first.getByRole("separator", {
+        name: "Resize expanded event",
+        exact: true,
+      });
+      await resize.press("ArrowLeft");
+      await expect(
+        first.getByRole("region", { name: "Expanded event content" }),
+      ).toBeVisible();
+      await resize.press("ArrowRight");
+      await expect(
+        first.getByRole("region", { name: "Expanded event content" }),
+      ).toBeVisible();
+      await grid.press("ArrowRight");
+      await expect(
+        first.getByRole("region", { name: "Expanded event content" }),
+      ).toBeVisible();
+      await grid.press("ArrowDown");
+      await grid.press("ArrowRight");
+      await expect(
+        second.getByRole("region", { name: "Expanded event content" }),
+      ).toBeVisible();
+      await grid.press("ArrowLeft");
+      await expect(
+        second.getByRole("region", { name: "Expanded event content" }),
+      ).toHaveCount(0);
+      await expect(
+        first.getByRole("region", { name: "Expanded event content" }),
+      ).toBeVisible();
+      const nested = first.getByRole("button", {
+        name: "Expand /payload",
+        exact: true,
+      });
+      await nested.press("ArrowLeft");
+      await expect(
+        first.getByRole("region", { name: "Expanded event content" }),
+      ).toBeVisible();
+      await first
+        .getByRole("button", { name: "Collapse event details", exact: true })
+        .press("ArrowLeft");
+      await expect(
+        first.getByRole("region", { name: "Expanded event content" }),
+      ).toHaveCount(0);
+      // Table has no expanded-details area since Stage 15 (messages unfold
+      // inline), so this keyboard folding applies to Hybrid only.
+    });
+
+  if (runsBehaviorTest(theme))
+    test(`${theme} event contents and source cells do not open hover tooltips`, async () => {
+      const cells = page.locator(".virtual-event .log-cell");
+      await expect(cells).not.toHaveCount(0);
+      await expect(cells.locator("[data-tooltip], [title]")).toHaveCount(0);
+      await page
+        .locator("label")
+        .filter({ hasText: /^JSON$/ })
+        .click();
+      await expect(
+        page.locator(".virtual-event .event-source[data-tooltip]"),
+      ).toHaveCount(0);
+      await expect(
+        page.locator(".virtual-event .event-source[title]"),
+      ).toHaveCount(0);
+    });
+
+  if (runsBehaviorTest(theme))
+    test(`${theme} Explorer shows only the last source in a collapsible details pane`, async () => {
+      const details = page.getByRole("region", {
+        name: "Current source details",
+        exact: true,
+      });
+      await expect(page.getByText("Recent sources", { exact: true })).toHaveCount(
+        0,
+      );
+      await page
+        .getByRole("button", { name: "/aws/lambda/orders-api", exact: true })
+        .click();
+      await expect(details.locator(".source-details-name")).toHaveText(
+        "/aws/lambda/orders-api",
+      );
+      await page
+        .getByRole("checkbox", {
+          name: "Select /aws/lambda/payments-worker",
+          exact: true,
+        })
+        .check();
+      await expect(details.locator(".source-details-name")).toHaveText(
+        "/aws/lambda/payments-worker",
+      );
+      await expect(details).toContainText("Retention");
+      await expect(details).toContainText("Stored in group");
+      await expect(details).toContainText("eu-west-1");
+      await expect(
+        page.locator(".resource-label[data-tooltip],.resource-label[title]"),
+      ).toHaveCount(0);
+      await details
+        .getByRole("button", { name: "Copy source name", exact: true })
+        .click();
+      expect(
+        await app.evaluate(() => (globalThis as any).__refinementCopies.at(-1)),
+      ).toBe("/aws/lambda/payments-worker");
+      const disclosure = details.getByRole("button", {
+        name: "Toggle source details",
+        exact: true,
+      });
+      await disclosure.click();
+      await expect(details.locator(".source-details-body")).toHaveCount(0);
+      await disclosure.click();
+      await page
+        .getByRole("button", {
+          name: "Expand /aws/lambda/payments-worker",
+          exact: true,
+        })
+        .click();
+      const stream = page
+        .locator('[data-node-kind="stream"] .resource-label')
+        .first();
+      await expect(stream).toBeVisible();
+      const name = await stream.innerText();
+      await stream.click({ modifiers: ["Control"] });
+      await expect(details.locator(".source-details-name")).toHaveText(name);
+      await expect(details).toContainText("Last event");
+      await expect(details).toContainText("/aws/lambda/payments-worker");
+      let png = "";
+      for (let frame = 0; frame < 3; frame++) {
+        png = await app.evaluate(async ({ BrowserWindow }) => {
+          const win = BrowserWindow.getAllWindows()[0];
+          if (win.isVisible()) throw new Error("Verification became visible");
+          return (
+            await win.webContents.capturePage(undefined, {
+              stayHidden: true,
+              stayAwake: true,
+            })
+          )
+            .toPNG()
+            .toString("base64");
+        });
+      }
+      await mkdir(test.info().outputDir, { recursive: true });
+      await writeFile(
+        test.info().outputPath(`${theme}-source-details.png`),
+        Buffer.from(png, "base64"),
+      );
+    });
 
   test(`${theme} saved search menu is beside Run and its selected name can be replaced and deleted`, async () => {
     const filter = page.getByRole("combobox", {
@@ -548,50 +556,51 @@ for (const theme of ["light", "dark"]) {
       .toBe(false);
   });
 
-  test(`${theme} Events undo and redo stay independent across tabs without replacing loaded content`, async () => {
-    const filter = () =>
-      page.getByRole("combobox", {
-        name: "CloudWatch filter pattern",
-        exact: true,
-      });
-    const loaded = page.locator('.virtual-event[data-event-id="refinement-0"]');
-    await loaded
-      .getByRole("button", { name: "Expand event details", exact: true })
-      .click();
-    await filter().fill("orders");
-    await page.getByTestId("run-query").focus();
-    await filter().focus();
-    await filter().press("End");
-    await filter().pressSequentially(" warning");
-    const edited = "orders warning";
-    await filter().press("Control+z");
-    await expect(filter()).toHaveValue("orders");
-    await filter().press("Control+Shift+z");
-    await expect(filter()).toHaveValue(edited);
-    const originalTab = page.getByRole("tab", { name: /orders-api/ }).first();
-    await page
-      .getByRole("button", { name: "/aws/lambda/payments-worker", exact: true })
-      .dblclick();
-    await filter().fill("payment");
-    await page.getByTestId("run-query").focus();
-    await filter().focus();
-    await filter().press("End");
-    await filter().pressSequentially(" failure");
-    await originalTab.click();
-    await expect(filter()).toHaveValue(edited);
-    await expect(
-      loaded.getByRole("region", { name: "Expanded event content" }),
-    ).toBeVisible();
-    await filter().press("Control+z");
-    await expect(filter()).toHaveValue("orders");
-    await page
-      .getByRole("tab", { name: /payments-worker/ })
-      .first()
-      .click();
-    await expect(filter()).toHaveValue("payment failure");
-    await filter().press("Control+z");
-    await expect(filter()).toHaveValue("payment");
-  });
+  if (runsBehaviorTest(theme))
+    test(`${theme} Events undo and redo stay independent across tabs without replacing loaded content`, async () => {
+      const filter = () =>
+        page.getByRole("combobox", {
+          name: "CloudWatch filter pattern",
+          exact: true,
+        });
+      const loaded = page.locator('.virtual-event[data-event-id="refinement-0"]');
+      await loaded
+        .getByRole("button", { name: "Expand event details", exact: true })
+        .click();
+      await filter().fill("orders");
+      await page.getByTestId("run-query").focus();
+      await filter().focus();
+      await filter().press("End");
+      await filter().pressSequentially(" warning");
+      const edited = "orders warning";
+      await filter().press("Control+z");
+      await expect(filter()).toHaveValue("orders");
+      await filter().press("Control+Shift+z");
+      await expect(filter()).toHaveValue(edited);
+      const originalTab = page.getByRole("tab", { name: /orders-api/ }).first();
+      await page
+        .getByRole("button", { name: "/aws/lambda/payments-worker", exact: true })
+        .dblclick();
+      await filter().fill("payment");
+      await page.getByTestId("run-query").focus();
+      await filter().focus();
+      await filter().press("End");
+      await filter().pressSequentially(" failure");
+      await originalTab.click();
+      await expect(filter()).toHaveValue(edited);
+      await expect(
+        loaded.getByRole("region", { name: "Expanded event content" }),
+      ).toBeVisible();
+      await filter().press("Control+z");
+      await expect(filter()).toHaveValue("orders");
+      await page
+        .getByRole("tab", { name: /payments-worker/ })
+        .first()
+        .click();
+      await expect(filter()).toHaveValue("payment failure");
+      await filter().press("Control+z");
+      await expect(filter()).toHaveValue("payment");
+    });
 }
 
 test("recent search count is editable in Preferences and retained after reload", async () => {

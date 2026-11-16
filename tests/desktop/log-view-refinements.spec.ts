@@ -12,7 +12,11 @@ import {
   createWorkspace,
   restoreWorkspace,
 } from "../../src/shared/workspace";
-import { closeAppNaturally, desktopExecutablePath } from "./desktop-app";
+import {
+  closeAppNaturally,
+  desktopExecutablePath,
+  runsBehaviorTest,
+} from "./desktop-app";
 
 // Every process, fixture and result stays within the checkout. Background mode
 // prevents native windows and the offline flag prevents AWS credential access.
@@ -292,130 +296,133 @@ for (const theme of ["light", "dark"]) {
     expect(await details.evaluate((el) => el.clientHeight)).toBe(before);
   });
 
-  test(`${theme} JSON keys have no path tooltip and field menu copies the exact escaped path`, async () => {
-    const field = inspector().locator('[data-json-path="/a~1b~0c"]');
-    await expect(field.locator(".json-key")).not.toHaveAttribute(
-      "data-tooltip",
-      /.+/,
-    );
-    await field
-      .getByRole("button", { name: "Field actions for /a~1b~0c", exact: true })
-      .click();
-    await page
-      .getByRole("menuitem", { name: "Copy /a~1b~0c path", exact: true })
-      .click();
-    expect(
-      await app.evaluate(() => (globalThis as any).__refinementCopies.at(-1)),
-    ).toBe("/a~1b~0c");
-  });
-
-  test(`${theme} field sliders resize and persist while quick highlights honor regex and case`, async () => {
-    for (const [name, field, key] of [
-      ["Resize local filter field", local(), "localSearchWidth"],
-      ["Resize highlight field", quick(), "highlightTextWidth"],
-    ] as const) {
-      const separator = page.getByRole("separator", { name, exact: true });
-      const before = (await field.boundingBox())!.width;
-      const box = (await separator.boundingBox())!;
-      await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
-      await page.mouse.down();
-      await page.mouse.move(
-        box.x + box.width / 2 + 80,
-        box.y + box.height / 2,
-        { steps: 8 },
+  if (runsBehaviorTest(theme))
+    test(`${theme} JSON keys have no path tooltip and field menu copies the exact escaped path`, async () => {
+      const field = inspector().locator('[data-json-path="/a~1b~0c"]');
+      await expect(field.locator(".json-key")).not.toHaveAttribute(
+        "data-tooltip",
+        /.+/,
       );
-      await page.mouse.up();
-      expect((await field.boundingBox())!.width).toBeGreaterThan(before + 60);
-      await separator.press("ArrowRight");
-      await expect
-        .poll(async () => (await stored()).tabs[0].view[key])
-        .toBeGreaterThan(before + 80);
-    }
-    await quick().fill("abc\\d+");
-    await page
-      .getByRole("button", {
-        name: "Use highlight regular expression",
-        exact: true,
-      })
-      .click();
-    await expect
-      .poll(async () =>
-        [...new Set(await manualMarks().allTextContents())].sort(),
-      )
-      .toEqual(["ABC456", "abc123"]);
-    await page
-      .getByRole("button", { name: "Match highlight case", exact: true })
-      .click();
-    await expect
-      .poll(async () => [...new Set(await manualMarks().allTextContents())])
-      .toEqual(["abc123"]);
-    await quick().fill("[");
-    await expect(quick()).toHaveAttribute("aria-invalid", "true");
-    await page
-      .getByRole("button", {
-        name: "Use highlight regular expression",
-        exact: true,
-      })
-      .click();
-    await expect(quick()).not.toHaveAttribute("aria-invalid", "true");
-    await expect
-      .poll(async () => {
-        const view = (await stored()).tabs[0].view;
-        return [view.highlightCaseSensitive, view.highlightRegex];
-      })
-      .toEqual([true, false]);
-    await page.reload();
-    await expect(
-      page.getByRole("button", { name: "Match highlight case", exact: true }),
-    ).toHaveAttribute("aria-pressed", "true");
-    await expect(
-      page.getByRole("button", {
-        name: "Use highlight regular expression",
-        exact: true,
-      }),
-    ).toHaveAttribute("aria-pressed", "false");
-    await expect(quick()).toHaveValue("[");
-    expect(
-      Number(
-        await page
-          .getByRole("separator", {
-            name: "Resize local filter field",
-            exact: true,
-          })
-          .getAttribute("aria-valuenow"),
-      ),
-    ).toBeGreaterThan(400);
-  });
+      await field
+        .getByRole("button", { name: "Field actions for /a~1b~0c", exact: true })
+        .click();
+      await page
+        .getByRole("menuitem", { name: "Copy /a~1b~0c path", exact: true })
+        .click();
+      expect(
+        await app.evaluate(() => (globalThis as any).__refinementCopies.at(-1)),
+      ).toBe("/a~1b~0c");
+    });
 
-  test(`${theme} clear crosses remain undoable in local, highlight, server and explorer fields`, async () => {
-    for (const [field, button, text] of [
-      [local(), "Clear local search", "Alpha"],
-      [quick(), "Clear text highlight", "abc"],
-      [
-        page.getByRole("combobox", {
-          name: "CloudWatch filter pattern",
+  if (runsBehaviorTest(theme))
+    test(`${theme} field sliders resize and persist while quick highlights honor regex and case`, async () => {
+      for (const [name, field, key] of [
+        ["Resize local filter field", local(), "localSearchWidth"],
+        ["Resize highlight field", quick(), "highlightTextWidth"],
+      ] as const) {
+        const separator = page.getByRole("separator", { name, exact: true });
+        const before = (await field.boundingBox())!.width;
+        const box = (await separator.boundingBox())!;
+        await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+        await page.mouse.down();
+        await page.mouse.move(
+          box.x + box.width / 2 + 80,
+          box.y + box.height / 2,
+          { steps: 8 },
+        );
+        await page.mouse.up();
+        expect((await field.boundingBox())!.width).toBeGreaterThan(before + 60);
+        await separator.press("ArrowRight");
+        await expect
+          .poll(async () => (await stored()).tabs[0].view[key])
+          .toBeGreaterThan(before + 80);
+      }
+      await quick().fill("abc\\d+");
+      await page
+        .getByRole("button", {
+          name: "Use highlight regular expression",
+          exact: true,
+        })
+        .click();
+      await expect
+        .poll(async () =>
+          [...new Set(await manualMarks().allTextContents())].sort(),
+        )
+        .toEqual(["ABC456", "abc123"]);
+      await page
+        .getByRole("button", { name: "Match highlight case", exact: true })
+        .click();
+      await expect
+        .poll(async () => [...new Set(await manualMarks().allTextContents())])
+        .toEqual(["abc123"]);
+      await quick().fill("[");
+      await expect(quick()).toHaveAttribute("aria-invalid", "true");
+      await page
+        .getByRole("button", {
+          name: "Use highlight regular expression",
+          exact: true,
+        })
+        .click();
+      await expect(quick()).not.toHaveAttribute("aria-invalid", "true");
+      await expect
+        .poll(async () => {
+          const view = (await stored()).tabs[0].view;
+          return [view.highlightCaseSensitive, view.highlightRegex];
+        })
+        .toEqual([true, false]);
+      await page.reload();
+      await expect(
+        page.getByRole("button", { name: "Match highlight case", exact: true }),
+      ).toHaveAttribute("aria-pressed", "true");
+      await expect(
+        page.getByRole("button", {
+          name: "Use highlight regular expression",
           exact: true,
         }),
-        "Clear server filter",
-        "Alpha",
-      ],
-      [
-        page.getByRole("textbox", { name: "Search log groups", exact: true }),
-        "Clear log group search",
-        "orders",
-      ],
-    ] as const) {
-      await field.fill(text);
-      await page.getByRole("button", { name: button, exact: true }).click();
-      await expect(field).toHaveValue("");
-      await field.press("Control+z");
-      await expect(field).toHaveValue(text);
-      await field.press("Control+y");
-      await expect(field).toHaveValue("");
-      await field.press("Control+z");
-      await expect(field).toHaveValue(text);
-    }
-  });
+      ).toHaveAttribute("aria-pressed", "false");
+      await expect(quick()).toHaveValue("[");
+      expect(
+        Number(
+          await page
+            .getByRole("separator", {
+              name: "Resize local filter field",
+              exact: true,
+            })
+            .getAttribute("aria-valuenow"),
+        ),
+      ).toBeGreaterThan(400);
+    });
+
+  if (runsBehaviorTest(theme))
+    test(`${theme} clear crosses remain undoable in local, highlight, server and explorer fields`, async () => {
+      for (const [field, button, text] of [
+        [local(), "Clear local search", "Alpha"],
+        [quick(), "Clear text highlight", "abc"],
+        [
+          page.getByRole("combobox", {
+            name: "CloudWatch filter pattern",
+            exact: true,
+          }),
+          "Clear server filter",
+          "Alpha",
+        ],
+        [
+          page.getByRole("textbox", { name: "Search log groups", exact: true }),
+          "Clear log group search",
+          "orders",
+        ],
+      ] as const) {
+        await field.fill(text);
+        await page.getByRole("button", { name: button, exact: true }).click();
+        await expect(field).toHaveValue("");
+        await field.press("Control+z");
+        await expect(field).toHaveValue(text);
+        await field.press("Control+y");
+        await expect(field).toHaveValue("");
+        await field.press("Control+z");
+        await expect(field).toHaveValue(text);
+      }
+    });
 
   test(`${theme} maps strengthen pale colors without changing row paint or drawing lane borders`, async () => {
     const mark = page

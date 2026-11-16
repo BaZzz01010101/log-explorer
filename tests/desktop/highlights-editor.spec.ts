@@ -1,6 +1,10 @@
 import { openSettingsWindow } from "./settings-panel";
 import { createWorkspace } from "../../src/shared/workspace";
-import { closeAppNaturally, desktopExecutablePath } from "./desktop-app";
+import {
+  closeAppNaturally,
+  desktopExecutablePath,
+  behaviorThemes,
+} from "./desktop-app";
 import {
   _electron as electron,
   expect,
@@ -183,7 +187,7 @@ async function capture(filename: string) {
   await writeFile(test.info().outputPath(filename), Buffer.from(png, "base64"));
 }
 
-for (const theme of ["light", "dark"])
+for (const theme of behaviorThemes)
   for (const mode of ["Table", "Hybrid"])
     test(`${theme} ${mode} selects text directly under the cursor and preserves row and inspector navigation`, async () => {
       await page

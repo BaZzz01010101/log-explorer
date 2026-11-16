@@ -1,5 +1,5 @@
 import { openSettingsWindow } from "./settings-panel";
-import { desktopExecutablePath } from "./desktop-app";
+import { desktopExecutablePath, behaviorThemes } from "./desktop-app";
 import {
   _electron as electron,
   expect,
@@ -178,7 +178,7 @@ test("duplicating a middle tab inserts its independent copy immediately after th
   await expect(page.getByLabel("Local filter loaded events")).toHaveValue("");
 });
 
-for (const theme of ["light", "dark"] as const) {
+for (const theme of behaviorThemes) {
   test(`${theme} tab context menus preserve active view, multiselection and range anchor`, async () => {
     await openSettingsWindow(page);
     await page.getByRole("tab", { name: "Preferences", exact: true }).click();

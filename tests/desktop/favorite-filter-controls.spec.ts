@@ -12,7 +12,11 @@ import {
   createWorkspace,
   restoreWorkspace,
 } from "../../src/shared/workspace";
-import { closeAppNaturally, desktopExecutablePath } from "./desktop-app";
+import {
+  closeAppNaturally,
+  desktopExecutablePath,
+  behaviorThemes,
+} from "./desktop-app";
 import { openSettingsWindow, setShortcutBinding } from "./settings-panel";
 
 // Hidden windows, private storage and offline-only requests keep these checks
@@ -229,7 +233,7 @@ async function capture(name: string) {
   await writeFile(test.info().outputPath(name), Buffer.from(png, "base64"));
 }
 
-for (const theme of ["light", "dark"]) {
+for (const theme of behaviorThemes) {
   test(`${theme} favorite deletion stays inline until a choice and never opens the saved view`, async () => {
     const favorite = page.locator('[data-favorite-id="favorite-alpha"]');
     const open = favorite.getByRole("button", {

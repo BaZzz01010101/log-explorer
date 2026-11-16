@@ -1,5 +1,9 @@
 import { createWorkspace } from "../../src/shared/workspace";
-import { closeAppNaturally, desktopExecutablePath } from "./desktop-app";
+import {
+  closeAppNaturally,
+  desktopExecutablePath,
+  behaviorThemes,
+} from "./desktop-app";
 import {
   _electron as electron,
   expect,
@@ -537,7 +541,7 @@ test("native keyboard scrolling pauses Live following without stopping reception
 });
 
 for (const mode of ["Table", "Hybrid"])
-  for (const theme of ["light", "dark"])
+  for (const theme of behaviorThemes)
     test(`${theme} ${mode} Live preserves forward and backward native text selection through event arrivals`, async () => {
       await page
         .locator("label")

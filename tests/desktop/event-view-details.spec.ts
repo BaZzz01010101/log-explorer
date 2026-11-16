@@ -1,6 +1,10 @@
 import { copiedRows, copiedMessages } from "./copied-rows";
 import { createWorkspace } from "../../src/shared/workspace";
-import { closeAppNaturally, desktopExecutablePath } from "./desktop-app";
+import {
+  closeAppNaturally,
+  desktopExecutablePath,
+  behaviorThemes,
+} from "./desktop-app";
 import {
   _electron as electron,
   expect,
@@ -260,7 +264,7 @@ async function wordPoints() {
     });
 }
 
-for (const theme of ["light", "dark"]) {
+for (const theme of behaviorThemes) {
   for (const mode of ["Table", "Hybrid"])
     test(`${theme} ${mode} double-click and word dragging preserve native selection while unfolding`, async () => {
       await page

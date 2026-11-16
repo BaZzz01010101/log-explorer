@@ -106,6 +106,9 @@ async function close() {
   }
 }
 
+// These tests share one app and user-data directory, in order.
+test.describe.configure({ mode: "default" });
+
 test.beforeAll(async () => {
   await mkdir(temporaryRoot, { recursive: true });
   directory = await mkdtemp(join(temporaryRoot, "case-"));

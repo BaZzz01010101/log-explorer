@@ -12,7 +12,11 @@ import {
   createWorkspace,
   workspaceReducer,
 } from "../../src/shared/workspace";
-import { closeAppNaturally, desktopExecutablePath } from "./desktop-app";
+import {
+  closeAppNaturally,
+  desktopExecutablePath,
+  behaviorThemes,
+} from "./desktop-app";
 
 test.setTimeout(90000);
 const root = resolve(".tmp/desktop-workspace-polish");
@@ -167,7 +171,7 @@ async function beginTabDrag(id = "tab-orders") {
   return point;
 }
 
-for (const theme of ["light", "dark"]) {
+for (const theme of behaviorThemes) {
   test(`${theme} wide pane grows past 600px and settings remembers detach and dock across reload`, async () => {
     const resize = (await page
       .getByRole("separator", { name: "Resize explorer", exact: true })

@@ -2,22 +2,12 @@ import { mkdirSync, readdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { defineConfig } from "@playwright/test";
 
-// Every spec launches its own app with a private user-data directory, hidden
-// window and mocked IPC, so files run in parallel. Specs that read or write the
-// system clipboard share one global resource and run one at a time.
-const clipboardSpecs = [
-  "event-copy-records",
-  "event-multi-selection",
-  "event-view-details",
-  "events-controls",
-  "json-field-actions",
-  "log-view-refinements",
-  "manual-mode-switch",
-  "menus-tooltips",
-  "query-mode-history",
-  "source-details-resize",
-  "source-search-refinements",
-].map((name) => `**/${name}.spec.ts`);
+// Every test launches its own app with a private user-data directory, hidden
+// window and mocked IPC, so tests run in parallel, even within one file. No
+// test reads the system clipboard: copy tests capture the app's clipboard
+// writes or cancel the native copy event, so they need no serial lane.
+// Tests without color checks run in the light theme only; DESKTOP_THEMES=all
+// adds their dark copies (see behaviorThemes in tests/desktop/desktop-app.ts).
 
 // Each run keeps a full JSON record (errors, durations, retries) under
 // .tmp/desktop-runs, so a failure stays inspectable after later runs replace
@@ -34,15 +24,20 @@ const stamp = new Date().toISOString().replace(/[:.]/g, "-");
 export default defineConfig({
   testDir: "./tests/desktop",
   outputDir: "./.tmp/test-results",
-  workers: Number(process.env.DESKTOP_WORKERS) || 4,
+  // The suite is CPU-bound. On a 14-core laptop at full power, 8 workers ran
+  // it in about 4.3 min; 10 gained only seconds while loading every app more.
+  workers: Number(process.env.DESKTOP_WORKERS) || 8,
+  fullyParallel: true,
   timeout: 90000,
   reporter: [
     ["list"],
     ["json", { outputFile: join(runs, `${stamp}.json`) }],
   ],
-  use: { trace: "retain-on-failure", actionTimeout: 5000 },
-  projects: [
-    { name: "desktop", testIgnore: clipboardSpecs },
-    { name: "clipboard", testMatch: clipboardSpecs, workers: 1 },
-  ],
+  // Failure traces keep DOM snapshots and the action log; screencast frames
+  // are left out to save each app the encoding work.
+  use: {
+    trace: { mode: "retain-on-failure", screenshots: false },
+    actionTimeout: 5000,
+  },
+  projects: [{ name: "desktop" }],
 });

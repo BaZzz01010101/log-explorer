@@ -1,10 +1,10 @@
 import { _electron as electron, expect, test } from "@playwright/test";
 import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
-import { desktopExecutablePath } from "./desktop-app";
+import { desktopExecutablePath, behaviorThemes } from "./desktop-app";
 import { createWorkspace } from "../../src/shared/workspace";
 
-for (const theme of ["light", "dark"] as const)
+for (const theme of behaviorThemes)
   test(`${theme}: browses GCP source pages without disturbing AWS explorer`, async () => {
     const root = resolve(".tmp/gcp-explorer-desktop");
     await mkdir(root, { recursive: true });

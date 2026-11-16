@@ -3,7 +3,11 @@ import {
   createTab,
   workspaceReducer,
 } from "../../src/shared/workspace";
-import { closeAppNaturally, desktopExecutablePath } from "./desktop-app";
+import {
+  closeAppNaturally,
+  desktopExecutablePath,
+  behaviorThemes,
+} from "./desktop-app";
 import {
   _electron as electron,
   expect,
@@ -206,7 +210,7 @@ async function capturedDrag(
   }
 }
 
-for (const theme of ["light", "dark"]) {
+for (const theme of behaviorThemes) {
   for (const mode of ["Table", "Hybrid"])
     test(`${theme} ${mode} column separators center hover and captured drag on both sides, including pinned and scrolled headers`, async () => {
       await page

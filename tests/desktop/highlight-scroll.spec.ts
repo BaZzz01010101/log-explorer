@@ -1,4 +1,8 @@
-import { closeAppNaturally, desktopExecutablePath } from "./desktop-app";
+import {
+  closeAppNaturally,
+  desktopExecutablePath,
+  behaviorThemes,
+} from "./desktop-app";
 import {
   _electron as electron,
   expect,
@@ -112,7 +116,7 @@ test.afterEach(async () => {
   });
 });
 
-for (const theme of ["light", "dark"] as const)
+for (const theme of behaviorThemes)
   test(`fast scrolling retains row and text regex highlights in ${theme}`, async () => {
     const workspace = createWorkspace();
     workspace.preferences.theme = theme;

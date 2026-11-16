@@ -13,7 +13,11 @@ import {
   createWorkspace,
   workspaceReducer,
 } from "../../src/shared/workspace";
-import { closeAppNaturally, desktopExecutablePath } from "./desktop-app";
+import {
+  closeAppNaturally,
+  desktopExecutablePath,
+  behaviorThemes,
+} from "./desktop-app";
 
 test.setTimeout(150000);
 const root = resolve(".tmp/desktop-settings-responsive");
@@ -221,7 +225,7 @@ async function resizeSettings(
       .toBe(width);
   }
 }
-for (const theme of ["light", "dark"])
+for (const theme of behaviorThemes)
   for (const presentation of ["pane", "modal"]) {
     test(`${theme} responsive ${presentation} fits every Settings page and preserves editor state`, async () => {
       await page.getByRole("button", { name: "Settings", exact: true }).click();

@@ -10,7 +10,11 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join, resolve, sep } from "node:path";
 import { createWorkspace } from "../../src/shared/workspace";
 import type { Workspace } from "../../src/shared/contracts";
-import { closeAppNaturally, desktopExecutablePath } from "./desktop-app";
+import {
+  closeAppNaturally,
+  desktopExecutablePath,
+  behaviorThemes,
+} from "./desktop-app";
 
 // All files and processes belong to this fixture. Never read the user's AWS
 // configuration or allow this regression suite to display a native window.
@@ -479,7 +483,7 @@ async function verifyTimeBrackets(presentation: Presentation) {
   });
 }
 
-for (const theme of ["light", "dark"])
+for (const theme of behaviorThemes)
   for (const presentation of ["pane", "modal"] as const) {
     test(`${theme} ${presentation} consolidated settings retain fixtures, concise help and responsive geometry`, async () => {
       await openSettings(presentation);
@@ -744,7 +748,7 @@ for (const theme of ["light", "dark"])
     });
   }
 
-for (const theme of ["light", "dark"])
+for (const theme of behaviorThemes)
   for (const presentation of ["pane", "modal"] as const) {
     test(`${theme} ${presentation} Preferences separates sections and option rows in one vertical flow`, async () => {
       await openSettings(presentation);

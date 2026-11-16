@@ -16,7 +16,11 @@ import {
   restoreWorkspace,
   workspaceReducer,
 } from "../../src/shared/workspace";
-import { closeAppNaturally, desktopExecutablePath } from "./desktop-app";
+import {
+  closeAppNaturally,
+  desktopExecutablePath,
+  behaviorThemes,
+} from "./desktop-app";
 
 // Keep every fixture, result and native process private to this checkout. The
 // background/offline flags prohibit visible windows and AWS credential access.
@@ -255,7 +259,7 @@ async function record(dialog: Locator, action: string, combo: string) {
     0,
   );
 }
-for (const theme of ["light", "dark"]) {
+for (const theme of behaviorThemes) {
   test(`${theme} saved-search Delete Cancel remains inline and persistent without loading or running a search`, async () => {
     const count = await requests();
     await searches();

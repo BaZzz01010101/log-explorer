@@ -12,7 +12,11 @@ import {
   createWorkspace,
   workspaceReducer,
 } from "../../src/shared/workspace";
-import { closeAppNaturally, desktopExecutablePath } from "./desktop-app";
+import {
+  closeAppNaturally,
+  desktopExecutablePath,
+  behaviorThemes,
+} from "./desktop-app";
 
 test.setTimeout(90000);
 const root = resolve(".tmp/desktop-activity-panels");
@@ -146,7 +150,7 @@ async function beginTabDrag(id = "tab-orders") {
   return point;
 }
 
-for (const theme of ["light", "dark"]) {
+for (const theme of behaviorThemes) {
   test(`${theme} activity buttons switch the left pane and settings expand into a modal`, async () => {
     // Application menu, AWS explorer, Google Cloud explorer and Settings.
     await expect(page.locator(".activity-bar button")).toHaveCount(4);

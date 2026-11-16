@@ -13,7 +13,11 @@ import {
   createWorkspace,
   workspaceReducer,
 } from "../../src/shared/workspace";
-import { closeAppNaturally, desktopExecutablePath } from "./desktop-app";
+import {
+  closeAppNaturally,
+  desktopExecutablePath,
+  behaviorThemes,
+} from "./desktop-app";
 
 test.setTimeout(90000);
 const root = resolve(".tmp/desktop-settings-window");
@@ -157,7 +161,7 @@ async function contained() {
   ).toBeVisible();
 }
 
-for (const theme of ["light", "dark"]) {
+for (const theme of behaviorThemes) {
   test(`${theme} Settings keeps its geometry across every category`, async () => {
     await openWindow();
     const initial = await box();

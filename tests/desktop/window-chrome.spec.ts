@@ -13,7 +13,11 @@ import {
   createWorkspace,
   workspaceReducer,
 } from "../../src/shared/workspace";
-import { closeAppNaturally, desktopExecutablePath } from "./desktop-app";
+import {
+  behaviorThemes,
+  closeAppNaturally,
+  desktopExecutablePath,
+} from "./desktop-app";
 
 test.setTimeout(90000);
 const root = resolve(".tmp/desktop-window-chrome");
@@ -111,12 +115,10 @@ test.afterEach(async () => {
     await rm(directory, { recursive: true, force: true });
 });
 
-for (const mode of [
-  "light",
-  "dark",
-  "light narrow wrapped",
-  "dark narrow wrapped",
-]) {
+for (const mode of behaviorThemes.flatMap((theme) => [
+  theme,
+  `${theme} narrow wrapped`,
+])) {
   test(`${mode} chrome starts at top with tabs clear of native controls`, async ({}, info) => {
     expect(
       await app.evaluate(({ Menu }) => Menu.getApplicationMenu() !== null),

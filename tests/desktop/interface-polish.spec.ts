@@ -12,7 +12,12 @@ import {
   createWorkspace,
   workspaceReducer,
 } from "../../src/shared/workspace";
-import { closeAppNaturally, desktopExecutablePath } from "./desktop-app";
+import {
+  closeAppNaturally,
+  desktopExecutablePath,
+  behaviorThemes,
+  runsBehaviorTest,
+} from "./desktop-app";
 
 test.setTimeout(90000);
 const root = resolve(".tmp/desktop-interface-polish");
@@ -177,7 +182,7 @@ test.beforeEach(async ({}, info) => {
   });
 });
 
-for (const theme of ["light", "dark"]) {
+for (const theme of behaviorThemes) {
   test(`${theme} closed history hover stability after crossing other UI`, async () => {
     await activity("Workspace tab menu").click();
     const entry = page.locator('[data-closed-tab-id="closed-2"]');
@@ -320,81 +325,83 @@ const menuItem = (name: string) =>
   page.getByRole("menuitem", { name, exact: true });
 
 for (const theme of ["light", "dark"]) {
-  for (const length of ["short", "medium"]) {
-    test(`${theme} intrinsic ${length} closed-tab menu sizes to its content instead of a fixed width`, async () => {
+  if (runsBehaviorTest(theme))
+    for (const length of ["short", "medium"]) {
+      test(`${theme} intrinsic ${length} closed-tab menu sizes to its content instead of a fixed width`, async () => {
+        await activity("Workspace tab menu").click();
+        const menu = page.getByRole("menu"),
+          box = (await menu.boundingBox())!;
+        expect(box.width).toBeLessThan(length === "short" ? 300 : 650);
+        expect(box.width).toBeGreaterThan(length === "short" ? 150 : 320);
+        expect(
+          await menu
+            .locator(".closed-tab-history-list")
+            .evaluate((el) => el.scrollWidth <= el.clientWidth),
+        ).toBe(true);
+        await expect(menu.locator("[data-closed-tab-id]")).toHaveCount(3);
+        await captureInterface(`history-intrinsic-${length}.png`);
+      });
+    }
+  if (runsBehaviorTest(theme))
+    test(`${theme} history expands to available height, truncates without horizontal scroll and shows source metadata`, async () => {
       await activity("Workspace tab menu").click();
-      const menu = page.getByRole("menu"),
-        box = (await menu.boundingBox())!;
-      expect(box.width).toBeLessThan(length === "short" ? 300 : 650);
-      expect(box.width).toBeGreaterThan(length === "short" ? 150 : 320);
+      const menu = page.getByRole("menu");
+      const box = (await menu.boundingBox())!;
+      expect(box.width).toBeGreaterThanOrEqual(750);
+      expect(box.width).toBeLessThanOrEqual(760);
+      expect(box.height).toBeGreaterThan(700);
+      expect(box.y).toBeGreaterThanOrEqual(0);
+      expect(box.y + box.height).toBeLessThanOrEqual(
+        await page.evaluate(() => innerHeight),
+      );
       expect(
         await menu
           .locator(".closed-tab-history-list")
           .evaluate((el) => el.scrollWidth <= el.clientWidth),
       ).toBe(true);
-      await expect(menu.locator("[data-closed-tab-id]")).toHaveCount(3);
-      await captureInterface(`history-intrinsic-${length}.png`);
+      const first = menu.locator('[data-closed-tab-id="closed-0"]');
+      await expect(first.locator("svg.tab-source-icon")).toBeVisible();
+      await expect(first.locator(".tab-source-count")).toHaveText("2");
+      expect(
+        await menu
+          .locator('[data-closed-tab-id="closed-1"] .closed-tab-title')
+          .evaluate((el) => ({
+            overflow: getComputedStyle(el).textOverflow,
+            clipped: el.scrollWidth > el.clientWidth,
+          })),
+      ).toEqual({ overflow: "ellipsis", clipped: true });
+      await expect(menu.locator("[title]")).toHaveCount(0);
+      await menu.locator('[data-closed-tab-id="closed-1"]').hover();
+      const tooltip = page.getByRole("tooltip");
+      await expect(tooltip).toContainText("Very long history name");
+      await tooltip.hover();
+      await expect(tooltip).toBeVisible();
+      await captureInterface("history-expanded.png");
+      await activity("Settings").click();
+      await expect(menu).toHaveCount(0);
+      await app.evaluate(({ BrowserWindow }) =>
+        BrowserWindow.getAllWindows()[0].setContentSize(860, 700),
+      );
+      await activity("Workspace tab menu").click();
+      const narrow = (await menu.boundingBox())!;
+      expect(narrow.x).toBeGreaterThanOrEqual(0);
+      expect(narrow.x + narrow.width).toBeLessThanOrEqual(
+        await page.evaluate(() => innerWidth),
+      );
+      expect(narrow.y + narrow.height).toBeLessThanOrEqual(
+        await page.evaluate(() => innerHeight),
+      );
+      expect(
+        await menu
+          .locator(".closed-tab-history-list")
+          .evaluate((el) => el.scrollWidth <= el.clientWidth),
+      ).toBe(true);
+      await menu
+        .locator(".closed-tab-history-list")
+        .evaluate((el) => (el.scrollTop = el.scrollHeight));
+      await menu.locator('[data-closed-tab-id="closed-28"]').click();
+      await expect(tabNode("closed-28")).toBeVisible();
     });
-  }
-  test(`${theme} history expands to available height, truncates without horizontal scroll and shows source metadata`, async () => {
-    await activity("Workspace tab menu").click();
-    const menu = page.getByRole("menu");
-    const box = (await menu.boundingBox())!;
-    expect(box.width).toBeGreaterThanOrEqual(750);
-    expect(box.width).toBeLessThanOrEqual(760);
-    expect(box.height).toBeGreaterThan(700);
-    expect(box.y).toBeGreaterThanOrEqual(0);
-    expect(box.y + box.height).toBeLessThanOrEqual(
-      await page.evaluate(() => innerHeight),
-    );
-    expect(
-      await menu
-        .locator(".closed-tab-history-list")
-        .evaluate((el) => el.scrollWidth <= el.clientWidth),
-    ).toBe(true);
-    const first = menu.locator('[data-closed-tab-id="closed-0"]');
-    await expect(first.locator("svg.tab-source-icon")).toBeVisible();
-    await expect(first.locator(".tab-source-count")).toHaveText("2");
-    expect(
-      await menu
-        .locator('[data-closed-tab-id="closed-1"] .closed-tab-title')
-        .evaluate((el) => ({
-          overflow: getComputedStyle(el).textOverflow,
-          clipped: el.scrollWidth > el.clientWidth,
-        })),
-    ).toEqual({ overflow: "ellipsis", clipped: true });
-    await expect(menu.locator("[title]")).toHaveCount(0);
-    await menu.locator('[data-closed-tab-id="closed-1"]').hover();
-    const tooltip = page.getByRole("tooltip");
-    await expect(tooltip).toContainText("Very long history name");
-    await tooltip.hover();
-    await expect(tooltip).toBeVisible();
-    await captureInterface("history-expanded.png");
-    await activity("Settings").click();
-    await expect(menu).toHaveCount(0);
-    await app.evaluate(({ BrowserWindow }) =>
-      BrowserWindow.getAllWindows()[0].setContentSize(860, 700),
-    );
-    await activity("Workspace tab menu").click();
-    const narrow = (await menu.boundingBox())!;
-    expect(narrow.x).toBeGreaterThanOrEqual(0);
-    expect(narrow.x + narrow.width).toBeLessThanOrEqual(
-      await page.evaluate(() => innerWidth),
-    );
-    expect(narrow.y + narrow.height).toBeLessThanOrEqual(
-      await page.evaluate(() => innerHeight),
-    );
-    expect(
-      await menu
-        .locator(".closed-tab-history-list")
-        .evaluate((el) => el.scrollWidth <= el.clientWidth),
-    ).toBe(true);
-    await menu
-      .locator(".closed-tab-history-list")
-      .evaluate((el) => (el.scrollTop = el.scrollHeight));
-    await menu.locator('[data-closed-tab-id="closed-28"]').click();
-    await expect(tabNode("closed-28")).toBeVisible();
-  });
 
   test(`${theme} settings uses shaped tabs, quick inputs on one axis and activity toggles preserve page`, async () => {
     const gear = activity("Settings");
@@ -597,40 +604,41 @@ for (const theme of ["light", "dark"]) {
     await expect(page.locator('[data-node-kind="group"]')).toHaveCount(9);
   });
 
-  test(`${theme} history retention defaults to seven days and persists a smaller age across reload`, async () => {
-    await activity("Settings").click();
-    await settings()
-      .getByRole("tab", { name: "Preferences", exact: true })
-      .click();
-    const days = settings().getByLabel("Closed tab history (days)", {
-      exact: true,
+  if (runsBehaviorTest(theme))
+    test(`${theme} history retention defaults to seven days and persists a smaller age across reload`, async () => {
+      await activity("Settings").click();
+      await settings()
+        .getByRole("tab", { name: "Preferences", exact: true })
+        .click();
+      const days = settings().getByLabel("Closed tab history (days)", {
+        exact: true,
+      });
+      await expect(days).toHaveValue("7");
+      await days.fill("3");
+      await days.press("Tab");
+      await expect
+        .poll(async () => (await stored()).preferences.closedTabHistoryDays)
+        .toBe(3);
+      await expect
+        .poll(async () =>
+          (await stored()).closedTabs.some((tab) =>
+            ["expired", "closed-6"].includes(tab.id),
+          ),
+        )
+        .toBe(false);
+      await page.reload();
+      await expect(page.locator('[data-node-kind="group"]')).toHaveCount(9);
+      await activity("Settings").click();
+      await settings()
+        .getByRole("tab", { name: "Preferences", exact: true })
+        .click();
+      await expect(days).toHaveValue("3");
+      await activity("Workspace tab menu").click();
+      await expect(
+        page.getByRole("menu").locator('[data-closed-tab-id="closed-6"]'),
+      ).toHaveCount(0);
+      await page.keyboard.press("Escape");
     });
-    await expect(days).toHaveValue("7");
-    await days.fill("3");
-    await days.press("Tab");
-    await expect
-      .poll(async () => (await stored()).preferences.closedTabHistoryDays)
-      .toBe(3);
-    await expect
-      .poll(async () =>
-        (await stored()).closedTabs.some((tab) =>
-          ["expired", "closed-6"].includes(tab.id),
-        ),
-      )
-      .toBe(false);
-    await page.reload();
-    await expect(page.locator('[data-node-kind="group"]')).toHaveCount(9);
-    await activity("Settings").click();
-    await settings()
-      .getByRole("tab", { name: "Preferences", exact: true })
-      .click();
-    await expect(days).toHaveValue("3");
-    await activity("Workspace tab menu").click();
-    await expect(
-      page.getByRole("menu").locator('[data-closed-tab-id="closed-6"]'),
-    ).toHaveCount(0);
-    await page.keyboard.press("Escape");
-  });
 }
 
 test("application menu shows version, working hints and independent side-panel toggle", async () => {

@@ -14,7 +14,11 @@ import {
   restoreWorkspace,
   workspaceReducer,
 } from "../../src/shared/workspace";
-import { closeAppNaturally, desktopExecutablePath } from "./desktop-app";
+import {
+  closeAppNaturally,
+  desktopExecutablePath,
+  behaviorThemes,
+} from "./desktop-app";
 
 // Hidden native windows, isolated user data and missing AWS config keep these
 // cases inside the checkout and independent of the running installed app.
@@ -221,7 +225,7 @@ const config = (value: LogTab) => ({
   view: value.view,
 });
 
-for (const theme of ["light", "dark"]) {
+for (const theme of behaviorThemes) {
   test(`${theme} recent shortcuts freeze focus order while held and visual shortcuts follow the tab strip`, async () => {
     // Visual order is Orders, Payments, Media. The latest previously focused
     // tab is Media, so MRU navigation must skip the adjacent Payments tab.

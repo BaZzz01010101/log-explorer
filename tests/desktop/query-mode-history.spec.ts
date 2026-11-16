@@ -12,7 +12,11 @@ import {
   createWorkspace,
   restoreWorkspace,
 } from "../../src/shared/workspace";
-import { closeAppNaturally, desktopExecutablePath } from "./desktop-app";
+import {
+  closeAppNaturally,
+  desktopExecutablePath,
+  behaviorThemes,
+} from "./desktop-app";
 
 // Every process, fixture and result stays within the checkout. Background mode
 // prevents native windows and the offline flag prevents AWS credential access.
@@ -206,7 +210,7 @@ const inspector = () =>
 const manualMarks = () =>
   page.locator('.virtual-event mark[data-highlight-origins~="manual"]');
 
-for (const theme of ["light", "dark"]) {
+for (const theme of behaviorThemes) {
   test(`${theme} Events undo survives tab switches and clear buttons independently of other fields`, async () => {
     const events = () =>
       page.getByRole("combobox", {

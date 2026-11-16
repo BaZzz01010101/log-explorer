@@ -1,11 +1,11 @@
 import { _electron as electron, expect, test } from "@playwright/test";
 import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { join, resolve, sep } from "node:path";
-import { desktopExecutablePath } from "./desktop-app";
+import { desktopExecutablePath, behaviorThemes } from "./desktop-app";
 import { openSettingsWindow } from "./settings-panel";
 import type { QueryUpdate } from "../../src/shared/contracts";
 
-for (const theme of ["dark", "light"] as const)
+for (const theme of behaviorThemes)
   test(`${theme}: Recent opens at the newest events, pages upwards and returns to recent at the buffer limit`, async () => {
     const root = resolve(".tmp", "recent-desktop");
     await mkdir(root, { recursive: true });

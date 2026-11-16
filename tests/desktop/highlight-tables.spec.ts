@@ -1,6 +1,10 @@
 import { openSettingsWindow } from "./settings-panel";
 import { createWorkspace } from "../../src/shared/workspace";
-import { closeAppNaturally, desktopExecutablePath } from "./desktop-app";
+import {
+  closeAppNaturally,
+  desktopExecutablePath,
+  behaviorThemes,
+} from "./desktop-app";
 import {
   _electron as electron,
   expect,
@@ -200,7 +204,7 @@ async function openHighlights() {
   await wake();
 }
 
-for (const theme of ["light", "dark"]) {
+for (const theme of behaviorThemes) {
   test(`${theme} Highlights tree dividers resize live, cancel and retain layout through docking`, async () => {
     await openHighlights();
     await dialog().locator('[data-tree-rule="first"]').click();

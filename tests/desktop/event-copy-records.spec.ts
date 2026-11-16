@@ -5,7 +5,11 @@ import {
   messagePayloads,
 } from "./copied-rows";
 import { createWorkspace } from "../../src/shared/workspace";
-import { closeAppNaturally, desktopExecutablePath } from "./desktop-app";
+import {
+  closeAppNaturally,
+  desktopExecutablePath,
+  behaviorThemes,
+} from "./desktop-app";
 import {
   _electron as electron,
   expect,
@@ -507,7 +511,7 @@ test("multi-source copy messages retains all payload fields and readable sources
   expect(table).not.toContain('"ERROR payment failed');
 });
 
-for (const theme of ["light", "dark"])
+for (const theme of behaviorThemes)
   test(`${theme} Hybrid wrapping preserves newlines, virtual row geometry, independent inspector wrapping and full copies`, async () => {
     await installClipboardProbe();
     await page

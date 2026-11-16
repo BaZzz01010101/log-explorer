@@ -1,4 +1,8 @@
-import { closeAppNaturally, desktopExecutablePath } from "./desktop-app";
+import {
+  closeAppNaturally,
+  desktopExecutablePath,
+  runsBehaviorTest,
+} from "./desktop-app";
 import {
   _electron as electron,
   expect,
@@ -201,177 +205,179 @@ for (const theme of ["light", "dark"]) {
     await paint();
   });
 
-  test(`${theme} inspector folds to first-level fields and keeps its choice per tab and selected row`, async () => {
-    const first = page.locator('.virtual-event[data-event-id="folding-0"]');
-    await first.locator(".inspect-cell").first().click();
-    await inspector()
-      .getByRole("button", { name: "Unfold structured object", exact: true })
-      .click();
-    await expect(
-      inspector().getByRole("button", {
-        name: "Collapse /payload/nested",
-        exact: true,
-      }),
-    ).toBeVisible();
-    await page
-      .locator('.virtual-event[data-event-id="folding-1"]')
-      .locator(".inspect-cell")
-      .first()
-      .click();
-    await expect(
-      inspector().getByRole("button", {
-        name: "Collapse /payload/nested",
-        exact: true,
-      }),
-    ).toBeVisible();
-    const tabs = page
-      .getByRole("tablist", { name: "Log views", exact: true })
-      .getByRole("tab");
-    await tabs.first().click({ button: "right" });
-    await page
-      .getByRole("menuitem", { name: "Duplicate tab", exact: true })
-      .click();
-    await expect(tabs).toHaveCount(2);
-    await page.getByTestId("run-query").click();
-    await expect(
-      page.locator('.virtual-event[data-event-id="folding-0"]'),
-    ).toBeVisible();
-    await inspector()
-      .getByRole("button", { name: "Fold structured object", exact: true })
-      .click();
-    await expect(
-      inspector().getByRole("button", { name: "Collapse root", exact: true }),
-    ).toBeVisible();
-    await expect(
-      inspector().getByRole("button", { name: "Expand /payload", exact: true }),
-    ).toBeVisible();
-    await expect(
-      inspector().getByRole("button", {
-        name: "Collapse /payload/nested",
-        exact: true,
-      }),
-    ).toHaveCount(0);
-    await page
-      .locator('.virtual-event[data-event-id="folding-1"]')
-      .locator(".inspect-cell")
-      .first()
-      .click();
-    await expect(
-      inspector().getByRole("button", { name: "Expand /payload", exact: true }),
-    ).toBeVisible();
-    await tabs.first().click();
-    await expect(
-      inspector().getByRole("button", {
-        name: "Collapse /payload/nested",
-        exact: true,
-      }),
-    ).toBeVisible();
-    await tabs.nth(1).click();
-    await expect(
-      inspector().getByRole("button", { name: "Expand /payload", exact: true }),
-    ).toBeVisible();
-    await expect
-      .poll(async () => {
-        const saved = JSON.parse(
-          await readFile(join(directory, "workspace.json"), "utf8"),
-        );
-        return saved.tabs.map((tab: any) => tab.view.inspectorExpanded);
-      })
-      .toEqual([true, false]);
-  });
-
-  for (const mode of ["Table", "Hybrid", "JSON"])
-    test(`${theme} ${mode} all-message folding applies the correct mode behavior`, async () => {
-      await page
-        .locator("label")
-        .filter({ hasText: new RegExp(`^${mode}$`) })
-        .click();
+  if (runsBehaviorTest(theme))
+    test(`${theme} inspector folds to first-level fields and keeps its choice per tab and selected row`, async () => {
       const first = page.locator('.virtual-event[data-event-id="folding-0"]');
-      const plain = page.locator('.virtual-event[data-event-id="folding-2"]');
-      const all = () =>
-        page.getByRole("button", { name: /^(Fold|Unfold) all messages$/ });
-      if ((await all().getAttribute("aria-pressed")) === "true")
-        await all().click();
-      if (mode === "JSON") {
-        await expect(
-          first.getByRole("button", { name: "Expand /payload", exact: true }),
-        ).toBeVisible();
-        await expect(
-          first.getByRole("button", { name: "Collapse root", exact: true }),
-        ).toBeVisible();
-      }
-      await all().click();
-      await expect(all()).toHaveAttribute("aria-pressed", "true");
-      if (mode === "Hybrid") {
-        await expect(
-          first.getByRole("region", {
-            name: "Expanded event content",
-            exact: true,
-          }),
-        ).toBeVisible();
-      } else {
-        await expect(
-          first.getByRole("button", {
-            name: "Collapse /payload/nested",
-            exact: true,
-          }),
-        ).toBeVisible();
-        await expect(first.locator(".expanded-event-details")).toHaveCount(0);
-        await expect(plain.locator(".raw-content pre")).toHaveText(
-          "First plain line\nSecond plain line",
-        );
-      }
-      // Recycled virtual rows must keep the global choice and manual nested changes.
-      if (mode === "JSON") {
-        await first
-          .getByRole("button", { name: "Collapse /payload", exact: true })
+      await first.locator(".inspect-cell").first().click();
+      await inspector()
+        .getByRole("button", { name: "Unfold structured object", exact: true })
+        .click();
+      await expect(
+        inspector().getByRole("button", {
+          name: "Collapse /payload/nested",
+          exact: true,
+        }),
+      ).toBeVisible();
+      await page
+        .locator('.virtual-event[data-event-id="folding-1"]')
+        .locator(".inspect-cell")
+        .first()
+        .click();
+      await expect(
+        inspector().getByRole("button", {
+          name: "Collapse /payload/nested",
+          exact: true,
+        }),
+      ).toBeVisible();
+      const tabs = page
+        .getByRole("tablist", { name: "Log views", exact: true })
+        .getByRole("tab");
+      await tabs.first().click({ button: "right" });
+      await page
+        .getByRole("menuitem", { name: "Duplicate tab", exact: true })
+        .click();
+      await expect(tabs).toHaveCount(2);
+      await page.getByTestId("run-query").click();
+      await expect(
+        page.locator('.virtual-event[data-event-id="folding-0"]'),
+      ).toBeVisible();
+      await inspector()
+        .getByRole("button", { name: "Fold structured object", exact: true })
+        .click();
+      await expect(
+        inspector().getByRole("button", { name: "Collapse root", exact: true }),
+      ).toBeVisible();
+      await expect(
+        inspector().getByRole("button", { name: "Expand /payload", exact: true }),
+      ).toBeVisible();
+      await expect(
+        inspector().getByRole("button", {
+          name: "Collapse /payload/nested",
+          exact: true,
+        }),
+      ).toHaveCount(0);
+      await page
+        .locator('.virtual-event[data-event-id="folding-1"]')
+        .locator(".inspect-cell")
+        .first()
+        .click();
+      await expect(
+        inspector().getByRole("button", { name: "Expand /payload", exact: true }),
+      ).toBeVisible();
+      await tabs.first().click();
+      await expect(
+        inspector().getByRole("button", {
+          name: "Collapse /payload/nested",
+          exact: true,
+        }),
+      ).toBeVisible();
+      await tabs.nth(1).click();
+      await expect(
+        inspector().getByRole("button", { name: "Expand /payload", exact: true }),
+      ).toBeVisible();
+      await expect
+        .poll(async () => {
+          const saved = JSON.parse(
+            await readFile(join(directory, "workspace.json"), "utf8"),
+          );
+          return saved.tabs.map((tab: any) => tab.view.inspectorExpanded);
+        })
+        .toEqual([true, false]);
+    });
+
+  if (runsBehaviorTest(theme))
+    for (const mode of ["Table", "Hybrid", "JSON"])
+      test(`${theme} ${mode} all-message folding applies the correct mode behavior`, async () => {
+        await page
+          .locator("label")
+          .filter({ hasText: new RegExp(`^${mode}$`) })
           .click();
-        const viewer = page.locator(".viewer-scroll");
-        await viewer.press("End");
-        await expect(
-          page
-            .locator('.virtual-event[data-event-id="folding-119"]')
-            .getByRole("button", {
+        const first = page.locator('.virtual-event[data-event-id="folding-0"]');
+        const plain = page.locator('.virtual-event[data-event-id="folding-2"]');
+        const all = () =>
+          page.getByRole("button", { name: /^(Fold|Unfold) all messages$/ });
+        if ((await all().getAttribute("aria-pressed")) === "true")
+          await all().click();
+        if (mode === "JSON") {
+          await expect(
+            first.getByRole("button", { name: "Expand /payload", exact: true }),
+          ).toBeVisible();
+          await expect(
+            first.getByRole("button", { name: "Collapse root", exact: true }),
+          ).toBeVisible();
+        }
+        await all().click();
+        await expect(all()).toHaveAttribute("aria-pressed", "true");
+        if (mode === "Hybrid") {
+          await expect(
+            first.getByRole("region", {
+              name: "Expanded event content",
+              exact: true,
+            }),
+          ).toBeVisible();
+        } else {
+          await expect(
+            first.getByRole("button", {
               name: "Collapse /payload/nested",
               exact: true,
             }),
-        ).toBeVisible();
-        await viewer.press("Home");
+          ).toBeVisible();
+          await expect(first.locator(".expanded-event-details")).toHaveCount(0);
+          await expect(plain.locator(".raw-content pre")).toHaveText(
+            "First plain line\nSecond plain line",
+          );
+        }
+        // Recycled virtual rows must keep the global choice and manual nested changes.
+        if (mode === "JSON") {
+          await first
+            .getByRole("button", { name: "Collapse /payload", exact: true })
+            .click();
+          const viewer = page.locator(".viewer-scroll");
+          await viewer.press("End");
+          await expect(
+            page
+              .locator('.virtual-event[data-event-id="folding-119"]')
+              .getByRole("button", {
+                name: "Collapse /payload/nested",
+                exact: true,
+              }),
+          ).toBeVisible();
+          await viewer.press("Home");
+          await paint();
+          await expect(
+            first.getByRole("button", { name: "Expand /payload", exact: true }),
+          ).toBeVisible();
+        }
+        await all().click();
+        await expect(all()).toHaveAttribute("aria-pressed", "false");
+        if (mode === "Hybrid")
+          await expect(
+            first.getByRole("region", {
+              name: "Expanded event content",
+              exact: true,
+            }),
+          ).toHaveCount(0);
+        else if (mode === "JSON") {
+          await expect(
+            first.getByRole("button", { name: "Collapse root", exact: true }),
+          ).toBeVisible();
+          await expect(
+            first.getByRole("button", { name: "Expand /payload", exact: true }),
+          ).toBeVisible();
+        } else {
+          await expect(first.locator(".json-tree")).toHaveCount(0);
+          await expect(plain.locator(".raw-content")).toHaveCount(0);
+        }
+        await all().click();
+        if (mode !== "Hybrid")
+          await expect(
+            first.getByRole("button", {
+              name: "Collapse /payload/nested",
+              exact: true,
+            }),
+          ).toBeVisible();
         await paint();
-        await expect(
-          first.getByRole("button", { name: "Expand /payload", exact: true }),
-        ).toBeVisible();
-      }
-      await all().click();
-      await expect(all()).toHaveAttribute("aria-pressed", "false");
-      if (mode === "Hybrid")
-        await expect(
-          first.getByRole("region", {
-            name: "Expanded event content",
-            exact: true,
-          }),
-        ).toHaveCount(0);
-      else if (mode === "JSON") {
-        await expect(
-          first.getByRole("button", { name: "Collapse root", exact: true }),
-        ).toBeVisible();
-        await expect(
-          first.getByRole("button", { name: "Expand /payload", exact: true }),
-        ).toBeVisible();
-      } else {
-        await expect(first.locator(".json-tree")).toHaveCount(0);
-        await expect(plain.locator(".raw-content")).toHaveCount(0);
-      }
-      await all().click();
-      if (mode !== "Hybrid")
-        await expect(
-          first.getByRole("button", {
-            name: "Collapse /payload/nested",
-            exact: true,
-          }),
-        ).toBeVisible();
-      await paint();
-    });
+      });
 }
 
 test.afterEach(async ({}, testInfo) => {

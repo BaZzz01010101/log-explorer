@@ -12,7 +12,11 @@ import {
   createWorkspace,
   workspaceReducer,
 } from "../../src/shared/workspace";
-import { closeAppNaturally, desktopExecutablePath } from "./desktop-app";
+import {
+  closeAppNaturally,
+  desktopExecutablePath,
+  behaviorThemes,
+} from "./desktop-app";
 
 test.setTimeout(90000);
 const root = resolve(".tmp/desktop-viewing-corrections");
@@ -190,7 +194,7 @@ async function capture(name: string) {
   await mkdir(test.info().outputDir, { recursive: true });
   await writeFile(test.info().outputPath(name), Buffer.from(png, "base64"));
 }
-for (const theme of ["light", "dark"]) {
+for (const theme of behaviorThemes) {
   test(`${theme} numeric relative rows and fixed editable time slots`, async () => {
     await activity("Time range").click();
     const popup = page.locator(".time-range-popover");

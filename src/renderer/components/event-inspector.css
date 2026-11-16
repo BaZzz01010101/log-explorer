@@ -92,6 +92,14 @@
 .inspector-message-actions .structured-actions {
   margin-bottom: 0;
 }
+/* Toggles match the Copy button (Mantine subtle). Off is a normal, enabled
+   control; the tinted background alone marks a toggle that is on. */
+.inspector-message-actions .structured-actions button {
+  color: var(--mantine-primary-color-light-color);
+}
+.inspector-message-actions .structured-actions button:hover {
+  background: var(--mantine-primary-color-light-hover);
+}
 
 @container event-inspector (max-height: 220px) {
   .event-inspector-header {

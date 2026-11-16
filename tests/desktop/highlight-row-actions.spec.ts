@@ -1,6 +1,10 @@
 import { openSettingsWindow } from "./settings-panel";
 import { createWorkspace } from "../../src/shared/workspace";
-import { closeAppNaturally, desktopExecutablePath } from "./desktop-app";
+import {
+  closeAppNaturally,
+  desktopExecutablePath,
+  behaviorThemes,
+} from "./desktop-app";
 import {
   _electron as electron,
   expect,
@@ -287,7 +291,7 @@ async function openTree() {
   return settings().getByRole("tree", { name: "Highlight profiles and rules" });
 }
 
-for (const theme of ["light", "dark"]) {
+for (const theme of behaviorThemes) {
   test(`${theme} compact tree preview uses freed space and code fields disable writing assistance`, async () => {
     await expect(page.locator(".virtual-event").first()).toBeVisible();
     await openTree();
@@ -337,7 +341,7 @@ for (const theme of ["light", "dark"]) {
     await capture(`${theme}-tree-compact-preview.png`);
   });
 }
-for (const theme of ["light", "dark"]) {
+for (const theme of behaviorThemes) {
   test(`${theme} compact highlight tree shares Explorer row typography, selection and highlight icon`, async () => {
     await openTree();
     const row = treeRow("rule", "ERROR");
@@ -535,7 +539,7 @@ const treeRow = (kind: "profile" | "rule", name: string) =>
     exact: true,
   });
 
-for (const theme of ["light", "dark"]) {
+for (const theme of behaviorThemes) {
   test(`${theme} tree highlights applies edits immediately and preserves docking state`, async () => {
     const tree = await openTree();
     await expect(tree.getByRole("checkbox")).toHaveCount(0);
@@ -695,7 +699,7 @@ test("tree additions focus an immediate editor and all panels remain usable in a
   await expect(pane.locator(".highlight-events-theme")).toHaveCount(0);
 });
 
-for (const theme of ["light", "dark"]) {
+for (const theme of behaviorThemes) {
   test(`${theme} inline highlight deletion preserves editors, dragging and confirmation across docking`, async () => {
     await openTree();
     const row = treeRow("rule", "ERROR");

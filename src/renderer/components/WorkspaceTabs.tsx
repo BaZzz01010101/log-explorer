@@ -242,9 +242,15 @@ function SortableTab({
                 reorderPreview?.crossingSource?.id === tab.id
                   ? "hidden"
                   : undefined,
+              // A tab shown by the crossing preview stays hidden in its slot.
+              // Moving it would let it stick out of its row, making the row
+              // scrollable, and drag auto-scroll would then shift the row's
+              // tabs up by however far it got before the pointer moved on.
               transform: CSS.Translate.toString(
-                mode === "reorder"
-                  ? (reorderPreview?.translations[tab.id] ??
+                reorderPreview?.crossingSource?.id === tab.id
+                  ? null
+                  : mode === "reorder"
+                    ? (reorderPreview?.translations[tab.id] ??
                       (pointerDrag
                         ? null
                         : transform && {
@@ -254,7 +260,7 @@ function SortableTab({
                                 ? transform.y
                                 : 0,
                           }))
-                  : null,
+                    : null,
               ),
               transition: reorderPreview
                 ? "transform 160ms ease"

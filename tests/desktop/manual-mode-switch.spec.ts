@@ -12,7 +12,11 @@ import {
   createWorkspace,
   restoreWorkspace,
 } from "../../src/shared/workspace";
-import { closeAppNaturally, desktopExecutablePath } from "./desktop-app";
+import {
+  closeAppNaturally,
+  desktopExecutablePath,
+  behaviorThemes,
+} from "./desktop-app";
 import { DEFAULT_TIMESTAMP_COLUMN_WIDTH } from "../../src/shared/log-data";
 
 // Every process, fixture and result stays within the checkout. Background mode
@@ -216,7 +220,7 @@ const inspector = () =>
 const manualMarks = () =>
   page.locator('.virtual-event mark[data-highlight-origins~="manual"]');
 
-for (const theme of ["light", "dark"]) {
+for (const theme of behaviorThemes) {
   test(`${theme} Events drafts wait for Run or Enter and loaded content survives tab switches`, async () => {
     const status = page.locator(".query-status");
     const count = () =>

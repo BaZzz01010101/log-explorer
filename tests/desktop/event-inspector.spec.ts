@@ -322,6 +322,19 @@ test("structured inspector folds nested objects and adds columns and local filte
   const foldBox = (await fold.boundingBox())!;
   expect(Math.abs(copyBox.y - wrapBox.y)).toBeLessThanOrEqual(1);
   expect(Math.abs(copyBox.y - foldBox.y)).toBeLessThanOrEqual(1);
+  // Toggles share Copy's colour, on or off: off must not look disabled.
+  const iconColor = (button: typeof copy) =>
+    button.evaluate((element) => getComputedStyle(element).color);
+  const copyColor = await iconColor(copy);
+  const toggles = actions.locator(".structured-actions button");
+  await expect(toggles).toHaveCount(2);
+  for (const toggle of [toggles.nth(0), toggles.nth(1)]) {
+    await expect.poll(() => iconColor(toggle)).toBe(copyColor);
+    await toggle.click();
+    await expect.poll(() => iconColor(toggle)).toBe(copyColor);
+    await toggle.click();
+  }
+  await page.mouse.move(0, 0);
   await fold.press("Space");
   await expect(
     inspector().getByRole("button", { name: "Collapse root", exact: true }),

@@ -14,7 +14,11 @@ import {
   createWorkspace,
   workspaceReducer,
 } from "../../src/shared/workspace";
-import { closeAppNaturally, desktopExecutablePath } from "./desktop-app";
+import {
+  closeAppNaturally,
+  desktopExecutablePath,
+  behaviorThemes,
+} from "./desktop-app";
 
 test.setTimeout(120000);
 const root = resolve(".tmp/desktop-settings-layout-preview");
@@ -273,7 +277,7 @@ async function loadTab(title: string, marker?: string) {
   await wake();
 }
 
-for (const theme of ["light", "dark"]) {
+for (const theme of behaviorThemes) {
   test(`${theme} Settings centers single-column forms and preserves shortcut search while resizing`, async () => {
     await openWindow();
     await resizeSettings(1100, 650);

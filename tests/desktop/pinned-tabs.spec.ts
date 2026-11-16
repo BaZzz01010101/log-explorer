@@ -14,7 +14,11 @@ import {
   workspaceReducer,
   restoreWorkspace,
 } from "../../src/shared/workspace";
-import { closeAppNaturally, desktopExecutablePath } from "./desktop-app";
+import {
+  closeAppNaturally,
+  desktopExecutablePath,
+  behaviorThemes,
+} from "./desktop-app";
 
 // Every process, fixture and result stays within the checkout. Background mode
 // prevents native windows and the offline flag prevents AWS credential access.
@@ -44,7 +48,10 @@ test.beforeEach(async ({}, info) => {
     workspace.connections.push({ id: "test-gcp", name: "Test GCP", mode: "gcp", profile: "work", region: "europe-west2", gcpIdentity: { configuration: "work", account: "test@example.com" } });
     workspace.tabs[0].sources.push({ connectionId: "test-gcp", logGroup: "/gcp/functions/test", gcp: { kind: "function", project: "test-project", region: "europe-west2", generation: "v1", functionName: "test" } });
   }
-  if (info.title.includes("drag motion wrapped")) {
+  if (
+    info.title.includes("drag motion wrapped") ||
+    info.title.includes("overflowing separate")
+  ) {
     for (let index = 0; index < 5; index++) {
       const tab = createTab("offline", [
         { logGroup: "/aws/lambda/notifications" },
@@ -682,7 +689,7 @@ test("left-quarter tab pickup reorders across later tabs in shared and separate 
   }
 });
 
-for (const theme of ["light", "dark"]) {
+for (const theme of behaviorThemes) {
   test(`drag motion overlap activates a narrow tab before reorder with cursor outside it in ${theme}`, async () => {
     const source = tab("tab-orders");
     const origin = (await source.boundingBox())!;
@@ -892,6 +899,85 @@ test("drag motion uses 80 percent neighbor crossings without oscillation and cla
     "data-tab-id",
     "tab-orders",
   );
+});
+
+// A pinned tab dragged into the other row is hidden in its own row while a
+// preview shows it. Moved along with the pointer, it stuck out of its wrapped
+// row, made the row scrollable, and drag auto-scroll shifted the pinned tabs up
+// by however far it got before the pointer left the edge.
+test("drag motion overflowing separate wrapped rows never scroll vertically while a pinned tab hovers the row boundary", async () => {
+  await tab("tab-media")
+    .getByRole("button", { name: "Unpin Mixed Sources (10)", exact: true })
+    .click();
+  await expect(tab("tab-media")).toHaveAttribute("data-pinned", "false");
+  // A short pinned row above a regular row that overflows sideways.
+  for (const index of [0, 1, 2, 3, 4]) {
+    await tab(`tab-extra-${index}`)
+      .getByRole("button", {
+        name: `Unpin Another long service name for wrapped row ${index}`,
+        exact: true,
+      })
+      .click();
+    await expect(tab(`tab-extra-${index}`)).toHaveAttribute(
+      "data-pinned",
+      "false",
+    );
+  }
+  await app.evaluate(({ BrowserWindow }) =>
+    BrowserWindow.getAllWindows()[0].webContents.setBackgroundThrottling(false),
+  );
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  const pinned = page.locator('[data-tab-strip="pinned"]');
+  const row = (await pinned.boundingBox())!;
+  await startDrag(tab("tab-orders").getByRole("tab"));
+  await expect(
+    page.locator(".workspace-tab.is-dragging").first(),
+  ).toBeAttached();
+  // Sampled every frame before painting: what the user would see.
+  await page.evaluate(() => {
+    const probe = window as typeof window & {
+      __rowScroll: number;
+      __sampling: boolean;
+    };
+    probe.__rowScroll = 0;
+    probe.__sampling = true;
+    const sample = () => {
+      for (const strip of document.querySelectorAll<HTMLElement>(
+        "[data-tab-strip]",
+      ))
+        probe.__rowScroll = Math.max(probe.__rowScroll, strip.scrollTop);
+      if (probe.__sampling) requestAnimationFrame(sample);
+    };
+    requestAnimationFrame(sample);
+  });
+  // Cross between the rows slowly, lingering near the boundary each way.
+  const regular = (await page
+    .locator('[data-tab-strip="regular"]')
+    .boundingBox())!;
+  for (let pass = 0; pass < 3; pass++)
+    for (const y of [
+      row.y + row.height - 4,
+      regular.y + 6,
+      regular.y + regular.height / 2,
+      row.y + row.height - 8,
+      row.y + 4,
+      regular.y + 2,
+    ]) {
+      await page.mouse.move(row.x + 150 + pass * 200, y, { steps: 5 });
+      await page.waitForTimeout(150);
+    }
+  const painted = await page.evaluate(() => {
+    const probe = window as typeof window & {
+      __rowScroll: number;
+      __sampling: boolean;
+    };
+    probe.__sampling = false;
+    return probe.__rowScroll;
+  });
+  await page.keyboard.press("Escape");
+  await page.mouse.up();
+  expect(painted).toBe(0);
+  expect((await pinned.boundingBox())!.y).toBe(row.y);
 });
 
 test("drag motion separate row jumps animate only vertically above every tab", async () => {

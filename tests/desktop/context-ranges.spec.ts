@@ -14,7 +14,11 @@ import type {
 } from "../../src/shared/contracts";
 import { LOG_LEVELS } from "../../src/shared/log-data";
 import { createWorkspace } from "../../src/shared/workspace";
-import { closeAppNaturally, desktopExecutablePath } from "./desktop-app";
+import {
+  closeAppNaturally,
+  desktopExecutablePath,
+  behaviorThemes,
+} from "./desktop-app";
 
 test.setTimeout(90000);
 const temporaryRoot = resolve(".tmp", "desktop-context-ranges");
@@ -437,7 +441,7 @@ for (const paged of [false, true])
     await expect(selected).toHaveAttribute("data-current", "false");
   });
 
-for (const theme of ["light", "dark"])
+for (const theme of behaviorThemes)
   test(`${theme} inspector Ctrl-click recursively toggles only the requested JSON branch`, async () => {
     await loadEvents([
       {

@@ -1,5 +1,9 @@
 import { createWorkspace } from "../../src/shared/workspace";
-import { closeAppNaturally, desktopExecutablePath } from "./desktop-app";
+import {
+  closeAppNaturally,
+  desktopExecutablePath,
+  behaviorThemes,
+} from "./desktop-app";
 import {
   _electron as electron,
   expect,
@@ -358,7 +362,7 @@ test("tab switching preserves wrapped expanded content, both scroll positions an
   ).toHaveCount(1);
 });
 
-for (const theme of ["light", "dark"]) {
+for (const theme of behaviorThemes) {
   test(`${theme} Table wrapped structured message preserves field names before shrinking values`, async () => {
     await mode("Table");
     await wrap(true);
@@ -503,13 +507,29 @@ for (const theme of ["light", "dark"]) {
       }
       if (duringScroll.length)
         failures.push({ phase: "continuous-scroll", bad: duringScroll });
-      await app!.evaluate(({ BrowserWindow }) =>
-        BrowserWindow.getAllWindows()[0].setContentSize(1200, 850),
-      );
+      const resize = async (width: number, height: number) => {
+        await app!.evaluate(
+          ({ BrowserWindow }, [width, height]) =>
+            BrowserWindow.getAllWindows()[0].setContentSize(width, height),
+          [width, height],
+        );
+        // The renderer receives the new size asynchronously; measure only
+        // after it has, or the rows are caught mid-reflow. Display scaling
+        // can round the CSS size by a pixel.
+        await expect
+          .poll(() =>
+            page.evaluate(
+              ([width, height]) =>
+                Math.abs(innerWidth - width) <= 1 &&
+                Math.abs(innerHeight - height) <= 1,
+              [width, height],
+            ),
+          )
+          .toBe(true);
+      };
+      await resize(1200, 850);
       await snapshot("narrower-window");
-      await app!.evaluate(({ BrowserWindow }) =>
-        BrowserWindow.getAllWindows()[0].setContentSize(1700, 1000),
-      );
+      await resize(1700, 1000);
       await snapshot("restored-window");
       await test.info().attach("row-layout", {
         body: JSON.stringify(failures, null, 2),

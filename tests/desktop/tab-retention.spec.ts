@@ -12,7 +12,11 @@ import {
   createWorkspace,
   workspaceReducer,
 } from "../../src/shared/workspace";
-import { closeAppNaturally, desktopExecutablePath } from "./desktop-app";
+import {
+  closeAppNaturally,
+  desktopExecutablePath,
+  behaviorThemes,
+} from "./desktop-app";
 
 test.setTimeout(90000);
 const root = resolve(".tmp/desktop-tab-retention");
@@ -233,7 +237,7 @@ const row = (index: number) =>
     `.virtual-event[data-event-id="retained:/aws/lambda/orders-api:${index}"]`,
   );
 
-for (const theme of ["light", "dark"]) {
+for (const theme of behaviorThemes) {
   test(`${theme} tab switches retain list scroll, expanded row size, decoded content and inspector mode`, async () => {
     await fixtures();
     const view = current("tab-orders"),
@@ -471,7 +475,7 @@ test("retained viewers survive becoming split panes and switching between split 
   await expect(row(30).locator(".event-message-details")).toBeVisible();
 });
 
-for (const theme of ["light", "dark"]) {
+for (const theme of behaviorThemes) {
   test(`${theme} all time slots have steppers and focused wheel editing, and relative duration has both`, async () => {
     test.setTimeout(240000);
     await activity("Settings").click();

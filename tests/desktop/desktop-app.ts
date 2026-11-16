@@ -13,6 +13,19 @@ export function desktopExecutablePath(): string {
 /** One limit for a natural close, sized for a machine running parallel apps. */
 export const APP_CLOSE_TIMEOUT = 20_000;
 
+/**
+ * The dark theme changes colors, not behavior or layout. Tests that compare
+ * colors run in both themes; the rest run in light only, which keeps about a
+ * fifth of the suite's work out of each run. Set DESKTOP_THEMES=all to run
+ * every theme loop in both, e.g. after changing theme code.
+ */
+export const behaviorThemes: readonly ("light" | "dark")[] =
+  process.env.DESKTOP_THEMES === "all" ? ["light", "dark"] : ["light"];
+
+/** In a loop over both themes, whether a test without color checks runs. */
+export const runsBehaviorTest = (theme: string) =>
+  (behaviorThemes as readonly string[]).includes(theme);
+
 function within<T>(promise: Promise<T>, timeout: number, message: string) {
   let timer: NodeJS.Timeout | undefined;
   return Promise.race([
@@ -67,7 +80,7 @@ export async function closeAppNaturally(
     return await within(exited, timeout, "The app did not exit after quitting");
   } finally {
     if (listen) child.stderr?.off("data", listen);
-    if (child.exitCode === null && child.signalCode === null)
+    if (child.exitCode === null && child.signalCode === null) {
       try {
         execFileSync("taskkill", ["/PID", String(child.pid), "/T", "/F"], {
           stdio: "ignore",
@@ -76,5 +89,8 @@ export async function closeAppNaturally(
       } catch {
         // Already gone.
       }
+      // Callers check the exit state afterwards, so wait until Node has seen it.
+      await within(exited, 5000, "The app did not end").catch(() => {});
+    }
   }
 }
