@@ -1,4 +1,4 @@
-import { desktopExecutablePath } from "./desktop-app";
+import { closeAppNaturally, desktopExecutablePath } from "./desktop-app";
 import {
   _electron as electron,
   test,
@@ -65,13 +65,7 @@ async function launch(waitForQuery = true) {
     ).toBeVisible();
 }
 async function closeNaturally() {
-  const closed = app.waitForEvent("close", { timeout: 10000 });
-  const exited = new Promise<number | null>((done) => child.once("exit", done));
-  await app.evaluate(({ BrowserWindow }) =>
-    BrowserWindow.getAllWindows()[0].close(),
-  );
-  await closed;
-  expect(await exited).toBe(0);
+  expect(await closeAppNaturally(app)).toBe(0);
 }
 test.beforeEach(async ({}, info) => {
   directory = await mkdtemp(join(tmpdir(), "aws-log-explorer-combined-"));

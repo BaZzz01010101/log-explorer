@@ -8,7 +8,7 @@ import {
 } from "@playwright/test";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { join, resolve, sep } from "node:path";
-import { desktopExecutablePath } from "./desktop-app";
+import { closeAppNaturally, desktopExecutablePath } from "./desktop-app";
 import {
   createWorkspace,
   restoreWorkspace,
@@ -68,11 +68,7 @@ async function launch() {
 }
 async function close() {
   if (app && app.process().exitCode === null) {
-    const closed = app.waitForEvent("close");
-    await app.evaluate(({ BrowserWindow }) =>
-      BrowserWindow.getAllWindows()[0].close(),
-    );
-    await closed;
+    await closeAppNaturally(app);
   }
 }
 async function load(workspace: Workspace) {

@@ -10,7 +10,7 @@ import { execFileSync } from "node:child_process";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join, resolve, sep } from "node:path";
 import { createWorkspace } from "../../src/shared/workspace";
-import { desktopExecutablePath } from "./desktop-app";
+import { closeAppNaturally, desktopExecutablePath } from "./desktop-app";
 import { openSettingsWindow } from "./settings-panel";
 
 test.setTimeout(120000);
@@ -461,11 +461,7 @@ test.afterEach(async ({}, testInfo) => {
   }
   try {
     if (app && child?.exitCode === null) {
-      const closed = app.waitForEvent("close", { timeout: 7000 });
-      await app.evaluate(({ BrowserWindow }) =>
-        BrowserWindow.getAllWindows()[0].close(),
-      );
-      await closed;
+      await closeAppNaturally(app);
     }
   } finally {
     if (child && child.exitCode === null)

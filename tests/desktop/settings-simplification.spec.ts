@@ -6,12 +6,11 @@ import {
   type Locator,
   type Page,
 } from "@playwright/test";
-import { execFileSync } from "node:child_process";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join, resolve, sep } from "node:path";
 import { createWorkspace } from "../../src/shared/workspace";
 import type { Workspace } from "../../src/shared/contracts";
-import { desktopExecutablePath } from "./desktop-app";
+import { closeAppNaturally, desktopExecutablePath } from "./desktop-app";
 
 // All files and processes belong to this fixture. Never read the user's AWS
 // configuration or allow this regression suite to display a native window.
@@ -160,33 +159,24 @@ test.afterEach(async ({}, info) => {
     } catch (error) {
       logs.push(`Final capture failed: ${String(error)}`);
     }
-    const closed = app!.waitForEvent("close", { timeout: 8000 });
-    const exited = new Promise<number | null>((done) =>
-      child.once("exit", done),
-    );
     try {
-      await app!.evaluate(({ BrowserWindow }) => {
-        if (BrowserWindow.getAllWindows().some((window) => window.isVisible()))
-          throw new Error(
-            "Settings verification became visible during teardown",
-          );
-        BrowserWindow.getAllWindows()[0].close();
+      const requested = Date.now();
+      const code = await closeAppNaturally(app!, {
+        close: () =>
+          app!.evaluate(({ BrowserWindow }) => {
+            if (
+              BrowserWindow.getAllWindows().some((window) => window.isVisible())
+            )
+              throw new Error(
+                "Settings verification became visible during teardown",
+              );
+            BrowserWindow.getAllWindows()[0].close();
+          }),
       });
-      await closed;
-      expect(await exited).toBe(0);
+      logs.push(`[test] exited ${Date.now() - requested} ms after close`);
+      expect(code).toBe(0);
     } catch (error) {
       closeFailure = error;
-    } finally {
-      if (child.exitCode === null && child.signalCode === null) {
-        try {
-          execFileSync("taskkill", ["/PID", String(child.pid), "/T", "/F"], {
-            stdio: "ignore",
-            windowsHide: true,
-          });
-        } catch (error) {
-          closeFailure ??= error;
-        }
-      }
     }
   }
   await mkdir(info.outputDir, { recursive: true });

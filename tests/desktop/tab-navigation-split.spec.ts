@@ -5,7 +5,6 @@ import {
   type ElectronApplication,
   type Page,
 } from "@playwright/test";
-import { execFileSync } from "node:child_process";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { join, resolve, sep } from "node:path";
 import type { LogTab } from "../../src/shared/contracts";
@@ -15,7 +14,7 @@ import {
   restoreWorkspace,
   workspaceReducer,
 } from "../../src/shared/workspace";
-import { desktopExecutablePath } from "./desktop-app";
+import { closeAppNaturally, desktopExecutablePath } from "./desktop-app";
 
 // Hidden native windows, isolated user data and missing AWS config keep these
 // cases inside the checkout and independent of the running installed app.
@@ -187,18 +186,7 @@ test("keyboard log paging selects the visible edge before scrolling", async () =
 test.afterEach(async () => {
   if (app?.process().exitCode === null) {
     const child = app.process();
-    const closed = app.waitForEvent("close", { timeout: 8000 });
-    await app.evaluate(({ BrowserWindow }) =>
-      BrowserWindow.getAllWindows()[0].close(),
-    );
-    try {
-      await closed;
-    } finally {
-      if (child.exitCode === null)
-        execFileSync("taskkill", ["/PID", String(child.pid), "/T", "/F"], {
-          stdio: "ignore",
-        });
-    }
+    await closeAppNaturally(app);
   }
   expect(errors).toEqual([]);
   if (

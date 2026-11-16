@@ -1,4 +1,4 @@
-import { desktopExecutablePath } from "./desktop-app";
+import { closeAppNaturally, desktopExecutablePath } from "./desktop-app";
 import {
   _electron as electron,
   expect,
@@ -119,15 +119,7 @@ test.beforeEach(async () => {
 test.afterEach(async () => {
   if (app && child && child.exitCode === null) {
     try {
-      const exit = app.waitForEvent("close", { timeout: 7000 });
-      const processExit = new Promise<number | null>((resolveExit) =>
-        child!.once("exit", resolveExit),
-      );
-      await app.evaluate(({ BrowserWindow }) =>
-        BrowserWindow.getAllWindows()[0].close(),
-      );
-      await exit;
-      expect(await processExit).toBe(0);
+      expect(await closeAppNaturally(app)).toBe(0);
     } finally {
       if (child.exitCode === null) {
         if (process.platform === "win32")

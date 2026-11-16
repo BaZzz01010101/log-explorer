@@ -7,7 +7,7 @@ import {
 } from "@playwright/test";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join, resolve, sep } from "node:path";
-import { desktopExecutablePath } from "./desktop-app";
+import { closeAppNaturally, desktopExecutablePath } from "./desktop-app";
 // Saved files omit the pane projection; restoring derives it.
 import { createWorkspace, restoreWorkspace } from "../../src/shared/workspace";
 
@@ -74,11 +74,7 @@ async function launch() {
 async function close() {
   if (!child || child.exitCode !== null) return;
   const exited = new Promise<void>((done) => child!.once("exit", () => done()));
-  const closed = app.waitForEvent("close", { timeout: 10000 });
-  await app.evaluate(({ BrowserWindow }) =>
-    BrowserWindow.getAllWindows()[0].close(),
-  );
-  await closed;
+  await closeAppNaturally(app);
   await exited;
   child = undefined;
 }

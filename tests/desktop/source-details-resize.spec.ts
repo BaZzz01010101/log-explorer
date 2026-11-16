@@ -12,7 +12,7 @@ import {
   createWorkspace,
   restoreWorkspace,
 } from "../../src/shared/workspace";
-import { desktopExecutablePath } from "./desktop-app";
+import { closeAppNaturally, desktopExecutablePath } from "./desktop-app";
 
 // The native process, profile, credentials and results stay within this checkout.
 // Both verification flags are mandatory: no visible window or real AWS access.
@@ -91,16 +91,8 @@ test.afterEach(async () => {
   const child = app?.process();
   let closeFailure: unknown;
   if (child && child.exitCode === null && child.signalCode === null) {
-    const closed = app.waitForEvent("close", { timeout: 8000 });
-    const exited = new Promise<number | null>((done) =>
-      child.once("exit", done),
-    );
     try {
-      await app.evaluate(({ BrowserWindow }) =>
-        BrowserWindow.getAllWindows()[0].close(),
-      );
-      await closed;
-      expect(await exited).toBe(0);
+      expect(await closeAppNaturally(app)).toBe(0);
     } catch (error) {
       closeFailure = error;
     } finally {

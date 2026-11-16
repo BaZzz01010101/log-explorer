@@ -9,12 +9,11 @@ import {
 } from "@playwright/test";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { join, resolve, sep } from "node:path";
-import { execFileSync } from "node:child_process";
 import {
   createWorkspace,
   restoreWorkspace,
 } from "../../src/shared/workspace";
-import { desktopExecutablePath } from "./desktop-app";
+import { closeAppNaturally, desktopExecutablePath } from "./desktop-app";
 
 // Every process, fixture and result stays within the checkout. Background mode
 // prevents native windows and the offline flag prevents AWS credential access.
@@ -84,18 +83,7 @@ test.beforeEach(async () => {
 test.afterEach(async () => {
   if (app?.process().exitCode === null) {
     const child = app.process();
-    const closed = app.waitForEvent("close", { timeout: 8000 });
-    await app.evaluate(({ BrowserWindow }) =>
-      BrowserWindow.getAllWindows()[0].close(),
-    );
-    try {
-      await closed;
-    } finally {
-      if (child.exitCode === null)
-        execFileSync("taskkill", ["/PID", String(child.pid), "/T", "/F"], {
-          stdio: "ignore",
-        });
-    }
+    await closeAppNaturally(app);
   }
   expect(errors).toEqual([]);
   if (

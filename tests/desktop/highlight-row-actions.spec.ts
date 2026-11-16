@@ -1,6 +1,6 @@
 import { openSettingsWindow } from "./settings-panel";
 import { createWorkspace } from "../../src/shared/workspace";
-import { desktopExecutablePath } from "./desktop-app";
+import { closeAppNaturally, desktopExecutablePath } from "./desktop-app";
 import {
   _electron as electron,
   expect,
@@ -126,12 +126,7 @@ test.afterEach(async ({}, info) => {
       ),
     ).toBe(true);
     if (info.status !== info.expectedStatus) await capture("failure.png");
-    const closed = app.waitForEvent("close");
-    await app.evaluate(({ BrowserWindow }) =>
-      BrowserWindow.getAllWindows()[0].close(),
-    );
-    await closed;
-    expect(child.exitCode).toBe(0);
+    expect(await closeAppNaturally(app)).toBe(0);
   }
   expect(errors).toEqual([]);
   if (!directory.startsWith(root + sep + "case-"))

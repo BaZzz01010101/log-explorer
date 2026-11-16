@@ -14,7 +14,7 @@ import {
   createWorkspace,
   workspaceReducer,
 } from "../../src/shared/workspace";
-import { desktopExecutablePath } from "./desktop-app";
+import { closeAppNaturally, desktopExecutablePath } from "./desktop-app";
 
 test.setTimeout(45000);
 const temporaryRoot = resolve(".tmp", "desktop-tab-layout");
@@ -113,15 +113,7 @@ async function launch(
 
 async function closeNaturally() {
   if (!app || app.process().exitCode !== null) return;
-  const closed = app.waitForEvent("close", { timeout: 7000 });
-  const exited = new Promise<number | null>((done) =>
-    app!.process().once("exit", done),
-  );
-  await app.evaluate(({ BrowserWindow }) =>
-    BrowserWindow.getAllWindows()[0].close(),
-  );
-  await closed;
-  expect(await exited).toBe(0);
+  expect(await closeAppNaturally(app)).toBe(0);
   app = undefined;
 }
 test.beforeEach(async () => {

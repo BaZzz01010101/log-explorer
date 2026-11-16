@@ -12,7 +12,7 @@ import {
   createWorkspace,
   restoreWorkspace,
 } from "../../src/shared/workspace";
-import { desktopExecutablePath } from "./desktop-app";
+import { closeAppNaturally, desktopExecutablePath } from "./desktop-app";
 
 const temporaryRoot = resolve(".tmp/desktop-explorer-polish");
 const orders = "/aws/lambda/orders-api";
@@ -79,11 +79,7 @@ test.beforeEach(async () => {
 });
 test.afterEach(async () => {
   if (app?.process().exitCode === null) {
-    const closed = app.waitForEvent("close");
-    await app.evaluate(({ BrowserWindow }) =>
-      BrowserWindow.getAllWindows()[0].close(),
-    );
-    await closed;
+    await closeAppNaturally(app);
   }
   expect(errors).toEqual([]);
   if (

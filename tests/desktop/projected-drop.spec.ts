@@ -1,4 +1,4 @@
-import { desktopExecutablePath } from "./desktop-app";
+import { closeAppNaturally, desktopExecutablePath } from "./desktop-app";
 import {
   _electron as electron,
   expect,
@@ -162,13 +162,5 @@ test("dropping a normal tab into a combined tab previews its final nested pane r
       Math.abs(actual[key] - projected[key]),
       JSON.stringify({ projected, actual, key }),
     ).toBeLessThanOrEqual(2);
-  const closed = app.waitForEvent("close", { timeout: 10000 });
-  const exited = new Promise<number | null>((resolveExit) =>
-    child.once("exit", resolveExit),
-  );
-  await app.evaluate(({ BrowserWindow }) =>
-    BrowserWindow.getAllWindows()[0].close(),
-  );
-  await closed;
-  expect(await exited).toBe(0);
+  expect(await closeAppNaturally(app)).toBe(0);
 });

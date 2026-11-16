@@ -1,5 +1,5 @@
 import { openSettingsWindow } from "./settings-panel";
-import { desktopExecutablePath } from "./desktop-app";
+import { closeAppNaturally, desktopExecutablePath } from "./desktop-app";
 import {
   _electron as electron,
   expect,
@@ -112,18 +112,10 @@ async function launch() {
 async function closeNaturally() {
   if (!app || !child || child.exitCode !== null) return;
   const started = Date.now();
-  // Match the normal Playwright event budget. Shutdown includes the renderer
-  // acknowledgement, disk flush and cleanup; record those stages on failure.
-  const exit = app.waitForEvent("close", { timeout: 30000 });
-  const processExit = new Promise<number | null>((resolveExit) =>
-    child!.once("exit", resolveExit),
-  );
+  // Shutdown includes the renderer acknowledgement, disk flush and cleanup;
+  // record those stages on failure.
   try {
-    await app.evaluate(({ BrowserWindow }) =>
-      BrowserWindow.getAllWindows()[0].close(),
-    );
-    await exit;
-    expect(await processExit).toBe(0);
+    expect(await closeAppNaturally(app)).toBe(0);
   } finally {
     await mkdir(test.info().outputDir, { recursive: true });
     await writeFile(

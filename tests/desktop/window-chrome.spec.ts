@@ -13,7 +13,7 @@ import {
   createWorkspace,
   workspaceReducer,
 } from "../../src/shared/workspace";
-import { desktopExecutablePath } from "./desktop-app";
+import { closeAppNaturally, desktopExecutablePath } from "./desktop-app";
 
 test.setTimeout(90000);
 const root = resolve(".tmp/desktop-window-chrome");
@@ -104,12 +104,7 @@ test.afterEach(async () => {
         BrowserWindow.getAllWindows().every((w) => !w.isVisible()),
       ),
     ).toBe(true);
-    const closed = app.waitForEvent("close");
-    await app.evaluate(({ BrowserWindow }) =>
-      BrowserWindow.getAllWindows()[0].close(),
-    );
-    await closed;
-    expect(child.exitCode).toBe(0);
+    expect(await closeAppNaturally(app)).toBe(0);
   }
   expect(errors).toEqual([]);
   if (directory?.startsWith(root + sep))
@@ -307,12 +302,12 @@ test("application menu theme, zoom, exclusivity and close save work without a na
   await page.getByLabel("Log font size", { exact: true }).fill("16");
   await page.keyboard.press("Escape");
   await menu();
-  const closed = app.waitForEvent("close");
-  await page
-    .getByRole("menuitem", { name: "Close window", exact: true })
-    .click();
-  await closed;
-  expect(child.exitCode).toBe(0);
+  expect(
+    await closeAppNaturally(app, {
+      close: () =>
+        page.getByRole("menuitem", { name: "Close window", exact: true }).click(),
+    }),
+  ).toBe(0);
   const workspace = JSON.parse(
     await readFile(join(directory, "workspace.json"), "utf8"),
   );

@@ -12,7 +12,7 @@ import {
   createWorkspace,
   workspaceReducer,
 } from "../../src/shared/workspace";
-import { desktopExecutablePath } from "./desktop-app";
+import { closeAppNaturally, desktopExecutablePath } from "./desktop-app";
 
 const root = resolve(".tmp/desktop-workspace-tab-borders");
 let directory: string;
@@ -35,12 +35,7 @@ test.afterEach(async () => {
         BrowserWindow.getAllWindows().every((window) => !window.isVisible()),
       ),
     ).toBe(true);
-    const closed = app.waitForEvent("close");
-    await app.evaluate(({ BrowserWindow }) =>
-      BrowserWindow.getAllWindows()[0].close(),
-    );
-    await closed;
-    expect(child.exitCode).toBe(0);
+    expect(await closeAppNaturally(app)).toBe(0);
   }
   expect(errors).toEqual([]);
   if (!resolve(directory).startsWith(root + sep + "case-"))

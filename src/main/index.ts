@@ -151,11 +151,29 @@ function flushRenderer(): Promise<void> {
     window!.webContents.send("explorer:prepare-close", closeToken);
   });
 }
+// Verification runs log each shutdown step with a timestamp, so a slow exit
+// can be traced to the step that held it.
+const shutdownStep = (step: string) => {
+  if (backgroundVerification)
+    process.stderr.write(`[shutdown ${Date.now()}] ${step}
+`);
+};
+const traced =
+  (step: string, operation: () => Promise<void>) => async () => {
+    shutdownStep(`${step} started`);
+    try {
+      await operation();
+      shutdownStep(`${step} done`);
+    } catch (error) {
+      shutdownStep(`${step} failed: ${String(error)}`);
+      throw error;
+    }
+  };
 const closeCoordinator = createCloseCoordinator(
   {
-    save: flushRenderer,
-    flush: () => store.flush(),
-    shutdown: () => service.shutdown(),
+    save: traced("renderer save", flushRenderer),
+    flush: traced("workspace flush", () => store.flush()),
+    shutdown: traced("service shutdown", () => service.shutdown()),
     confirmDiscard: async (error) => {
       if (!window || window.isDestroyed()) return true;
       const choice = await dialog.showMessageBox(window, {
@@ -184,6 +202,7 @@ const closeCoordinator = createCloseCoordinator(
       return choice.response === 1;
     },
     quit: () => {
+      shutdownStep("quit");
       allowWindowClose = true;
       quitting = true;
       app.quit();
@@ -611,6 +630,8 @@ app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();
 });
 app.on("will-quit", cancelGoogleLogin);
+app.on("quit", () => shutdownStep("app quit"));
+process.on("exit", (code) => shutdownStep(`process exit ${code}`));
 app.on("before-quit", (event) => {
   if (quitting) return;
   event.preventDefault();

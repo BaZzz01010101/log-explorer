@@ -14,7 +14,7 @@ import type {
 } from "../../src/shared/contracts";
 import { LOG_LEVELS } from "../../src/shared/log-data";
 import { createWorkspace } from "../../src/shared/workspace";
-import { desktopExecutablePath } from "./desktop-app";
+import { closeAppNaturally, desktopExecutablePath } from "./desktop-app";
 
 test.setTimeout(90000);
 const temporaryRoot = resolve(".tmp", "desktop-context-ranges");
@@ -159,15 +159,7 @@ test.beforeEach(async ({}, info) => {
 
 test.afterEach(async () => {
   if (app && app.process().exitCode === null) {
-    const closed = app.waitForEvent("close", { timeout: 7000 });
-    const exited = new Promise<number | null>((done) =>
-      app!.process().once("exit", done),
-    );
-    await app.evaluate(({ BrowserWindow }) =>
-      BrowserWindow.getAllWindows()[0].close(),
-    );
-    await closed;
-    expect(await exited).toBe(0);
+    expect(await closeAppNaturally(app)).toBe(0);
   }
   expect(errors).toEqual([]);
   if (!resolve(directory).startsWith(temporaryRoot + sep + "case-"))

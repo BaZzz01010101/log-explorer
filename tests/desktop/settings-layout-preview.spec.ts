@@ -14,7 +14,7 @@ import {
   createWorkspace,
   workspaceReducer,
 } from "../../src/shared/workspace";
-import { desktopExecutablePath } from "./desktop-app";
+import { closeAppNaturally, desktopExecutablePath } from "./desktop-app";
 
 test.setTimeout(120000);
 const root = resolve(".tmp/desktop-settings-layout-preview");
@@ -174,12 +174,7 @@ test.afterEach(async () => {
         BrowserWindow.getAllWindows().every((win) => !win.isVisible()),
       ),
     ).toBe(true);
-    const closed = app.waitForEvent("close");
-    await app.evaluate(({ BrowserWindow }) =>
-      BrowserWindow.getAllWindows()[0].close(),
-    );
-    await closed;
-    expect(child.exitCode).toBe(0);
+    expect(await closeAppNaturally(app)).toBe(0);
   }
   expect(errors).toEqual([]);
   if (directory?.startsWith(root + sep))

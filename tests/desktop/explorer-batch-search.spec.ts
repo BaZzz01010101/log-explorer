@@ -11,7 +11,7 @@ import {
   createWorkspace,
   restoreWorkspace,
 } from "../../src/shared/workspace";
-import { desktopExecutablePath } from "./desktop-app";
+import { closeAppNaturally, desktopExecutablePath } from "./desktop-app";
 
 // Every process, fixture and result stays within the checkout. Background mode
 // prevents native windows and the offline flag prevents AWS credential access.
@@ -72,11 +72,7 @@ test.beforeEach(async () => {
 });
 test.afterEach(async () => {
   if (app?.process().exitCode === null) {
-    const closed = app.waitForEvent("close");
-    await app.evaluate(({ BrowserWindow }) =>
-      BrowserWindow.getAllWindows()[0].close(),
-    );
-    await closed;
+    await closeAppNaturally(app);
   }
   expect(errors).toEqual([]);
   if (

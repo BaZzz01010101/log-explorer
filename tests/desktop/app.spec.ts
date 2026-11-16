@@ -1,5 +1,5 @@
 import { openSettingsWindow } from "./settings-panel";
-import { desktopExecutablePath } from "./desktop-app";
+import { closeAppNaturally, desktopExecutablePath } from "./desktop-app";
 import {
   _electron as electron,
   expect,
@@ -297,15 +297,7 @@ test("native window close exits naturally after saving, including the discard-sa
   await openSettingsWindow(page);
   await click(page.getByRole("tab", { name: "Preferences", exact: true }));
   await input(page.getByLabel("Log font size", { exact: true }), "16");
-  let exited = app.waitForEvent("close", { timeout: 10000 });
-  let processExit = new Promise<number | null>((resolve) =>
-    childProcess!.once("exit", resolve),
-  );
-  await app.evaluate(({ BrowserWindow }) => {
-    BrowserWindow.getAllWindows()[0].close();
-  });
-  await exited;
-  expect(await processExit).toBe(0);
+  expect(await closeAppNaturally(app)).toBe(0);
   expect(
     JSON.parse(await readFile(join(directory, "workspace.json"), "utf8"))
       .preferences.fontSize,
@@ -322,13 +314,5 @@ test("native window close exits naturally after saving, including the discard-sa
       checkboxChecked: false,
     });
   });
-  exited = app.waitForEvent("close", { timeout: 10000 });
-  processExit = new Promise<number | null>((resolve) =>
-    childProcess!.once("exit", resolve),
-  );
-  await app.evaluate(({ BrowserWindow }) => {
-    BrowserWindow.getAllWindows()[0].close();
-  });
-  await exited;
-  expect(await processExit).toBe(0);
+  expect(await closeAppNaturally(app)).toBe(0);
 });

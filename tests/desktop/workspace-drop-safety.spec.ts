@@ -1,4 +1,4 @@
-import { desktopExecutablePath } from "./desktop-app";
+import { closeAppNaturally, desktopExecutablePath } from "./desktop-app";
 import {
   _electron as electron,
   expect,
@@ -79,15 +79,7 @@ test.beforeEach(async () => {
 });
 
 async function closeNaturally() {
-  const closed = app.waitForEvent("close", { timeout: 10000 });
-  const exited = new Promise<number | null>((resolveExit) =>
-    child.once("exit", resolveExit),
-  );
-  await app.evaluate(({ BrowserWindow }) =>
-    BrowserWindow.getAllWindows()[0].close(),
-  );
-  await closed;
-  expect(await exited).toBe(0);
+  expect(await closeAppNaturally(app)).toBe(0);
 }
 
 test.afterEach(async () => {

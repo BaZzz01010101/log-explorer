@@ -8,7 +8,7 @@ import {
 } from "@playwright/test";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join, resolve, sep } from "node:path";
-import { desktopExecutablePath } from "./desktop-app";
+import { closeAppNaturally, desktopExecutablePath } from "./desktop-app";
 import {
   createWorkspace,
   createTab,
@@ -77,11 +77,7 @@ async function close() {
   const processExited = new Promise<void>((resolve) =>
     currentChild.once("exit", () => resolve()),
   );
-  const exited = app.waitForEvent("close");
-  await app.evaluate(({ BrowserWindow }) =>
-    BrowserWindow.getAllWindows()[0].close(),
-  );
-  await exited;
+  await closeAppNaturally(app);
   await processExited;
   child = undefined;
 }

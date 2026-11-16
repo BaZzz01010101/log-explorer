@@ -1,3 +1,5 @@
+import { mkdirSync, readdirSync, rmSync } from "node:fs";
+import { join } from "node:path";
 import { defineConfig } from "@playwright/test";
 
 // Every spec launches its own app with a private user-data directory, hidden
@@ -17,12 +19,27 @@ const clipboardSpecs = [
   "source-search-refinements",
 ].map((name) => `**/${name}.spec.ts`);
 
+// Each run keeps a full JSON record (errors, durations, retries) under
+// .tmp/desktop-runs, so a failure stays inspectable after later runs replace
+// the test-results folder. Records older than the last 20 are removed.
+const runs = ".tmp/desktop-runs";
+mkdirSync(runs, { recursive: true });
+for (const old of readdirSync(runs)
+  .filter((name) => name.endsWith(".json"))
+  .sort()
+  .slice(0, -19))
+  rmSync(join(runs, old), { force: true });
+const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+
 export default defineConfig({
   testDir: "./tests/desktop",
   outputDir: "./.tmp/test-results",
   workers: Number(process.env.DESKTOP_WORKERS) || 4,
   timeout: 90000,
-  reporter: "list",
+  reporter: [
+    ["list"],
+    ["json", { outputFile: join(runs, `${stamp}.json`) }],
+  ],
   use: { trace: "retain-on-failure", actionTimeout: 5000 },
   projects: [
     { name: "desktop", testIgnore: clipboardSpecs },
