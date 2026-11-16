@@ -124,6 +124,8 @@ for (const theme of ["light", "dark"] as const)
   test(`fast scrolling retains row and text regex highlights in ${theme}`, async () => {
     const workspace = createWorkspace();
     workspace.preferences.theme = theme;
+    // Recent pins the newest row; these checks scroll programmatically.
+    workspace.tabs[0].timePreset = "1h";
     workspace.tabs[0].view.columns = [
       { path: "@timestamp", width: 210, pinned: true },
       { path: "@message", width: 800 },

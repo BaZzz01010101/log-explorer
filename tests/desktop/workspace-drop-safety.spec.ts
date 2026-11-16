@@ -172,7 +172,7 @@ test("top-edge self-drop clones independent permanent tabs and invalid or cancel
   expect(Math.abs(first.x - second.x)).toBeLessThan(2);
   expect(Math.abs(first.width - second.width)).toBeLessThan(2);
   await expect(
-    page.getByLabel("Add split pane", { exact: true }),
+    page.getByLabel("Split pane", { exact: true }).first(),
   ).toHaveAttribute("data-split-axis", "horizontal");
   await panes.nth(0).getByLabel("Local filter loaded events").fill("Payment");
   await expect(
@@ -241,7 +241,7 @@ test("top-edge self-drop clones independent permanent tabs and invalid or cancel
 });
 
 test("a four-pane workspace adds a fifth split and refuses dragging its combined tab onto itself", async () => {
-  const add = page.getByLabel("Add split pane", { exact: true });
+  const add = page.getByLabel("Split pane", { exact: true }).first();
   await add.click();
   await add.click();
   await add.click();

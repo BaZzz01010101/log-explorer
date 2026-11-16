@@ -235,8 +235,9 @@ export function HighlightTreeEditor({
   const profile =
     profiles.find((item) => item.id === state.selected?.profileId) ??
     profiles[0];
+  // With no profiles both ids are undefined, so require a profile first.
   const rule =
-    profile?.id === state.selected?.profileId
+    profile && profile.id === state.selected?.profileId
       ? profile.rules.find((item) => item.id === state.selected?.ruleId)
       : undefined;
   const [draftSize, setDraftSize] = useState<

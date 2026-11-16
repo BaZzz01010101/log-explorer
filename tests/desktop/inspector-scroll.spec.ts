@@ -18,6 +18,7 @@ import {
   workspaceReducer,
 } from "../../src/shared/workspace";
 import { desktopExecutablePath } from "./desktop-app";
+import { overviewHighlightColor } from "../../src/renderer/overview-colors";
 
 test.setTimeout(45000);
 const temporaryRoot = resolve(".tmp", "desktop-inspector-scroll");
@@ -40,7 +41,8 @@ test.beforeEach(async ({}, info) => {
   workspace.preferences.theme = info.title.includes("dark") ? "dark" : "light";
   workspace.sidebarVisible = false;
   workspace.preferences.timezone = "utc";
-  workspace.tabs[0].timePreset = "clear";
+  // Recent opens at the newest row; these checks start from the first row.
+  workspace.tabs[0].timePreset = "1h";
   workspace.tabs[0].filterPattern = "";
   workspace.tabs[0].view.mode = "table";
   workspace.tabs[0].view.wrap = false;
@@ -79,7 +81,7 @@ test.beforeEach(async ({}, info) => {
     second.id = "inspector-second";
     second.title = "Second inspector";
     second.filterPattern = "";
-    second.timePreset = "clear";
+    second.timePreset = "1h";
     workspace = workspaceReducer(workspace, { type: "tab/open", tab: second });
     if (info.title.includes("short split")) {
       workspace = workspaceReducer(workspace, {
@@ -466,13 +468,31 @@ for (const theme of ["light", "dark"])
     await capture(`inspector-map-${theme}.png`);
   });
 
+/** Computed styles report rgb(); the overview helper returns hex. */
+const rgb = (hex: string) => {
+  const value = Number.parseInt(hex.replace("#", ""), 16);
+  return `rgb(${value >> 16}, ${(value >> 8) & 255}, ${value & 255})`;
+};
+
 test("profile matches keep both list and inspector maps with theme colors", async () => {
   await load(structuredMessage());
   await expect(listMarks()).toBeVisible();
   await expect(messageMarks("profile").first()).toBeVisible();
+  // Map marks use the rule's light-theme color (#99ddff), contrast-adjusted
+  // against the map track like every overview color.
+  const track = await messageMarks("profile")
+    .first()
+    .evaluate((mark) => {
+      for (let node = mark.parentElement; node; node = node.parentElement) {
+        const color = getComputedStyle(node).backgroundColor;
+        if (/^rgb\(/.test(color)) return color;
+      }
+      return "";
+    });
+  expect(track).not.toBe("");
   await expect(messageMarks("profile").first()).toHaveCSS(
     "background-color",
-    "rgb(153, 221, 255)",
+    rgb(overviewHighlightColor("rgb(153, 221, 255)", track)),
   );
   await messageMarks("profile").last().click();
   await expect(

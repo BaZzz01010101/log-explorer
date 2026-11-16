@@ -41,6 +41,9 @@ export function SourceBadges({
     window.addEventListener(RESOURCE_DRAG_END, end);
     window.addEventListener(TAB_SOURCE_DRAG_START, start);
     window.addEventListener(TAB_SOURCE_DRAG_END, end);
+    // A view mounted during a drag reads the state before subscribing; a drag
+    // that ended in between would otherwise leave the strip shown.
+    setResourceDragging(isResourceDragging() || isTabSourceDragging());
     return () => {
       window.removeEventListener(RESOURCE_DRAG_START, start);
       window.removeEventListener(RESOURCE_DRAG_END, end);

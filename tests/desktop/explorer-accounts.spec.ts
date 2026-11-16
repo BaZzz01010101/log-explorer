@@ -249,13 +249,14 @@ test("settings adds and removes profiles and regions without listing every known
     page.getByRole("combobox", { name: "Explorer profile", exact: true }),
   ).toHaveValue("development");
   await openSettingsWindow(page);
-  await settings
-    .getByRole("combobox", { name: "Known profile to add", exact: true })
-    .click();
-  await page.getByRole("option", { name: "constructor", exact: true }).click();
+  // Stage 14 picker: "Add profile" opens a searchable list; choosing adds it.
   await settings
     .getByRole("button", { name: "Add profile", exact: true })
     .click();
+  await page
+    .getByRole("combobox", { name: "Search profiles", exact: true })
+    .fill("constructor");
+  await page.locator('[role="option"][data-add-value="constructor"]').click();
   await expect(settings.locator("[data-profile]")).toHaveCount(2);
   await settings
     .getByRole("button", {
@@ -264,20 +265,15 @@ test("settings adds and removes profiles and regions without listing every known
     })
     .click();
   await settings
-    .getByRole("combobox", { name: "Add region for constructor", exact: true })
-    .fill("N. Virginia");
+    .getByRole("button", { name: "Add region for constructor", exact: true })
+    .click();
   await page
-    .getByRole("option", {
-      name: "US East (N. Virginia) · us-east-1",
+    .getByRole("combobox", {
+      name: "Search regions for constructor",
       exact: true,
     })
-    .click();
-  await settings
-    .getByRole("button", {
-      name: "Confirm add region for constructor",
-      exact: true,
-    })
-    .click();
+    .fill("N. Virginia");
+  await page.locator('[role="option"][data-add-value="us-east-1"]').click();
   await expect(
     settings.getByRole("button", {
       name: "Remove constructor region us-east-1",

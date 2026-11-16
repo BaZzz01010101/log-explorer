@@ -8,9 +8,10 @@ import {
 } from "@playwright/test";
 import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve, sep } from "node:path";
+import { createWorkspace } from "../../src/shared/workspace";
 
 let app: ElectronApplication;
 let child: ReturnType<ElectronApplication["process"]>;
@@ -27,6 +28,10 @@ test.beforeEach(async () => {
   );
   directory = await mkdtemp(join(tmpdir(), "aws-log-explorer-viewer-"));
   errors = [];
+  const workspace = createWorkspace();
+  // Recent pins the newest row; these checks work from the first rows.
+  workspace.tabs[0].timePreset = "1h";
+  await writeFile(join(directory, "workspace.json"), JSON.stringify(workspace));
   const environment: Record<string, string> = {};
   for (const key of [
     "PATH",
@@ -378,20 +383,20 @@ for (const mode of ["JSON", "Table", "Hybrid"]) {
     });
     const rows = page.locator(".virtual-event");
     const details = page.locator(".event-message-details");
-    if (mode === "JSON") {
-      await expect(foldAll).toBeVisible();
-      await expect.poll(() => details.count()).toBeGreaterThan(0);
-      await foldAll.click();
-    }
+    // Every mode starts folded (JSON since Stage 15). Only Hybrid adds and
+    // removes a details area below the row; Table unfolds inline and JSON
+    // cards keep their message area and expand the tree inside it.
+    const separateDetails = mode === "Hybrid";
     await expect(unfoldAll).toBeVisible();
-    await expect(details).toHaveCount(0);
+    if (separateDetails) await expect(details).toHaveCount(0);
     const foldedHeight = (await rows.nth(1).boundingBox())!.height;
     await unfoldAll.click();
-    await expect.poll(() => details.count()).toBeGreaterThan(0);
+    if (separateDetails)
+      await expect.poll(() => details.count()).toBeGreaterThan(0);
     await expect
       .poll(async () => (await rows.nth(1).boundingBox())!.height)
       .toBeGreaterThan(foldedHeight + 20);
-    if (mode !== "Table") {
+    if (separateDetails) {
       await rows
         .first()
         .getByRole("button", { name: "Collapse event details", exact: true })
@@ -402,29 +407,34 @@ for (const mode of ["JSON", "Table", "Hybrid"]) {
       await expect(rows.nth(1).locator(".event-message-details")).toBeVisible();
     }
     await foldAll.click();
-    await expect(details).toHaveCount(0);
+    if (separateDetails) await expect(details).toHaveCount(0);
     await unfoldAll.click();
-    await expect(rows.first().locator(".event-message-details")).toBeVisible();
+    if (separateDetails)
+      await expect(rows.first().locator(".event-message-details")).toBeVisible();
     const viewport = page.getByRole("grid", {
       name: "Log events",
       exact: true,
     });
-    await viewport.hover();
+    // Expanded Hybrid details scroll on their own (Stage 16); wheel over the
+    // sticky header, which always scrolls the list itself.
+    const header = page.locator(".log-table-header").first();
+    await ((await header.count()) ? header : viewport).hover();
     await page.mouse.wheel(0, 1000000);
     await expect
       .poll(async () => Number(await rows.first().getAttribute("data-index")))
       .toBeGreaterThan(100);
-    await expect
-      .poll(() =>
-        rows.evaluateAll(
-          (elements) =>
-            elements.length > 0 &&
-            elements.every((element) =>
-              element.querySelector(".event-message-details"),
-            ),
-        ),
-      )
-      .toBe(true);
+    if (separateDetails)
+      await expect
+        .poll(() =>
+          rows.evaluateAll(
+            (elements) =>
+              elements.length > 0 &&
+              elements.every((element) =>
+                element.querySelector(".event-message-details"),
+              ),
+          ),
+        )
+        .toBe(true);
     await expect
       .poll(async () =>
         rows.evaluateAll((elements) =>
@@ -438,7 +448,7 @@ for (const mode of ["JSON", "Table", "Hybrid"]) {
       )
       .toBe(true);
     await foldAll.click();
-    await expect(details).toHaveCount(0);
+    if (separateDetails) await expect(details).toHaveCount(0);
     await expect(unfoldAll).toBeVisible();
     await page.getByLabel("Local filter loaded events").fill("Payment");
     await expect(page.locator(".query-status")).toContainText("shown /");

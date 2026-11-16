@@ -10,6 +10,7 @@ import {
 import { execFileSync } from "node:child_process";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { join, resolve, sep } from "node:path";
+import { createWorkspace } from "../../src/shared/workspace";
 
 test.setTimeout(90000);
 let app: ElectronApplication | undefined;
@@ -23,6 +24,10 @@ test.beforeEach(async () => {
   await mkdir(temporaryRoot, { recursive: true });
   directory = await mkdtemp(join(temporaryRoot, "case-"));
   errors = [];
+  const workspace = createWorkspace();
+  // Recent pins the newest row; these checks click rows from the start.
+  workspace.tabs[0].timePreset = "1h";
+  await writeFile(join(directory, "workspace.json"), JSON.stringify(workspace));
   const env: Record<string, string> = {};
   for (const name of ["PATH", "SystemRoot", "WINDIR", "TEMP", "TMP", "COMSPEC"])
     if (process.env[name]) env[name] = process.env[name]!;

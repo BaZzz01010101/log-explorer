@@ -997,6 +997,7 @@ export function WorkspaceDragSurface({
     hoverActivated.current = false;
   };
   const finishDrag = () => {
+    dragActive.current = false;
     sourceDropTarget.current?.dispatchEvent(
       new Event("explorer:source-drag-leave"),
     );
@@ -1042,6 +1043,28 @@ export function WorkspaceDragSurface({
   }, [workspace, draggedSource, previewHeights, revealEmptyPinnedRow]);
   const pointerDrag =
     draggedSource?.kind === "tab" && lastPoint.current !== null;
+  // Escape cancels an active drag before any other surface (for example the
+  // viewer closing its inspector) can consume it. dnd-kit cancels on Escape
+  // reaching the document, so the key is handed to it directly.
+  const dragActive = useRef(false);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const escape = (event: globalThis.KeyboardEvent) => {
+      if (!dragActive.current || event.key !== "Escape" || !event.isTrusted)
+        return;
+      event.preventDefault();
+      event.stopPropagation();
+      document.dispatchEvent(
+        new globalThis.KeyboardEvent("keydown", {
+          key: "Escape",
+          code: "Escape",
+          bubbles: true,
+        }),
+      );
+    };
+    window.addEventListener("keydown", escape, true);
+    return () => window.removeEventListener("keydown", escape, true);
+  }, []);
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
     useSensor(KeyboardSensor, {
@@ -1189,6 +1212,7 @@ export function WorkspaceDragSurface({
             updateDestination(point, source);
           }}
           onDragStart={({ active, activatorEvent }) => {
+            dragActive.current = true;
             clearHover();
             hoverActivated.current = false;
             originRef.current = activeEntryId(workspace);

@@ -339,7 +339,10 @@ for (const theme of ["light", "dark"]) {
     await search.fill("highlight");
     await resizeSettings(1100, 1000);
     await expect(search).toHaveValue("highlight");
-    await expect(shortcuts.locator(".shortcut-editor-row")).toHaveCount(2);
+    await expect(shortcuts.locator(".shortcut-editor-row")).toHaveCount(3);
+    // "highlight" matches exactly these commands (Focus text highlight since Stage 18).
+    for (const label of ["Focus text highlight", "Highlight regex", "Highlight match case"])
+      await expect(shortcuts.locator(".shortcut-editor-row").filter({ hasText: label })).toHaveCount(1);
   });
 
   test(`${theme} Highlights grows the tree and editor and keeps their scrolling separate from preview`, async () => {
@@ -421,7 +424,7 @@ for (const theme of ["light", "dark"]) {
     }
     expect(
       new Set(gutters).size,
-      "Tree and editor scrollbar gutters remain stable across preview folds",
+      `Tree and editor scrollbar gutters remain stable across preview folds: ${JSON.stringify(gutters)}`,
     ).toBe(1);
   });
 

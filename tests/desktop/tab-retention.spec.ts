@@ -30,6 +30,8 @@ test.beforeEach(async ({}, info) => {
       ? 600
       : 280;
   workspace.tabs[0].filterPattern = "";
+  // Recent pins the newest row; these checks scroll and expand older rows.
+  workspace.tabs[0].timePreset = "1h";
   workspace.preferences.pinnedTabsSeparateRow = true;
   workspace.preferences.tabBarLayout = info.title.includes("wrapped")
     ? "wrap"
@@ -365,7 +367,7 @@ for (const theme of ["light", "dark"]) {
   });
 }
 
-for (const mode of ["Text", "Pattern", "Auto"]) {
+for (const mode of ["Text", "AWS Pattern", "Auto"]) {
   test(`clear server filter queries automatically with empty pattern in ${mode}`, async () => {
     await fixtures();
     await page.getByRole("button", { name: /^Filter mode:/ }).click();

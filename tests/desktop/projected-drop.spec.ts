@@ -117,23 +117,33 @@ test("dropping a normal tab into a combined tab previews its final nested pane r
     .locator(".resource-label")
     .dblclick();
   await page.getByRole("tab", { name: "payments-worker", exact: true }).click();
-  await page.getByLabel("Add split pane", { exact: true }).click();
+  // Select both tabs (Ctrl+click), then combine them from the tab menu.
+  await page
+    .getByRole("tab", { name: "orders-api", exact: true })
+    .click({ modifiers: ["Control"] });
+  await page
+    .getByRole("tab", { name: "payments-worker", exact: true })
+    .click({ button: "right" });
+  await page
+    .getByRole("menuitem", { name: "Show in split mode", exact: true })
+    .click();
   await expect(page.locator(".workspace-pane")).toHaveCount(2);
   const paneFor = (name: string) =>
     page
       .locator(".workspace-pane")
       .filter({ has: page.locator(".pane-heading").filter({ hasText: name }) });
-  const payments = paneFor("payments-worker");
-  const orders = paneFor("orders-api");
-  const left = (await payments.boundingBox())!;
-  const right = (await orders.boundingBox())!;
-  expect(left.x).toBeLessThan(right.x);
+  // The split lists its tabs in strip order; the drop targets the left pane.
+  const [left, right] = [
+    (await paneFor("payments-worker").boundingBox())!,
+    (await paneFor("orders-api").boundingBox())!,
+  ].sort((a, b) => a.x - b.x);
+  expect(left!.x + left!.width).toBeLessThanOrEqual(right!.x + 1);
   const tab = page.getByRole("tab", { name: "media-pipeline", exact: true });
   const from = (await tab.boundingBox())!;
   await page.mouse.move(from.x + 30, from.y + from.height / 2);
   await page.mouse.down();
   await page.mouse.move(from.x + 40, from.y + from.height / 2, { steps: 2 });
-  await page.mouse.move(left.x + left.width - 20, left.y + left.height / 2, {
+  await page.mouse.move(left!.x + left!.width - 20, left!.y + left!.height / 2, {
     steps: 5,
   });
   const overlay = page.locator('[data-split-preview="right"]');

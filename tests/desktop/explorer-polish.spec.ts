@@ -249,18 +249,29 @@ test("group and stream top and bottom strips perform modifier selection and open
     }
   }
   // Blank padding at both horizontal edges also belongs to the resource.
-  const bounds = (await row(payments).boundingBox())!;
-  for (const point of [
-    { x: bounds.x + 1, y: bounds.y + 1 },
-    { x: bounds.x + bounds.width - 1, y: bounds.y + bounds.height - 1 },
-  ]) {
+  // The explorer's resize handle overlays the panel's right edge; the row's
+  // right padding ends where that grab zone begins. Rows are re-measured per
+  // click because selection can change the tree's layout.
+  const resizer = (await page
+    .getByRole("separator", { name: "Resize explorer", exact: true })
+    .boundingBox())!;
+  const ctrlClickEdge = async (side: "left" | "right") => {
+    const bounds = (await row(payments).boundingBox())!;
+    const point =
+      side === "left"
+        ? { x: bounds.x + 1, y: bounds.y + 1 }
+        : {
+            x: Math.min(bounds.x + bounds.width, resizer.x) - 2,
+            y: bounds.y + bounds.height - 2,
+          };
     await page.keyboard.down("ControlOrMeta");
     await page.mouse.click(point.x, point.y);
     await page.keyboard.up("ControlOrMeta");
+  };
+  for (const side of ["left", "right"] as const) {
+    await ctrlClickEdge(side);
     await expect(row(payments)).toHaveAttribute("aria-selected", "true");
-    await page.keyboard.down("ControlOrMeta");
-    await page.mouse.click(point.x, point.y);
-    await page.keyboard.up("ControlOrMeta");
+    await ctrlClickEdge(side);
     await expect(row(payments)).toHaveAttribute("aria-selected", "false");
   }
   const tabCount = await page.locator(".workspace-tab").count();

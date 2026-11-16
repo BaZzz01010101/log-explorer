@@ -35,7 +35,8 @@ test.beforeEach(async () => {
   const workspace = createWorkspace();
   workspace.sidebarVisible = false;
   workspace.preferences.timezone = "utc";
-  workspace.tabs[0].timePreset = "clear";
+  // Recent pins the newest row; these checks measure rows from the start.
+  workspace.tabs[0].timePreset = "1h";
   workspace.tabs[0].filterPattern = "";
   workspace.tabs[0].view.mode = "table";
   workspace.tabs[0].view.wrap = false;
@@ -400,7 +401,7 @@ test("decoded and formatted highlights appear in the full right lane in both the
     await openSettingsWindow(page);
     await page.getByRole("tab", { name: "Preferences", exact: true }).click();
     await page.getByRole("combobox", { name: "Theme", exact: true }).click();
-    await page.getByRole("option", { name: theme, exact: true }).click();
+    await page.getByRole("option", { name: theme === "light" ? "Light" : "Dark", exact: true }).click();
     await page.locator(".mantine-Modal-close").click();
     await expect(page.getByRole("dialog")).toHaveCount(0);
     await page

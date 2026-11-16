@@ -98,6 +98,9 @@ test.beforeEach(async () => {
   });
   workspace.tabs[0].view.mode = "table";
   workspace.tabs[0].filterPattern = "";
+  // Recent loads at most 1,000 newest events per page; these checks count
+  // every fixture event of the combined sources.
+  workspace.tabs[0].timePreset = "1h";
   await writeFile(join(directory, "workspace.json"), JSON.stringify(workspace));
   await launch();
 });
@@ -414,7 +417,7 @@ test("Explorer source badges refresh automatically, preserve individual streams 
     .locator(".source-badge")
     .filter({ hasText: "media-pipeline" })
     .first()
-    .getByRole("button")
+    .getByRole("button", { name: /^Remove source / })
     .click();
   await expect(page.locator(".source-badge")).toHaveCount(3);
   await expect(page.locator(".query-status")).toContainText("1,215 loaded");
@@ -639,7 +642,10 @@ test("source strips fit narrow split panes and removable badges remain reachable
     { logGroup: "/aws/lambda/media-pipeline" },
   ];
   workspace.tabs[0].sources = sources;
+  // Recent loads at most 1,000 events per page; the checks count all of them.
+  workspace.tabs[0].timePreset = "1h";
   const tab = createTab(workspace.connections[0].id, sources);
+  tab.timePreset = "1h";
   workspace = workspaceReducer(workspace, { type: "tab/open", tab });
   workspace = workspaceReducer(workspace, {
     type: "pane/show-tabs",
@@ -668,7 +674,7 @@ test("source strips fit narrow split panes and removable badges remain reachable
     .first()
     .locator(".source-badge")
     .last()
-    .getByRole("button")
+    .getByRole("button", { name: /^Remove source / })
     .click();
   await expect(panes.first().locator(".source-badge")).toHaveCount(5);
   await expect(panes.first().locator(".query-status")).toContainText(
@@ -704,6 +710,9 @@ test("Explorer drags reveal another region's single-source tab without losing th
     { logGroup: "/aws/lambda/orders-api" },
   ]);
   target.filterPattern = "";
+  // Recent loads at most 1,000 events per page; the checks count all of them.
+  target.timePreset = "1h";
+  workspace.tabs[0].timePreset = "1h";
   workspace = workspaceReducer(workspace, { type: "tab/open", tab: target });
   workspace = workspaceReducer(workspace, {
     type: "tab/select",
@@ -852,7 +861,7 @@ test("pane headers stay distinct from status and controls in both themes and eve
       await dialog()
         .getByRole("combobox", { name: "Theme", exact: true })
         .click();
-      await page.getByRole("option", { name: theme, exact: true }).click();
+      await page.getByRole("option", { name: theme === "light" ? "Light" : "Dark", exact: true }).click();
       await dialog().locator(".mantine-Modal-close").click();
     }
     for (const mode of ["JSON", "Table", "Hybrid"]) {

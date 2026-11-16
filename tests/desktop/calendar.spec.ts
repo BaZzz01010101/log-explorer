@@ -721,6 +721,21 @@ test("absolute ranges keep Clear visible on the left and clearing refreshes imme
   await expect(picker()).toHaveText("Custom");
 });
 
+/**
+ * Escape closes the picker; the hidden test window produces no animation
+ * frames, so one is forced for the popover's exit transition to finish.
+ */
+async function closeWithEscape() {
+  await page.keyboard.press("Escape");
+  await app!.evaluate(async ({ BrowserWindow }) => {
+    await BrowserWindow.getAllWindows()[0].webContents.capturePage(undefined, {
+      stayHidden: true,
+      stayAwake: true,
+    });
+  });
+  await expect(popover()).toHaveCount(0);
+}
+
 test("Custom popover fits normal and narrow panes in both themes", async () => {
   test.setTimeout(120000);
   const assertTriggerCentered = async (trigger: Locator, state: string) => {
@@ -805,7 +820,7 @@ test("Custom popover fits normal and narrow panes in both themes", async () => {
       await page.getByRole("tab", { name: "Relative", exact: true }).click();
       await captureHiddenPage("relative-dark.png");
     }
-    await page.keyboard.press("Escape");
+    await closeWithEscape();
   }
   await page
     .getByRole("treeitem", { name: "/aws/lambda/payments-worker", exact: true })
@@ -823,7 +838,7 @@ test("Custom popover fits normal and narrow panes in both themes", async () => {
     await trigger.click();
     await page.getByRole("tab", { name: "Absolute", exact: true }).click();
     await assertFit();
-    await page.keyboard.press("Escape");
+    await closeWithEscape();
   }
 });
 

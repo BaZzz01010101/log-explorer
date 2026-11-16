@@ -172,7 +172,8 @@ for (const mode of [
       await expect(
         page.getByText("Workspace recovery", { exact: true }),
       ).toBeVisible();
-    const line = page.locator(".activity-menu-separator");
+    // The separator under the application menu (a second one precedes Settings).
+    const line = page.locator(".activity-menu-separator").first();
     await expect(line).toBeVisible();
     const divider = (await line.boundingBox())!;
     const menu = (await page

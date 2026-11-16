@@ -39,7 +39,9 @@ test.beforeEach(async () => {
   const state = createWorkspace();
   // Explicit user-defined schema; new views intentionally have universal columns only.
   state.tabs[0].view.columns = [
-    { path: "@timestamp", width: 194, pinned: true },
+    // Not 194: that legacy stock width is migrated to the current default
+    // (260), which would hide the Message header under the pinned column.
+    { path: "@timestamp", width: 196, pinned: true },
     { path: "@level", width: 84 },
     { path: "/service/name", width: 151 },
     { path: "@message", width: 420 },

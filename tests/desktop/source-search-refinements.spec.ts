@@ -25,6 +25,8 @@ test.beforeEach(async ({}, info) => {
   directory = await mkdtemp(join(temporaryRoot, "case-"));
   const workspace = createWorkspace();
   workspace.tabs[0].filterPattern = "";
+  // Recent opens at the newest row; these checks start from the first row.
+  workspace.tabs[0].timePreset = "1h";
   workspace.preferences.theme = info.title.includes("dark") ? "dark" : "light";
   workspace.tabs[0].view.mode = "hybrid";
   workspace.tabs[0].view.columns = [
@@ -373,18 +375,8 @@ for (const theme of ["light", "dark"]) {
     await expect(
       first.getByRole("region", { name: "Expanded event content" }),
     ).toHaveCount(0);
-    await page
-      .locator("label")
-      .filter({ hasText: /^Table$/ })
-      .click();
-    await grid.press("ArrowRight");
-    await expect(
-      first.getByRole("region", { name: "Expanded event content" }),
-    ).toBeVisible();
-    await grid.press("ArrowLeft");
-    await expect(
-      first.getByRole("region", { name: "Expanded event content" }),
-    ).toHaveCount(0);
+    // Table has no expanded-details area since Stage 15 (messages unfold
+    // inline), so this keyboard folding applies to Hybrid only.
   });
 
   test(`${theme} event contents and source cells do not open hover tooltips`, async () => {
@@ -540,6 +532,16 @@ for (const theme of ["light", "dark"]) {
     });
     if (theme === "light") await remove.press("Enter");
     else await remove.click();
+    // Deleting asks for an inline confirmation inside the open menu.
+    const confirm = page
+      .getByRole("group", { name: "Delete saved search My saved search", exact: true })
+      .getByRole("button", { name: "Delete", exact: true });
+    if (theme === "light") await confirm.press("Enter");
+    else await confirm.click();
+    await expect(
+      page.getByRole("menuitem", { name: "My saved search", exact: true }),
+    ).toHaveCount(0);
+    await page.keyboard.press("Escape");
     await expect(page.getByRole("menu")).toHaveCount(0);
     await expect(menu).toBeFocused();
     await menu.click();

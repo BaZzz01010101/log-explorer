@@ -9,7 +9,7 @@ const root = resolve(".tmp", "recent-scroll-desktop");
 /** Scroll position, selected row and one row's viewport offset in the event grid. */
 const snapshot = (grid: Locator, id: string) =>
   grid.evaluate((element, id) => {
-    const row = element.querySelector(`[data-event-id="${id}"]`);
+    const row = id ? element.querySelector(`[data-event-id="${CSS.escape(id)}"]`) : null;
     const indicator = element.querySelector('[data-loading-position="older"]');
     const top = element.getBoundingClientRect().top;
     return {
@@ -69,7 +69,9 @@ for (const wrap of [false, true])
       await setMaximumEvents(page, "400");
       if (wrap) await page.getByRole("button", { name: "Toggle line wrap" }).click();
       const grid = page.locator(".viewer-scroll");
-      const group = "fixture:/aws/lambda/orders-api";
+      // Event IDs are scoped to their connection: ["offline", "fixture:<group>:<n>"].
+      const fixture = (index: number) =>
+        JSON.stringify(["offline", `fixture:/aws/lambda/orders-api:${index}`]);
       await page.getByTestId("run-query").click();
       // The run clears the previous rows while its first page is in flight.
       await expect.poll(async () => (await snapshot(grid, "")).bottom).toBe(0);
@@ -80,12 +82,12 @@ for (const wrap of [false, true])
           const state = await snapshot(grid, "");
           return state.bottom > 0 && state.current;
         }, { timeout: 10000 })
-        .toBe(`${group}:539`);
+        .toBe(fixture(539));
       for (let check = 0; check < 3; check++) {
         const initial = await snapshot(grid, "");
         expect(initial.bottom).toBeGreaterThan(0);
         expect(Math.abs(initial.scrollTop - initial.bottom)).toBeLessThanOrEqual(1);
-        expect(initial.current).toBe(`${group}:539`);
+        expect(initial.current).toBe(fixture(539));
         await page.waitForTimeout(250);
       }
 
@@ -95,7 +97,7 @@ for (const wrap of [false, true])
        * visible row.
        */
       const pageFromTop = async (trigger: () => Promise<void>, first: number) => {
-        const id = `${group}:${first}`;
+        const id = fixture(first);
         const before = await snapshot(grid, id);
         await trigger();
         await expect.poll(async () => (await snapshot(grid, id)).indicatorTop).not.toBeNull();
@@ -126,16 +128,16 @@ for (const wrap of [false, true])
       await pageFromTop(() => page.mouse.wheel(0, -100000), 340);
       // Up onto the first row only moves the selection; Up on it loads.
       await grid.evaluate((element) => { element.scrollTop = 30; });
-      await grid.locator(`[data-event-id="${group}:241"] .log-cell`).first().click();
+      await grid.locator(`[data-event-id='${fixture(241)}'] .log-cell`).first().click();
       await page.keyboard.press("ArrowUp");
       await page.waitForTimeout(800);
-      expect((await snapshot(grid, "")).current).toBe(`${group}:240`);
+      expect((await snapshot(grid, "")).current).toBe(fixture(240));
       expect((await snapshot(grid, "")).indicatorTop).toBeNull();
       await pageFromTop(() => page.keyboard.press("ArrowUp"), 240);
       // PageUp with fewer rows above the selection than a page.
       await grid.evaluate((element) => { element.scrollTop = 120; });
       await pageFromTop(async () => {
-        await grid.locator(`[data-event-id="${group}:143"] .log-cell`).first().click();
+        await grid.locator(`[data-event-id='${fixture(143)}'] .log-cell`).first().click();
         await page.keyboard.press("PageUp");
         await page.keyboard.press("PageUp");
       }, 140);

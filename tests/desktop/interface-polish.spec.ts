@@ -725,9 +725,15 @@ test("application menu shows version, working hints and independent side-panel t
   await page.keyboard.press("Control+,");
   await expect(settings()).toBeVisible();
   await settings().getByRole("tab", { name: "Shortcuts", exact: true }).click();
-  const shortcut = settings().getByLabel("toggle Sidebar", { exact: true });
-  await shortcut.fill("Alt+B");
-  await shortcut.press("Tab");
+  // Shortcuts are recorded from real key presses, then saved.
+  await settings()
+    .getByRole("button", { name: "Edit shortcut for Toggle sidebar", exact: true })
+    .click();
+  await page.keyboard.press("Alt+B");
+  await expect(settings().locator('[data-shortcut-recording="true"]')).toHaveCount(0);
+  await settings()
+    .getByRole("button", { name: "Save shortcut for Toggle sidebar", exact: true })
+    .click();
   await activity("Application menu").click();
   await expect(menuItem("Toggle side panel")).toContainText("Alt+B");
   await page.keyboard.press("Escape");

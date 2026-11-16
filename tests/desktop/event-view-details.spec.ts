@@ -28,6 +28,8 @@ test.beforeEach(async ({}, info) => {
   state.preferences.theme = info.title.includes("dark") ? "dark" : "light";
   state.preferences.autoExpandFilterMatches = false;
   state.tabs[0].filterPattern = "";
+  // Recent pins the newest row and pages older; these checks page forward from the first row.
+  state.tabs[0].timePreset = "1h";
   state.tabs[0].view.inspectorInfoCollapsed = true;
   if (info.title.includes("multi-source"))
     state.tabs[0].sources.push({ logGroup: "/aws/lambda/payments-worker" });

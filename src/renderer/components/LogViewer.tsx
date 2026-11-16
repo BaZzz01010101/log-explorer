@@ -902,13 +902,21 @@ export function LogViewer({
    * header and the content above the list, so it treats a row clipped by up to
    * that height at the bottom as visible.
    */
-  const revealIndex = (index: number) => {
+  const revealToken = useRef(0);
+  const revealIndex = (index: number, attempt = 0, token = ++revealToken.current) => {
+    // A newer reveal (the next key press) supersedes a pending retry.
+    if (token !== revealToken.current) return;
     const scroll = scrollRef.current;
     const element = scroll?.querySelector<HTMLElement>(`.virtual-event[data-index="${index}"]`);
     if (!scroll || !element) {
+      // An unrendered row (End, far jumps) is first brought near by the
+      // virtualizer; its "auto" alignment can leave it under the bottom edge,
+      // so the exact header-aware reveal runs once the row is rendered.
       virtualizer.scrollToIndex(index, { align: "auto" });
+      if (attempt < 5) requestAnimationFrame(() => revealIndex(index, attempt + 1, token));
       return;
     }
+    if (attempt > 0) virtualizer.cancelScroll();
     const top = scroll.getBoundingClientRect().top;
     const header = scroll.querySelector<HTMLElement>(".log-table-header")?.getBoundingClientRect().height ?? 0;
     const bounds = element.getBoundingClientRect();
@@ -1637,6 +1645,8 @@ export function LogViewer({
               onKeyDown={(event) => {
                 if (event.defaultPrevented) return;
                 releaseScrollLock();
+                // New navigation supersedes a reveal still waiting for its row.
+                revealToken.current++;
                 const target = event.target as HTMLElement;
                 if (
                   target.closest(

@@ -414,7 +414,10 @@ for (const theme of ["light", "dark"]) {
     await dialog
       .getByRole("searchbox", { name: "Search commands", exact: true })
       .fill("highlight");
-    await expect(dialog.locator(".shortcut-editor-row")).toHaveCount(2);
+    await expect(dialog.locator(".shortcut-editor-row")).toHaveCount(3);
+    // "highlight" matches exactly these commands (Focus text highlight since Stage 18).
+    for (const label of ["Focus text highlight", "Highlight regex", "Highlight match case"])
+      await expect(dialog.locator(".shortcut-editor-row").filter({ hasText: label })).toHaveCount(1);
     await expect(dialog.getByRole("alert")).toHaveCount(0);
     await dialog.locator(".mantine-Modal-close").click();
     await expect(dialog).toHaveCount(0);

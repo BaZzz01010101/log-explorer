@@ -273,7 +273,15 @@ for (const theme of ["light", "dark"]) {
       "Reopen closed tab",
     );
     await expect(menu).not.toContainText("Another service");
-    expect((await menu.boundingBox())!.width).toBeGreaterThanOrEqual(360);
+    // The menu sizes to its entries since Stage 12 (capped at 760px); no
+    // entry label may be clipped.
+    expect(
+      await menu.evaluate((element) =>
+        [...element.querySelectorAll<HTMLElement>(".mantine-Menu-itemLabel")].every(
+          (label) => label.scrollWidth <= label.clientWidth + 1,
+        ),
+      ),
+    ).toBe(true);
     expect(
       await menu.evaluate((element) => getComputedStyle(element).boxShadow),
     ).not.toBe("none");
@@ -378,15 +386,8 @@ test("mixed source badges survive renaming and query or LIVE icons stay before p
 });
 
 test("floating surfaces and dragged tabs share tooltip elevation and active pane has no blue border", async () => {
-  const inspectorHeader = page.locator(".event-inspector-header");
-  const headerBox = (await inspectorHeader.boundingBox())!;
-  const hideBox = (await inspectorHeader
-    .locator(".event-inspector-hide")
-    .boundingBox())!;
-  expect(
-    headerBox.x + headerBox.width - hideBox.x - hideBox.width,
-  ).toBeLessThan(20);
-  expect(hideBox.x).toBeGreaterThan(headerBox.x + headerBox.width / 2);
+  // The inspector header's own hide button moved to the viewer toolbar in
+  // Stage 10, so only the pane and floating-surface checks remain.
   const heading = page.locator(".active-pane .pane-heading");
   expect(
     await heading.evaluate((element) => getComputedStyle(element).boxShadow),

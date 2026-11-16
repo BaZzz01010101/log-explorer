@@ -312,7 +312,7 @@ for (const mode of ["Table", "Hybrid", "JSON"])
       await expect(matched).toBeVisible();
       await openSettingsWindow(page);
       await page.getByRole("tab", { name: "Preferences", exact: true }).click();
-      const auto = page.getByRole("checkbox", {
+      const auto = page.getByRole("switch", {
         name: "Automatically expand inspector paths to highlighted matches",
         exact: true,
       });
@@ -327,9 +327,10 @@ for (const mode of ["Table", "Hybrid", "JSON"])
       await inspector
         .getByRole("button", { name: "Fold structured object", exact: true })
         .click();
-      await inspector
-        .getByRole("button", { name: "Expand root", exact: true })
-        .click();
+      // Folding keeps the root open and folds its first-level fields.
+      await expect(
+        inspector.getByRole("button", { name: "Collapse root", exact: true }),
+      ).toBeVisible();
       await expect(folded).toBeVisible();
       await page
         .getByRole("textbox", {

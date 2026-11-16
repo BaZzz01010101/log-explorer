@@ -154,9 +154,8 @@ test("desktop vertical slice stays isolated and supports investigation", async (
   await expect(
     page.getByRole("button", { name: "Application menu", exact: true }),
   ).toBeVisible();
-  await expect(
-    page.getByText("Isolated local development", { exact: true }),
-  ).toBeVisible();
+  // The "Isolated local development" banner was removed in Stage 14; the
+  // environment flags below verify the isolation itself.
   const info = await page.evaluate(() => window.explorer.environment());
   expect(info.awsEnabled).toBe(false);
   expect(info.canEnableAws).toBe(false);
@@ -190,7 +189,7 @@ test("desktop vertical slice stays isolated and supports investigation", async (
   });
   await expect(inspector).toBeVisible();
   await click(
-    inspector.getByRole("button", { name: "Hide inspector", exact: true }),
+    page.getByRole("button", { name: "Hide event inspector", exact: true }),
   );
   await click(page.getByLabel("Split pane", { exact: true }));
   await expect(page.locator(".workspace-pane")).toHaveCount(2);
@@ -234,7 +233,7 @@ test("desktop vertical slice stays isolated and supports investigation", async (
   // AWS has no opt-in switch any more; packaged release builds always use it.
   await expect(page.getByLabel("Enable AWS access")).toHaveCount(0);
   await click(page.getByRole("tab", { name: "Preferences", exact: true }));
-  await expect(page.getByLabel("Maximum events per view")).toBeVisible();
+  await expect(page.getByLabel("Maximum events per view", { exact: true })).toBeVisible();
   await key("Escape");
   await click(
     page.getByRole("button", { name: "Application menu", exact: true }),

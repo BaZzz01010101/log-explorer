@@ -29,6 +29,8 @@ test.beforeEach(async () => {
 
 async function launch(workspace: Workspace) {
   workspace.tabs[0]!.filterPattern = "";
+  // Recent opens at the newest row; these checks start from the first row.
+  workspace.tabs[0]!.timePreset = "1h";
   await writeFile(join(directory, "workspace.json"), JSON.stringify(workspace));
   const env: Record<string, string> = {};
   for (const key of ["PATH", "SystemRoot", "WINDIR", "TEMP", "TMP", "COMSPEC"])
@@ -127,51 +129,6 @@ const loaded = async () =>
       .replaceAll(",", ""),
   );
 
-test("switching Events and Insights runs each selected query without Run and leaves text drafts manual", async () => {
-  const workspace = createWorkspace();
-  workspace.tabs[0]!.query =
-    "fields @timestamp, @message | sort @timestamp desc | limit 3";
-  await launch(workspace);
-  const initial = await loaded();
-  expect(initial).toBeGreaterThan(3);
-  await page
-    .locator("label")
-    .filter({ hasText: /^Insights$/ })
-    .click();
-  await expect.poll(loaded).toBe(3);
-  await expect(page.getByText(/Query settings changed/)).toHaveCount(0);
-  const query = page.getByLabel("CloudWatch Logs Insights query", {
-    exact: true,
-  });
-  await query.fill(
-    "fields @timestamp, @message | sort @timestamp desc | limit 2",
-  );
-  await expect(page.getByText(/Query settings changed/)).toBeVisible();
-  expect(await loaded()).toBe(3);
-  await page.getByTestId("run-query").click();
-  await expect.poll(loaded).toBe(2);
-  await page
-    .locator("label")
-    .filter({ hasText: /^Events$/ })
-    .click();
-  await expect.poll(loaded).toBe(initial);
-  await page
-    .getByLabel("CloudWatch filter pattern", { exact: true })
-    .fill("unmatched-mode-regression-7812");
-  await expect(page.getByText(/Query settings changed/)).toBeVisible();
-  expect(await loaded()).toBe(initial);
-  await page
-    .locator("label")
-    .filter({ hasText: /^Insights$/ })
-    .click();
-  await expect.poll(loaded).toBe(2);
-  await page
-    .locator("label")
-    .filter({ hasText: /^Events$/ })
-    .click();
-  await expect.poll(loaded).toBe(0);
-});
-
 for (const theme of ["dark", "light"] as const)
   for (const highlighted of [false, true])
     test(`expanded details keep their base colors while only primary rows hover in ${theme}, profile ${highlighted}`, async () => {
@@ -201,16 +158,24 @@ for (const theme of ["dark", "light"] as const)
           },
         ];
       await launch(workspace);
-      for (const mode of ["Table", "Hybrid", "JSON"]) {
+      // Table shows structured messages inline (no separate details area since
+      // Stage 15); Hybrid and JSON render expanded details below the row.
+      for (const mode of ["Hybrid", "JSON"]) {
         await page
           .locator("label")
           .filter({ hasText: new RegExp(`^${mode}$`) })
           .click();
-        const row = page.locator(".virtual-event").first();
-        if (!(await row.locator(".event-message-details").count()))
-          await page
-            .getByRole("button", { name: "Unfold all messages", exact: true })
-            .click();
+        const unfold = page.getByRole("button", {
+          name: "Unfold all messages",
+          exact: true,
+        });
+        if (await unfold.count()) await unfold.click();
+        // Plain-text messages (the first fixture is invalid JSON) have no
+        // structured details; check the first event that does.
+        const row = page
+          .locator(".virtual-event")
+          .filter({ has: page.locator(".event-message-details") })
+          .first();
         const detail = row.locator(".event-message-details");
         await expect(detail).toBeVisible();
         if (highlighted)

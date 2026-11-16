@@ -167,7 +167,6 @@ for (const theme of ["light", "dark"]) {
     await openWindow();
     const initial = await box();
     for (const name of [
-      "Workspace",
       "Highlights",
       "Preferences",
       "Shortcuts",

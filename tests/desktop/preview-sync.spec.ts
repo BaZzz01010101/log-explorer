@@ -161,7 +161,7 @@ test("hybrid preview synchronizes scrolling, modifier selection and structured f
   );
   const row = (region: Locator, id: string) =>
     region.locator(".virtual-event").filter({
-      has: page.locator(`.inspect-cell[aria-label="Select event ${id}"]`),
+      has: page.locator(`.inspect-cell[aria-label='Select event ${id}']`),
     });
   await row(light, ids[0]).locator(".log-cell").first().click();
   await expect.poll(() => selected(dark)).toEqual([ids[0]]);
@@ -250,7 +250,7 @@ test("expanded content mirrors inner scrolling and chosen heights while profile 
   const lightRow = light.locator(".virtual-event").first();
   const id = await lightRow.getAttribute("data-event-id");
   const darkRow = dark.locator(".virtual-event").filter({
-    has: page.locator(`.inspect-cell[aria-label="Select event ${id}"]`),
+    has: page.locator(`.inspect-cell[aria-label='Select event ${id}']`),
   });
   await lightRow
     .getByRole("button", { name: "Expand event details", exact: true })

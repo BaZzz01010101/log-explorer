@@ -25,6 +25,8 @@ test.beforeEach(async ({}, info) => {
   directory = await mkdtemp(join(temporaryRoot, "case-"));
   const workspace = createWorkspace();
   workspace.tabs[0].filterPattern = "";
+  // Recent pins the newest row and pages older; these checks page forward from the first row.
+  workspace.tabs[0].timePreset = "1h";
   workspace.preferences.theme = info.title.includes("dark") ? "dark" : "light";
   workspace.tabs[0].view.mode = "hybrid";
   workspace.preferences.highlightProfiles = [

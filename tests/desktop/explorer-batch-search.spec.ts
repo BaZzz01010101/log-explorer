@@ -138,11 +138,11 @@ test("selectors are read-only, regex searches all pages and a hostile pattern re
   );
   await search.fill("[");
   await expect(search).toHaveAttribute("aria-invalid", "true");
-  await expect(page.locator(".sidebar-search")).toContainText(
+  await expect(page.locator(".sidebar-search").filter({ has: search })).toContainText(
     /Invalid regular expression/i,
   );
   await search.fill("^(a+)+$");
-  await expect(page.locator(".sidebar-search")).toContainText(
+  await expect(page.locator(".sidebar-search").filter({ has: search })).toContainText(
     "exceeded 500 ms",
     { timeout: 10000 },
   );

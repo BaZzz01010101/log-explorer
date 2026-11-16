@@ -163,7 +163,8 @@ for (const mode of ["Table", "Hybrid", "JSON"])
     // acknowledgements can take a second, during which JSON cards would grow
     // from an underfilled list into an overflowing list before the wheel fires.
     const firstId = (await rows().first().getAttribute("data-event-id"))!;
-    const fixtureIndex = Number(firstId.split(":").at(-1));
+    // IDs are ["offline", "fixture:<group>:<index>"].
+    const fixtureIndex = Number((JSON.parse(firstId) as string[])[1]!.split(":").at(-1));
     await page
       .getByRole("textbox", { name: "Local filter loaded events", exact: true })
       .fill(new Date(fixtureIndex * 1000).toISOString());
@@ -271,7 +272,7 @@ test("Live preserves matching history, appends events automatically, and Stop re
   await expect.poll(received).toBeGreaterThanOrEqual(2);
   await page.getByRole("button", { name: "Follow Live", exact: true }).click();
   await expect(
-    page.locator('.virtual-event[data-event-id^="fixture:live:"]').last(),
+    page.locator(`.virtual-event[data-event-id^='["offline","fixture:live:']`).last(),
   ).toBeVisible();
   await expect(page.getByLabel("Loading events", { exact: true })).toHaveCount(
     0,
@@ -433,7 +434,7 @@ test("reading older rows pauses following while events continue and Follow Live 
   await follow.click();
   await expect(follow).toHaveAttribute("aria-pressed", "true");
   await expect(
-    page.locator('.virtual-event[data-event-id^="fixture:live:"]').last(),
+    page.locator(`.virtual-event[data-event-id^='["offline","fixture:live:']`).last(),
   ).toBeVisible();
   await expect
     .poll(async () =>
@@ -589,7 +590,7 @@ for (const mode of ["Table", "Hybrid"])
             return visibleId;
           })
           .not.toBe("");
-        const row = page.locator(`[data-event-id="${visibleId}"]`).first();
+        const row = page.locator(`[data-event-id='${visibleId}']`).first();
         const cell = row.locator(".inspect-cell").nth(1);
         await expect(cell).toBeVisible();
         const id = (await row.getAttribute("data-event-id"))!;

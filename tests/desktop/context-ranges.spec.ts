@@ -205,7 +205,7 @@ async function loadEvents(events = [other, anchor]) {
 }
 async function openContext(id = anchor.id) {
   await page
-    .locator(`[data-event-id="${id}"] .inspect-cell`)
+    .locator(`[data-event-id='${id}'] .inspect-cell`)
     .first()
     .click({ button: "right" });
   await page
@@ -246,7 +246,7 @@ test("all 18 direction and duration choices query the clicked event source at ex
   await loadEvents();
   // Leave another row selected: context must use the right-clicked event.
   await page
-    .locator(`[data-event-id="${other.id}"] .inspect-cell`)
+    .locator(`[data-event-id='${other.id}'] .inspect-cell`)
     .first()
     .click();
   const original = (await savedWorkspace()).tabs.find(
@@ -333,7 +333,7 @@ test("all 18 direction and duration choices query the clicked event source at ex
       );
       await page.locator(`[data-tab-id="${originId}"] [role="tab"]`).click();
       await expect(
-        page.locator(`.virtual-event[data-event-id="${anchor.id}"]`),
+        page.locator(`.virtual-event[data-event-id='${anchor.id}']`),
       ).toBeVisible();
     }
   }

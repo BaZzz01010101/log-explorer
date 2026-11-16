@@ -268,7 +268,9 @@ test("unsorted and sorted tables settle at idle and remain responsive to trusted
     ).toBeVisible();
     await typeText(search, "");
     await expect(page.locator(".log-table-row").first()).toBeVisible();
-    await typeText(page.getByLabel("CloudWatch filter pattern"), '"Payment"');
+    // Text is the default filter mode (Stage 18); a quoted pattern term would
+    // be matched literally, quotes included.
+    await typeText(page.getByLabel("CloudWatch filter pattern"), "Payment");
     await page.getByTestId("run-query").click({ timeout: 3000 });
     await expect(
       page.locator('.query-status[data-query-state="complete"]'),
@@ -344,7 +346,7 @@ test("whole tabs reorder near the strip and create highlighted nested splits awa
     start.y + start.height / 2,
     { steps: 5 },
   );
-  await expect(page.locator(".workspace-tab.is-dragging")).toHaveCount(1);
+  await expect(page.locator(".workspace-tab.is-dragging[data-tab-id]")).toHaveCount(1);
   await expect(page.locator(".workspace-drag-preview")).toHaveCount(0);
   expect(await page.evaluate(() => window.getSelection()?.toString())).toBe("");
   await page.mouse.up();
@@ -394,13 +396,13 @@ test("whole tabs reorder near the strip and create highlighted nested splits awa
     for (const dimension of ["x", "y", "width", "height"] as const)
       expect(Math.abs(actual[dimension] - shown[dimension])).toBeLessThan(2);
   };
-  await expect(page.getByLabel("Split pane", { exact: true })).toHaveAttribute(
+  await expect(page.locator(".workspace-pane.active-pane").getByLabel("Split pane", { exact: true })).toHaveAttribute(
     "data-split-axis",
     "horizontal",
   );
   await splitByDrag("orders-api", 0, "right");
   await expect(page.locator(".workspace-pane")).toHaveCount(2);
-  await expect(page.getByLabel("Split pane", { exact: true })).toHaveAttribute(
+  await expect(page.locator(".workspace-pane.active-pane").getByLabel("Split pane", { exact: true })).toHaveAttribute(
     "data-split-axis",
     "vertical",
   );
@@ -418,7 +420,7 @@ test("whole tabs reorder near the strip and create highlighted nested splits awa
     page.locator('.workspace-tab[data-entry-kind="split"]'),
   ).toHaveCount(1);
   await expect(page.locator(".workspace-tab")).toHaveCount(1);
-  await expect(page.getByLabel("Split pane", { exact: true })).toBeEnabled();
+  await expect(page.locator(".workspace-pane.active-pane").getByLabel("Split pane", { exact: true })).toBeEnabled();
   const four = await paneRectangles();
   expect(four.every((rect) => rect.width > 100 && rect.height > 100)).toBe(
     true,
@@ -471,7 +473,7 @@ test("right clicking a selection shows those tabs in split mode", async () => {
 });
 
 test("trusted settings edits and final workspace changes survive a natural restart", async () => {
-  await page.getByLabel("Split pane", { exact: true }).click();
+  await page.locator(".workspace-pane.active-pane").getByLabel("Split pane", { exact: true }).click();
   const divider = page.getByRole("separator", {
     name: "Resize panes horizontally",
   });

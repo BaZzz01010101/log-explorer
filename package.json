@@ -1,6 +1,6 @@
 {
   "name": "aws-log-explorer",
-  "version": "0.1.94",
+  "version": "0.1.95",
   "description": "A structured desktop workspace for AWS CloudWatch Logs and Google Cloud Logging",
   "main": "out/main/index.js",
   "author": "AWS Log Explorer contributors",

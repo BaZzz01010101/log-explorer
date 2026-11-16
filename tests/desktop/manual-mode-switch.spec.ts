@@ -14,6 +14,7 @@ import {
   restoreWorkspace,
 } from "../../src/shared/workspace";
 import { desktopExecutablePath } from "./desktop-app";
+import { DEFAULT_TIMESTAMP_COLUMN_WIDTH } from "../../src/shared/log-data";
 
 // Every process, fixture and result stays within the checkout. Background mode
 // prevents native windows and the offline flag prevents AWS credential access.
@@ -251,7 +252,8 @@ for (const theme of ["light", "dark"]) {
       view: {
         mode: "hybrid",
         columns: [
-          { path: "@timestamp", width: 194, pinned: true },
+          // The legacy stock width (194) is migrated to the current default.
+          { path: "@timestamp", width: DEFAULT_TIMESTAMP_COLUMN_WIDTH, pinned: true },
           { path: "@level", width: 84 },
           { path: "@source", width: 200 },
           { path: "@message", width: 420 },

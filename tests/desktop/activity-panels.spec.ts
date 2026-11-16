@@ -153,7 +153,10 @@ async function beginTabDrag(id = "tab-orders") {
 
 for (const theme of ["light", "dark"]) {
   test(`${theme} activity buttons switch the left pane and settings expand into a modal`, async () => {
-    await expect(page.locator(".activity-bar button")).toHaveCount(3);
+    // Application menu, AWS explorer, Google Cloud explorer and Settings.
+    await expect(page.locator(".activity-bar button")).toHaveCount(4);
+    for (const name of ["AWS logs explorer", "Google Cloud logs explorer", "Settings"])
+      await expect(page.locator(".activity-bar").getByRole("button", { name, exact: true })).toHaveCount(1);
     await expect(
       page.locator(
         '.workspace-tab-tools [aria-label="Toggle explorer"],.workspace-tab-tools [aria-label="Add split pane"]',
@@ -320,9 +323,9 @@ test("dark narrow settings categories stay inside the left pane with reachable e
   for (const category of [
     "Connections",
     "Preferences",
+    "Time ranges",
     "Highlights",
     "Shortcuts",
-    "Workspace",
   ]) {
     await pane.getByRole("tab", { name: category, exact: true }).click();
     await expect(activity("Open settings in window")).toBeVisible();

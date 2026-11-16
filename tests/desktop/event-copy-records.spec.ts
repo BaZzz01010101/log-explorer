@@ -34,6 +34,8 @@ test.beforeEach(async ({}, testInfo) => {
   state.preferences.theme = testInfo.title.includes("light") ? "light" : "dark";
   state.preferences.timezone = "utc";
   state.tabs[0].filterPattern = "";
+  // Recent opens at the newest row; these checks start from the first row.
+  state.tabs[0].timePreset = "1h";
   if (testInfo.title.includes("multi-source copy"))
     state.tabs[0].sources.push({ logGroup: "/aws/lambda/payments-worker" });
   state.tabs[0].view.columns = [

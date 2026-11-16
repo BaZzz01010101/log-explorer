@@ -173,6 +173,8 @@ for (const theme of ["light", "dark"] as const)
     test(`selection overrides ${rowBackground ? "background and foreground" : "foreground-only"} highlights and every row hovers in ${theme}`, async () => {
       const workspace = createWorkspace();
       workspace.preferences.theme = theme;
+      // Recent pins the newest row; these checks select rows from the start.
+      workspace.tabs[0].timePreset = "1h";
       workspace.tabs[0].view.columns = [
         { path: "@timestamp", width: 210, pinned: true },
         { path: "@level", width: 90, pinned: true },
@@ -289,7 +291,7 @@ for (const theme of ["light", "dark"] as const)
             node.scrollLeft = 140;
           });
           await expect(
-            page.locator(`.virtual-event[data-event-id="${highlightId}"]`),
+            page.locator(`.virtual-event[data-event-id='${highlightId}']`),
           ).toBeVisible();
           const cells = highlighted.locator(".log-cell");
           const backgrounds = await cells.evaluateAll((nodes) =>

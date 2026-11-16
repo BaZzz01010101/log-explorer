@@ -109,7 +109,7 @@ test("profile overview follows theme colors, sorting and local filtering without
     await expect(marker).not.toHaveAttribute("data-event-index", before!);
     await marker.click();
     await expect(
-      grid.locator(`.virtual-event[data-event-id="${id}"]`),
+      grid.locator(`.virtual-event[data-event-id='${id}']`),
     ).toBeVisible();
     await page.evaluate(() => {
       const probe = window as unknown as { overviewQueryUpdates: number };
@@ -154,6 +154,9 @@ test.beforeEach(async () => {
   directory = await mkdtemp(join(temporaryRoot, "case-"));
   const workspace = createWorkspace();
   workspace.tabs[0].filterPattern = "";
+  // Recent pins the newest row, so the first error row may be an off-screen
+  // overscan row that never settles; these checks work from the start.
+  workspace.tabs[0].timePreset = "1h";
   await writeFile(join(directory, "workspace.json"), JSON.stringify(workspace));
   await launch();
 });
@@ -229,9 +232,9 @@ for (const mode of ["json", "table", "hybrid"] as const) {
     expect(rightBox.x).toBeGreaterThan(leftBox.x);
     const last = highlights.last();
     const id = (await last.getAttribute("data-event-id"))!;
-    await expect(grid.locator(`[data-event-id="${id}"]`)).toHaveCount(0);
+    await expect(grid.locator(`[data-event-id='${id}']`)).toHaveCount(0);
     await last.click();
-    const target = grid.locator(`.virtual-event[data-event-id="${id}"]`);
+    const target = grid.locator(`.virtual-event[data-event-id='${id}']`);
     await expect(target).toBeVisible();
     await expect(target).toHaveAttribute("aria-selected", "true");
     await expect(target.locator("mark").first()).toBeVisible();
@@ -241,7 +244,7 @@ for (const mode of ["json", "table", "hybrid"] as const) {
       (await page.locator(".event-inspector").boundingBox())!.x,
     );
     await page
-      .getByRole("button", { name: "Hide inspector", exact: true })
+      .getByRole("button", { name: "Hide event inspector", exact: true })
       .click();
     await grid.focus();
     await page.keyboard.press("Home");

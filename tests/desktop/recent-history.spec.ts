@@ -100,13 +100,13 @@ for (const theme of ["dark", "light"] as const)
     expect(previousOldest).toBeTruthy();
       expect(
         (await updates()).find((u) => u.state === "complete")?.events?.[0].id,
-      ).toMatch(/:539$/);
+      ).toMatch(/:539"]$/);
     await page.getByRole("button", { name: "Live", exact: true }).click();
     await expect(page.getByRole("button", { name: "Stop Live" })).toBeVisible();
     await page.getByRole("button", { name: "Stop Live" }).click();
     await expect(page.locator('.query-status[data-query-state="complete"]')).toBeAttached();
       const grid = page.locator(".viewer-scroll");
-      await expect(grid.locator('[data-current="true"]')).toHaveAttribute('data-event-id', /:539$/);
+      await expect(grid.locator('[data-current="true"]')).toHaveAttribute('data-event-id', /:539"]$/);
       await expect
         .poll(() => grid.evaluate((el) => el.scrollTop))
         .toBeGreaterThan(0);
@@ -124,7 +124,7 @@ for (const theme of ["dark", "light"] as const)
       expect(
         (await updates()).filter((u) => u.state === "complete")[1].events?.[0]
           .id,
-      ).toMatch(/:514$/);
+      ).toMatch(/:514"]$/);
       await expect(
         page.getByRole("button", { name: "Return to recent" }),
       ).toBeVisible();
@@ -138,7 +138,7 @@ for (const theme of ["dark", "light"] as const)
       expect(
         (await updates()).filter((u) => u.state === "complete").at(-1)
           ?.events?.[0].id,
-      ).toMatch(/:539$/);
+      ).toMatch(/:539"]$/);
     } finally {
       await app.close();
       if (!resolve(directory).startsWith(root + sep + "case-"))

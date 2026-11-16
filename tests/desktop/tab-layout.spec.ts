@@ -312,7 +312,7 @@ test("split separators have visible grips and pane headers retain an active cue 
   for (const theme of ["dark", "light"] as const) {
     await preferences();
     await page.getByRole("combobox", { name: "Theme", exact: true }).click();
-    await page.getByRole("option", { name: theme, exact: true }).click();
+    await page.getByRole("option", { name: theme === "light" ? "Light" : "Dark", exact: true }).click();
     await page.keyboard.press("Escape");
     const style = await page
       .locator(".pane-layout-divider")

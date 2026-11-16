@@ -233,7 +233,7 @@ async function settings() {
 async function separateRows(value = true) {
   await settings();
   await page
-    .getByRole("checkbox", {
+    .getByRole("switch", {
       name: "Put pinned tabs on a separate row",
       exact: true,
     })
@@ -324,7 +324,7 @@ test("pinned tabs protect ordinary closing, persist both row layouts, and font e
   );
   await expect(input).toBeFocused();
   await page
-    .getByRole("checkbox", {
+    .getByRole("switch", {
       name: "Put pinned tabs on a separate row",
       exact: true,
     })
@@ -980,7 +980,9 @@ test("inactive tab text remains distinct and hovering changes only its backgroun
   for (const theme of ["light", "dark"]) {
     await settings();
     await page.getByRole("combobox", { name: "Theme", exact: true }).click();
-    await page.getByRole("option", { name: theme, exact: true }).click();
+    await page
+      .getByRole("option", { name: theme === "light" ? "Light" : "Dark", exact: true })
+      .click();
     await expect(page.locator("html")).toHaveAttribute(
       "data-mantine-color-scheme",
       theme,

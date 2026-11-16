@@ -17,7 +17,6 @@
 }
 .highlight-tree-scroll {
   padding-block: 4px;
-  scrollbar-gutter: auto;
 }
 .highlight-tree-row {
   position: relative;

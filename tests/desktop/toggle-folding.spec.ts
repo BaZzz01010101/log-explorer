@@ -29,6 +29,8 @@ test.beforeEach(async ({}, info) => {
   workspace.preferences.theme = info.title.includes("dark") ? "dark" : "light";
   workspace.preferences.autoExpandFilterMatches = false;
   workspace.tabs[0].filterPattern = "";
+  // Recent opens at the newest row; these checks start from the first row.
+  workspace.tabs[0].timePreset = "1h";
   workspace.tabs[0].view.mode = "table";
   await writeFile(join(directory, "workspace.json"), JSON.stringify(workspace));
   const env: Record<string, string> = {};
@@ -179,9 +181,10 @@ for (const theme of ["light", "dark"]) {
       await button.click();
     }
     const activeTime = page.getByRole("button", {
-      name: "Recent logs",
+      name: "Set last 1 hour",
       exact: true,
     });
+    await expect(activeTime).toHaveAttribute("aria-pressed", "true");
     const otherTime = page.getByRole("button", {
       name: "Set last 1 minute",
       exact: true,

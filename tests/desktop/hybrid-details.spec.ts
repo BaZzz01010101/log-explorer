@@ -10,6 +10,7 @@ import { execFileSync } from "node:child_process";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { join, resolve, sep } from "node:path";
 import type { QueryUpdate } from "../../src/shared/contracts";
+import { createWorkspace } from "../../src/shared/workspace";
 
 test.setTimeout(90000);
 let app: ElectronApplication | undefined;
@@ -24,6 +25,10 @@ test.beforeEach(async () => {
   await mkdir(temporaryRoot, { recursive: true });
   directory = await mkdtemp(join(temporaryRoot, "case-"));
   errors = [];
+  const workspace = createWorkspace();
+  // Recent opens at the newest row; these checks start from the first row.
+  workspace.tabs[0].timePreset = "1h";
+  await writeFile(join(directory, "workspace.json"), JSON.stringify(workspace));
   const env: Record<string, string> = {};
   for (const name of ["PATH", "SystemRoot", "WINDIR", "TEMP", "TMP", "COMSPEC"])
     if (process.env[name]) env[name] = process.env[name]!;
@@ -140,7 +145,7 @@ test.afterEach(async ({}, testInfo) => {
 });
 
 const eventRow = (id: string) =>
-  page.locator(`.virtual-event[data-event-id="${id}"]`);
+  page.locator(`.virtual-event[data-event-id='${id}']`);
 const inspector = () =>
   page.getByRole("region", { name: "Event inspector", exact: true });
 async function mode(name: string) {

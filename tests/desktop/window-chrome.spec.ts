@@ -130,7 +130,8 @@ for (const mode of [
     await expect(
       page.getByRole("button", { name: "Commands", exact: true }),
     ).toHaveCount(0);
-    await expect(page.locator(".activity-bar button")).toHaveCount(3);
+    // Application menu, AWS explorer, Google Cloud explorer and Settings.
+    await expect(page.locator(".activity-bar button")).toHaveCount(4);
     const geometry = await page.evaluate(() => {
       const rect = (selector: string) => {
         const r = document.querySelector(selector)!.getBoundingClientRect();

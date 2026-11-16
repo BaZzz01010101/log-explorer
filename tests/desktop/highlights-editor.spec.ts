@@ -26,6 +26,8 @@ test.beforeEach(async ({}, testInfo) => {
   directory = await mkdtemp(join(temporaryRoot, "case-"));
   errors = [];
   const state = createWorkspace();
+  // Recent pins the newest row; these checks use rows from the start.
+  state.tabs[0].timePreset = "1h";
   state.preferences.theme = testInfo.title.includes("light") ? "light" : "dark";
   state.preferences.timezone = "utc";
   state.tabs[0].filterPattern = "";

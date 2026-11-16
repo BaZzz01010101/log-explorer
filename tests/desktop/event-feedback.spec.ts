@@ -256,18 +256,18 @@ test("Recent selects the newest row during initial chunks and preserves the sele
   await expect(viewer().locator('[data-current="true"]')).toHaveAttribute('data-event-id', 'recent-119');
   await viewer().evaluate(element => { element.scrollTop = 0; element.dispatchEvent(new WheelEvent('wheel', { deltaY: -100, bubbles: true })); });
   await expect.poll(async () => (await requests()).length).toBe(2);
-  const anchor = await viewer().evaluate(scroll => {
-    const top = scroll.getBoundingClientRect().top;
-    const header = scroll.querySelector<HTMLElement>('.log-table-header')?.getBoundingClientRect().height ?? 0;
-    const visible = [...scroll.querySelectorAll<HTMLElement>('.virtual-event[data-event-id]')]
-      .find(element => element.getBoundingClientRect().bottom > top + header);
-    if (!visible) throw new Error('No visible event to anchor');
-    return { id: visible.dataset.eventId!, top: visible.getBoundingClientRect().top };
-  });
   await send(1, { state: 'running', events: make(60, 20) });
   await send(1, { state: 'complete', events: [], cursor: 'older-2' }, true);
-  await expect(viewer().locator(`[data-event-id="${anchor.id}"]`)).toBeVisible();
-  await expect.poll(async () => Math.abs((await viewer().locator(`[data-event-id="${anchor.id}"]`).evaluate(element => element.getBoundingClientRect().top)) - anchor.top)).toBeLessThan(8);
+  // Stage 19 design (see recent-scroll.ts): once the older page lands, the
+  // previously first loaded row (recent-80) is the top visible row, held
+  // directly below the header.
+  await expect.poll(async () => viewer().evaluate(scroll => {
+    const top = scroll.getBoundingClientRect().top;
+    const header = scroll.querySelector<HTMLElement>('.log-table-header')?.getBoundingClientRect().height ?? 0;
+    const first = [...scroll.querySelectorAll<HTMLElement>('.virtual-event[data-event-id]')]
+      .find(element => element.getBoundingClientRect().bottom > top + header);
+    return first ? { id: first.dataset.eventId, offset: Math.round(Math.abs(first.getBoundingClientRect().top - top - header)) } : null;
+  })).toEqual({ id: 'recent-80', offset: 0 });
 });
 
 for (const theme of ["light", "dark"])
@@ -291,7 +291,7 @@ for (const theme of ["light", "dark"])
     );
     await expect(input).toHaveValue('"mediaId"');
     await send(0, { state: "complete", events: [] }, true);
-    await selectMode("Pattern");
+    await selectMode("AWS Pattern");
     await input.fill("{ $.missing N");
     await expect(
       page.getByRole("listbox", { name: "AWS pattern suggestions" }),
@@ -311,7 +311,7 @@ for (const theme of ["light", "dark"])
     await input.fill("ordinary text");
     await expect(mode).toContainText("A:TXT");
     await input.fill("{ $.message = %error|failed% && $.nil IS NULL }");
-    await expect(mode).toContainText("A:PAT");
+    await expect(mode).toContainText("A:AWS-PAT");
     expect((await mode.boundingBox())!.width).toBe(initialWidth);
     await expect(page.locator(".server-filter-paint")).toHaveText(
       await input.inputValue(),

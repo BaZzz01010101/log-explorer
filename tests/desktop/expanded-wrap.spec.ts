@@ -30,6 +30,8 @@ test.beforeEach(async ({}, info) => {
   state.preferences.autoExpandFilterMatches = false;
   state.preferences.timezone = "local";
   state.tabs[0].filterPattern = "";
+  // Recent opens at the newest row; these checks start from the first row.
+  state.tabs[0].timePreset = "1h";
   state.tabs[0].view.mode = "table";
   state.tabs[0].view.columns.find(
     (column) => column.path === "@message",
