@@ -20,6 +20,21 @@ it("adds Source before the message for mixed sources without changing existing c
   expect(sourceColumnConfig(hidden, true)).toEqual(hidden);
 });
 
+it("drops a stored Source column while the view has a single source", () => {
+  const stored = [
+    { path: "@timestamp", width: 200, pinned: true },
+    { path: "@level", width: 84 },
+    { path: "@source", width: 240 },
+    { path: "@message", width: 400 },
+  ];
+  expect(sourceColumnConfig(stored, false).map((column) => column.path)).toEqual([
+    "@timestamp",
+    "@level",
+    "@message",
+  ]);
+  expect(sourceColumnConfig(stored, true)).toEqual(stored);
+});
+
 it("keeps full stream dates when identifier suffixes are identical", () => {
   const first = "2026/10/18/[$LATEST]same-token";
   const second = "2026/10/19/[$LATEST]same-token";

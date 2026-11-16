@@ -3,16 +3,7 @@ import { IconX } from "@tabler/icons-react";
 import type { Connection, LogSource } from "../../shared/contracts";
 import { removeSource, sourceBadges } from "../../shared/source-labels";
 import { decodeResourceDrop, mergeSources } from "../../shared/source-management";
-import {
-  RESOURCE_DRAG_START,
-  RESOURCE_DRAG_END,
-  isResourceDragging,
-  isTabSourceDragging,
-  SOURCE_MOVE_DROP,
-  TAB_SOURCE_DRAG_START,
-  TAB_SOURCE_DRAG_END,
-  type ResourceOrigin,
-} from "../resource-drag";
+import { SOURCE_MOVE_DROP, type ResourceOrigin } from "../resource-drag";
 import { ResourceDragLabel, SOURCE_DROP_EVENT } from "./ResourceDragLabel";
 import "./sources.css";
 
@@ -30,27 +21,7 @@ export function SourceBadges({
   tabId: string;
 }) {
   const ref = useRef<HTMLDivElement>(null);
-  const [resourceDragging, setResourceDragging] = useState(
-    () => isResourceDragging() || isTabSourceDragging(),
-  );
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const start = () => setResourceDragging(true);
-    const end = () => setResourceDragging(false);
-    window.addEventListener(RESOURCE_DRAG_START, start);
-    window.addEventListener(RESOURCE_DRAG_END, end);
-    window.addEventListener(TAB_SOURCE_DRAG_START, start);
-    window.addEventListener(TAB_SOURCE_DRAG_END, end);
-    // A view mounted during a drag reads the state before subscribing; a drag
-    // that ended in between would otherwise leave the strip shown.
-    setResourceDragging(isResourceDragging() || isTabSourceDragging());
-    return () => {
-      window.removeEventListener(RESOURCE_DRAG_START, start);
-      window.removeEventListener(RESOURCE_DRAG_END, end);
-      window.removeEventListener(TAB_SOURCE_DRAG_START, start);
-      window.removeEventListener(TAB_SOURCE_DRAG_END, end);
-    };
-  }, []);
+  const list = useRef<HTMLDivElement>(null);
   const [dragging, setDragging] = useState(false);
   const [error, setError] = useState("");
   useEffect(() => {
@@ -107,7 +78,26 @@ export function SourceBadges({
       strip.removeEventListener("explorer:source-drag-leave", leave);
       strip.removeEventListener(SOURCE_DROP_EVENT, drop);
     };
-  }, [sources, connectionId, connections, onChange, tabId, resourceDragging]);
+  }, [sources, connectionId, connections, onChange, tabId]);
+  useEffect(() => {
+    const strip = list.current;
+    if (!strip) return;
+    // The strip only scrolls sideways, so a plain vertical wheel scrolls it
+    // too. A native listener, because React's wheel listeners are passive.
+    const wheel = (event: WheelEvent) => {
+      if (
+        event.ctrlKey ||
+        Math.abs(event.deltaX) >= Math.abs(event.deltaY) ||
+        strip.scrollWidth <= strip.clientWidth
+      )
+        return;
+      event.preventDefault();
+      const step = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? strip.clientWidth : 1;
+      strip.scrollLeft += event.deltaY * step;
+    };
+    strip.addEventListener("wheel", wheel, { passive: false });
+    return () => strip.removeEventListener("wheel", wheel);
+  }, []);
   const badges = sourceBadges(sources);
   const multipleConnections =
     new Set(sources.map((source) => source.connectionId ?? connectionId)).size >
@@ -123,10 +113,9 @@ export function SourceBadges({
       ),
     ).size > 1;
   return (
-    <div
-      className="source-control"
-      hidden={badges.length === 1 && !resourceDragging}
-    >
+    // Always shown, including for a single source, so the sources of a view
+    // are visible and it is always a drop target.
+    <div className="source-control">
       <div
         ref={ref}
         className={`source-badges${dragging ? " source-drop-active" : ""}`}
@@ -135,8 +124,10 @@ export function SourceBadges({
         data-source-tab-id={tabId}
         data-tooltip="Drag log groups or streams here to add sources"
       >
-        <span className="source-strip-label">{badges.length} Sources</span>
-        <div className="source-badge-list">
+        <span className="source-strip-label">
+          {badges.length} {badges.length === 1 ? "Source" : "Sources"}
+        </span>
+        <div className="source-badge-list" ref={list}>
           {badges.map(({ sourceIndex, stream, label }) => {
             const source = sources[sourceIndex];
             const connection = connections.find(

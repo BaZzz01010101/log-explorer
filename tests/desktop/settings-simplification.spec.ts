@@ -521,6 +521,8 @@ for (const theme of ["light", "dark"])
           (await savedWorkspace()).connections
             .filter((connection) => connection.mode === "offline")
             .every((connection) => connection.enabled === false),
+          // Saves are debounced; parallel runs can delay them past 5s.
+          { timeout: 10000 },
         )
         .toBe(true);
       await choose(presentation, "Preferences");
@@ -532,6 +534,7 @@ for (const theme of ["light", "dark"])
           (await savedWorkspace()).connections
             .filter((connection) => connection.mode === "offline")
             .every((connection) => connection.enabled !== false),
+          { timeout: 10000 },
         )
         .toBe(true);
       const saved = await savedWorkspace();

@@ -347,6 +347,10 @@ for (const theme of ["light", "dark"] as const)
       await expect(
         page.getByRole("group", { name: "Log sources" }),
       ).toContainText("2 Sources");
+      // Kubernetes badges name the workload as well as its cluster.
+      await expect(
+        page.getByRole("group", { name: "Log sources" }).locator(".source-badge-drag-label"),
+      ).toContainText(["later", "worker · dev"]);
       await expect(
         page.getByText("Google event loaded", { exact: false }).first(),
       ).toBeVisible();

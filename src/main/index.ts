@@ -454,6 +454,15 @@ function createWindow(): void {
       backgroundThrottling:
         !backgroundVerification &&
         (app.isPackaged || !process.env.EXPLORER_TEST_USER_DATA),
+      // A never-shown window gets ~2 animation frames per second, so every
+      // automated action waits seconds for layout to settle. Offscreen
+      // rendering keeps the verification window invisible yet painting at a
+      // normal frame rate, at the real display's scale factor so layout and
+      // pixels match a visible window. Release builds never enable background
+      // verification.
+      offscreen: backgroundVerification
+        ? { deviceScaleFactor: screen.getPrimaryDisplay().scaleFactor }
+        : false,
     },
   });
   // Hidden title bars can add a DIP during native/physical-pixel conversion.

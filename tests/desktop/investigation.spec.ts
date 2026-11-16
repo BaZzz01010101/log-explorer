@@ -258,10 +258,13 @@ test("server and local filtering export real selected data and row menu opens so
     context.every(
       (event) =>
         event.logGroup === selected[0].logGroup &&
-        event.logStream === selected[0].logStream &&
         event.timestamp >= start &&
         event.timestamp <= end,
     ),
+  ).toBe(true);
+  // Context reads the origin view's sources, not only the clicked stream.
+  expect(
+    context.some((event) => event.logStream !== selected[0].logStream),
   ).toBe(true);
   expect(errors).toEqual([]);
 });

@@ -29,6 +29,10 @@ test.beforeEach(async ({}, info) => {
   workspace.tabs[0].timePreset = "1h";
   workspace.preferences.theme = info.title.includes("dark") ? "dark" : "light";
   workspace.tabs[0].view.mode = "hybrid";
+  // Source is shown only for mixed sources; the protected-column checks
+  // include it, so that view gets a second source.
+  if (info.title.includes("protected columns"))
+    workspace.tabs[0].sources.push({ logGroup: "/aws/lambda/payments-worker" });
   workspace.tabs[0].view.columns = [
     { path: "@timestamp", width: 194, pinned: true },
     { path: "@level", width: 84 },

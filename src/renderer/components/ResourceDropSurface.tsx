@@ -1,3 +1,4 @@
+import { lastDragWasCopy } from "../drag-copy";
 import { useEffect, useRef, useState, type Dispatch } from "react";
 import { createPortal } from "react-dom";
 import type { Connection, LogTab, Workspace } from "../../shared/contracts";
@@ -185,6 +186,7 @@ export function ResourceDropSurface({
         dispatch({
           type: "source/move",
           origin: drag.resourceOrigin,
+          ...(lastDragWasCopy() ? { copy: true } : {}),
           destination: {
             kind: "tab",
             beforeTabId: destination.insertion.beforeTabId,
@@ -195,6 +197,7 @@ export function ResourceDropSurface({
         dispatch({
           type: "source/move",
           origin: drag.resourceOrigin,
+          ...(lastDragWasCopy() ? { copy: true } : {}),
           destination: {
             kind: "split",
             paneId: destination.placement.paneId,
@@ -246,6 +249,7 @@ export function ResourceDropSurface({
         type: "source/move",
         origin,
         destination: { kind: "sources", tabId },
+        ...(lastDragWasCopy() ? { copy: true } : {}),
       });
     };
     window.addEventListener(SOURCE_MOVE_DROP, sourceDrop);

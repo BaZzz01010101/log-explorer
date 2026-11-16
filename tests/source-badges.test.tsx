@@ -20,7 +20,8 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-it("reveals a single-source control mounted after a resource drag has already started", async () => {
+// The source strip is always shown, including for a single source.
+it("shows a single-source control during and after a resource drag", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.stubGlobal("window", new EventTarget());
   vi.spyOn(console, "error").mockImplementation(() => {});
@@ -39,11 +40,11 @@ it("reveals a single-source control mounted after a resource drag has already st
   });
   expect(
     renderer.root.findByProps({ className: "source-control" }).props.hidden,
-  ).toBe(false);
+  ).toBeFalsy();
   await act(async () => announceResourceDragEnd(false));
   expect(
     renderer.root.findByProps({ className: "source-control" }).props.hidden,
-  ).toBe(true);
+  ).toBeFalsy();
 });
 
 it("adds regional streams through the strip, removes one badge and ignores duplicate drops", async () => {
@@ -83,19 +84,19 @@ it("adds regional streams through the strip, removes one badge and ignores dupli
   });
   expect(
     renderer.root.findByProps({ className: "source-control" }).props.hidden,
-  ).toBe(true);
+  ).toBeFalsy();
   await act(async () => {
     windowTarget.dispatchEvent(new Event(RESOURCE_DRAG_START));
   });
   expect(
     renderer.root.findByProps({ className: "source-control" }).props.hidden,
-  ).toBe(false);
+  ).toBeFalsy();
   await act(async () => {
     windowTarget.dispatchEvent(new Event(RESOURCE_DRAG_END));
   });
   expect(
     renderer.root.findByProps({ className: "source-control" }).props.hidden,
-  ).toBe(true);
+  ).toBeFalsy();
   const drop = async (connectionId: string, stream: string) =>
     act(async () => {
       target.dispatchEvent(
@@ -122,7 +123,7 @@ it("adds regional streams through the strip, removes one badge and ignores dupli
   await act(async () => renderer.update(render()));
   expect(
     renderer.root.findByProps({ className: "source-control" }).props.hidden,
-  ).toBe(false);
+  ).toBeFalsy();
   expect(
     renderer.root
       .findByProps({ className: "source-strip-label" })

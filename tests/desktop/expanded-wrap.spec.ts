@@ -156,13 +156,11 @@ const rows = () => page.locator(".virtual-event");
 const row = (index: number) =>
   page.locator(`.virtual-event[data-event-id="wrap-${index}"]`);
 async function paint() {
+  // The offscreen verification window paints continuously; two animation
+  // frames settle layout without a capture (which can fail mid-resize).
   await app!.evaluate(async ({ BrowserWindow }) => {
     const win = BrowserWindow.getAllWindows()[0];
     if (win.isVisible()) throw new Error("Wrap test became visible");
-    await win.webContents.capturePage(undefined, {
-      stayHidden: true,
-      stayAwake: true,
-    });
   });
   await page.evaluate(
     () =>

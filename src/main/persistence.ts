@@ -9,6 +9,30 @@ import {
 import { join } from "node:path";
 import type { WorkspaceLoad } from "../shared/contracts";
 
+/**
+ * Windows refuses to replace a file another process has open (antivirus,
+ * backup and sync tools, indexers), failing with EPERM/EACCES/EBUSY. Such
+ * locks are brief, so the replace is retried for up to about two seconds.
+ */
+export async function replaceFile(
+  from: string,
+  to: string,
+  move: (from: string, to: string) => Promise<void> = rename,
+): Promise<void> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await move(from, to);
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code ?? "";
+      if (attempt >= 20 || !["EPERM", "EACCES", "EBUSY"].includes(code))
+        throw error;
+      await new Promise((done) =>
+        setTimeout(done, Math.min(10 * 2 ** attempt, 100)),
+      );
+    }
+  }
+}
+
 function describeKept(kept: string[], directory: string): string {
   const names = kept.filter(Boolean);
   return names.length
@@ -102,7 +126,7 @@ export class WorkspaceStore {
         }
       if (validPrevious)
         await copyFile(target, join(this.directory, "workspace.backup.json"));
-      await rename(temporary, target);
+      await replaceFile(temporary, target);
       this.primaryKnownGood = true;
     });
     this.pending = task.catch(() => {});

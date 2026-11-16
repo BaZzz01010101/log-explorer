@@ -555,8 +555,16 @@ test("source badge moves to the sources of a hover activated tab", async () => {
 });
 
 test("tab drag merges its sources into a hover activated tab", async () => {
+  const source = (await tab("tab-orders").getByRole("tab").boundingBox())!;
+  const target = (await tab("tab-payments").getByRole("tab").boundingBox())!;
   await startDrag(tab("tab-orders").getByRole("tab"));
-  await moveTo(tab("tab-payments"), 65);
+  // Partly cover the neighbour, short of the 80% slot threshold that would
+  // reorder it away, and hold still so the hover activation fires.
+  await page.mouse.move(
+    source.x + 30 + (target.x - source.x) * 0.5,
+    source.y + source.height / 2,
+    { steps: 6 },
+  );
   await expect(tab("tab-payments").getByRole("tab")).toHaveAttribute(
     "aria-selected",
     "true",
@@ -1220,3 +1228,166 @@ for (const theme of ["light", "dark"])
         "tab-orders",
       );
     });
+
+/** Ctrl-selects payments and media, then shows them as one split view. */
+async function splitPaymentsAndMedia() {
+  await tab("tab-payments").getByRole("tab").click();
+  await tab("tab-media").getByRole("tab").click({ modifiers: ["Control"] });
+  await tab("tab-media").getByRole("tab").click({ button: "right" });
+  await page
+    .getByRole("menuitem", { name: "Show in split mode", exact: true })
+    .click();
+  await expect(page.locator(".workspace-pane")).toHaveCount(2);
+  return page.locator('.workspace-tab[data-entry-kind="split"]').getByRole("tab");
+}
+
+test("a dragged split view drops its sources into one of its own panes", async () => {
+  const split = await splitPaymentsAndMedia();
+  await startDrag(split);
+  const strip = page
+    .locator(".workspace-pane")
+    .filter({ has: page.locator('.source-badge[data-source-group="/aws/lambda/payments-worker"]') })
+    .locator(".source-badges");
+  await moveTo(strip, 30);
+  await expect(strip).toHaveClass(/source-drop-active/);
+  await page.mouse.up();
+  await expect(page.locator('.workspace-tab[data-entry-kind="split"]')).toHaveCount(0);
+  await expect(tab("tab-media")).toHaveCount(0);
+  await expect(tab("tab-payments").getByRole("tab")).toHaveAttribute("aria-selected", "true");
+  await expect(page.locator(".workspace-pane")).toHaveCount(1);
+  await expect(page.locator(".source-badge")).toHaveCount(2);
+});
+
+test("a dragged split view drops its sources into another tab", async () => {
+  const split = await splitPaymentsAndMedia();
+  const source = (await split.boundingBox())!;
+  const target = (await tab("tab-orders").getByRole("tab").boundingBox())!;
+  await startDrag(split);
+  // Partly cover the other tab (short of the reorder threshold) and hold
+  // until it activates, then drop on its source strip.
+  await page.mouse.move(
+    source.x + 30 + (target.x - source.x) * 0.5,
+    source.y + source.height / 2,
+    { steps: 6 },
+  );
+  await expect(tab("tab-orders").getByRole("tab")).toHaveAttribute("aria-selected", "true");
+  const strip = page.locator(".source-badges:visible");
+  await moveTo(strip, 30);
+  await expect(strip).toHaveClass(/source-drop-active/);
+  await page.mouse.up();
+  await expect(page.locator('.workspace-tab[data-entry-kind="split"]')).toHaveCount(0);
+  await expect(tab("tab-payments")).toHaveCount(0);
+  await expect(tab("tab-media")).toHaveCount(0);
+  await expect(page.locator(".source-badges:visible .source-badge")).toHaveCount(3);
+});
+
+// Ctrl held during a drag shows a "+" badge and copies on drop.
+const copyBadge = () => page.locator(".drag-copy-badge");
+// The badge sits on the dragged item's top-right corner, not at the pointer.
+async function expectBadgeOn(item: string) {
+  await expect
+    .poll(async () => {
+      const badge = await copyBadge().boundingBox();
+      const box = await page.locator(item).first().boundingBox();
+      if (!badge || !box) return Infinity;
+      return Math.max(
+        Math.abs(badge.x + badge.width / 2 - (box.x + box.width)),
+        Math.abs(badge.y + badge.height / 2 - box.y),
+      );
+    })
+    .toBeLessThanOrEqual(2);
+}
+
+test("Ctrl-dragging a tab copies it and keeps the original", async () => {
+  const before = await page.locator(".workspace-tab[data-tab-id]").count();
+  await startDrag(tab("tab-media").getByRole("tab"));
+  await page.keyboard.down("Control");
+  await moveTo(tab("tab-orders"), 5);
+  await expect(copyBadge()).toBeVisible();
+  await expectBadgeOn(".workspace-tab.is-dragging");
+  await page.mouse.up();
+  await page.keyboard.up("Control");
+  await expect(copyBadge()).toHaveCount(0);
+  await expect(page.locator(".workspace-tab[data-tab-id]")).toHaveCount(before + 1);
+  await expect(tab("tab-media")).toHaveCount(1);
+  await expect(
+    page.locator(".workspace-tab[data-tab-id]").filter({ hasText: "media-pipeline" }),
+  ).toHaveCount(2);
+});
+
+test("Ctrl-dragging a source badge copies it into a new tab", async () => {
+  const resource = row("/aws/lambda/notifications").getByRole("button", {
+    name: "/aws/lambda/notifications",
+    exact: true,
+  });
+  await startDrag(resource);
+  await moveTo(page.locator(".source-badges"), 30);
+  await page.mouse.up();
+  await expect(page.locator(".source-badge")).toHaveCount(2);
+  await startDrag(
+    page.locator(
+      '.source-badge[data-source-group="/aws/lambda/notifications"] .source-badge-drag-label',
+    ),
+  );
+  await page.keyboard.down("Control");
+  const last = (await tab("tab-media").boundingBox())!;
+  await page.mouse.move(last.x + last.width - 5, last.y + last.height / 2, {
+    steps: 6,
+  });
+  await expect(page.locator("[data-resource-tab-insertion]")).toBeVisible();
+  await expect(copyBadge()).toBeVisible();
+  await expectBadgeOn(".resource-drag-preview");
+  await page.mouse.up();
+  await page.keyboard.up("Control");
+  await expect(page.locator(".workspace-tab")).toHaveCount(4);
+  await tab("tab-orders").getByRole("tab").click();
+  await expect(
+    page.locator('.source-badge[data-source-group="/aws/lambda/notifications"]'),
+  ).toHaveCount(1);
+  await expect(page.locator(".source-badge")).toHaveCount(2);
+});
+
+test("the wheel scrolls an overflowing source strip sideways", async () => {
+  const label = page.locator(".source-badges:visible .source-strip-label");
+  await expect(label).toHaveText("1 Source");
+  await startDrag(
+    row("/aws/lambda/notifications").getByRole("button", {
+      name: "/aws/lambda/notifications",
+      exact: true,
+    }),
+  );
+  await moveTo(page.locator(".source-badges:visible"), 30);
+  await page.mouse.up();
+  await expect(label).toHaveText("2 Sources");
+  const strip = page.locator(".source-badges:visible .source-badge-list");
+  const style = await page.addStyleTag({ content: ".source-badge-list { max-width: 90px; }" });
+  try {
+    await expect.poll(() => strip.evaluate((el) => el.scrollWidth > el.clientWidth)).toBe(true);
+    await strip.hover();
+    await page.mouse.wheel(0, 120);
+    await expect.poll(() => strip.evaluate((el) => el.scrollLeft)).toBeGreaterThan(0);
+    await page.mouse.wheel(0, -480);
+    await expect.poll(() => strip.evaluate((el) => el.scrollLeft)).toBe(0);
+  } finally {
+    await style.evaluate((node) => (node as Element).remove());
+  }
+});
+
+test("Ctrl-dragging a split panel copies it out as a tab and keeps the split", async () => {
+  await splitPaymentsAndMedia();
+  const before = await page.locator(".workspace-tab[data-tab-id]").count();
+  await startDrag(page.locator("[data-pane-header]").last());
+  await page.keyboard.down("Control");
+  const last = (await page.locator(".workspace-tab[data-tab-id]").last().boundingBox())!;
+  await page.mouse.move(last.x + last.width - 5, last.y + last.height / 2, {
+    steps: 6,
+  });
+  await expect(copyBadge()).toBeVisible();
+  await expectBadgeOn(".workspace-drag-preview");
+  await page.mouse.up();
+  await page.keyboard.up("Control");
+  await expect(page.locator(".workspace-tab[data-tab-id]")).toHaveCount(before + 1);
+  await expect(page.locator('.workspace-tab[data-entry-kind="split"]')).toHaveCount(1);
+  await page.locator('.workspace-tab[data-entry-kind="split"]').getByRole("tab").click();
+  await expect(page.locator(".workspace-pane")).toHaveCount(2);
+});

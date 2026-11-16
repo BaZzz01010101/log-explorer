@@ -98,6 +98,7 @@ import {
   tabSlotRect,
   type TabReorderPreview,
 } from "../tab-reorder-preview";
+import { endCopyDrag, moveCopyDrag, startCopyDrag } from "../drag-copy";
 import "./workspace-tabs.css";
 
 type TabActivityRuntime = {
@@ -1072,6 +1073,8 @@ export function WorkspaceDragSurface({
     }),
   );
   const handleDragEnd = ({ active, over }: DragEndEvent) => {
+    // Ctrl/Cmd held at the drop copies the dragged view or panel instead.
+    const copy = endCopyDrag() ? { copy: true } : {};
     const source = sourceRef.current;
     const targetSourceStrip =
       source?.kind === "tab" &&
@@ -1098,6 +1101,7 @@ export function WorkspaceDragSurface({
         type: "tab/merge-sources",
         tabId: source.tabId,
         targetTabId: targetSourceStrip.dataset.sourceTabId,
+        ...copy,
       });
       hoverActivated.current = false;
       return;
@@ -1116,6 +1120,7 @@ export function WorkspaceDragSurface({
             ...(destination.insertion.pinned !== undefined
               ? { pinned: destination.insertion.pinned }
               : {}),
+            ...copy,
           });
         else
           dispatch({
@@ -1125,6 +1130,7 @@ export function WorkspaceDragSurface({
             pinned:
               destination.insertion.pinned ??
               !!entries.find((entry) => entry.id === source.tabId)?.pinned,
+            ...copy,
           });
         restoreActivation();
       } else if (source.kind === "tab" && target?.kind === "view-favorites") {
@@ -1140,6 +1146,7 @@ export function WorkspaceDragSurface({
           tabId: source.tabId,
           paneId: target.paneId,
           edge: destination.placement.edge,
+          ...copy,
         });
         hoverActivated.current = false;
       } else if (source.kind === "tab" && target?.kind === "tab") {
@@ -1153,6 +1160,7 @@ export function WorkspaceDragSurface({
               oldIndex < newIndex
                 ? (entries[newIndex + 1]?.id ?? null)
                 : target.tabId,
+            ...copy,
           });
         restoreActivation();
       } else restoreActivation();
@@ -1209,10 +1217,18 @@ export function WorkspaceDragSurface({
               y: (activatorEvent as MouseEvent).clientY + delta.y,
             };
             lastPoint.current = point;
+            moveCopyDrag(point);
             updateDestination(point, source);
           }}
           onDragStart={({ active, activatorEvent }) => {
             dragActive.current = true;
+            if (activatorEvent && "clientX" in activatorEvent) {
+              const pointer = activatorEvent as MouseEvent;
+              startCopyDrag(
+                { x: pointer.clientX, y: pointer.clientY },
+                pointer.ctrlKey || pointer.metaKey,
+              );
+            }
             clearHover();
             hoverActivated.current = false;
             originRef.current = activeEntryId(workspace);
@@ -1281,6 +1297,7 @@ export function WorkspaceDragSurface({
               updateDestination(lastPoint.current, source);
           }}
           onDragCancel={() => {
+            endCopyDrag();
             finishDrag();
             restoreActivation();
           }}

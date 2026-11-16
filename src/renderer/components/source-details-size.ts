@@ -74,7 +74,11 @@ export function useSourceDetailsSize({
       parent = node?.parentElement;
     if (!node || !parent) return;
     const fixed = Array.from(parent.children).filter(
-      (child) => child !== node && !child.classList.contains("resource-tree"),
+      // The flexible list (AWS tree or Google Cloud source list) yields space.
+      (child) =>
+        child !== node &&
+        !child.classList.contains("resource-tree") &&
+        !child.classList.contains("gcp-log-list"),
     );
     const measure = () => {
       if (!parent.clientHeight) return;

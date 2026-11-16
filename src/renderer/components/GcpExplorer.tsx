@@ -30,6 +30,7 @@ import { gcpErrorMessage, isGcpAuthorizationError } from "../gcp-errors";
 import { shortcutMatches } from "../../shared/shortcuts";
 import { Tooltip } from "./AppTooltip";
 import { Menu } from "./AppMenu";
+import { Field, SourceDetailsFrame, SourceDetailsName } from "./SourceDetails";
 import { ViewFavorites } from "./ViewFavorites";
 import { ResourceDragLabel } from "./ResourceDragLabel";
 import type { ResourcePayload } from "../resource-drag";
@@ -54,8 +55,12 @@ export function GcpExplorer({
   onDropFavoriteResources,
   dragPayload,
   onAuthorized,
+  sourceDetailsHeight,
+  onSourceDetailsHeightChange,
 }: {
   active: boolean;
+  sourceDetailsHeight?: number;
+  onSourceDetailsHeightChange?(height: number): void;
   shortcuts?: Record<string, string>;
   initialProject?: string;
   initialConfiguration?: string;
@@ -90,6 +95,7 @@ export function GcpExplorer({
   const [project, setProject] = useState("");
   const [logs, setLogs] = useState<GcpSource[]>([]);
   const [selected, setSelected] = useState<GcpSource | null>(null);
+  const copy = (value: string) => void window.explorer.copy(value);
   const [cachedNames, setCachedNames] = useState<Set<string>>(new Set());
   const restoredProject = useRef(false);
   const [projectLoading, setProjectLoading] = useState(false);
@@ -694,63 +700,81 @@ export function GcpExplorer({
           </Text>
         )}
       </div>
-      <div className="gcp-details">
-        <div className="gcp-details-heading">
-          <Text size="xs" fw={700}>
-            Source details
-          </Text>
-          {selected && (
-            <Tooltip label="Copy source name">
-              <ActionIcon
-                size="sm"
-                variant="subtle"
-                aria-label="Copy GCP source name"
-                onClick={() => void window.explorer.copy(selected.label)}
-              >
-                <IconCopy size={14} />
-              </ActionIcon>
-            </Tooltip>
-          )}
-        </div>
+      <SourceDetailsFrame
+        title={
+          selected
+            ? selected.kind === "function"
+              ? "Function details"
+              : "Workload details"
+            : "Source details"
+        }
+        emptyText="Choose a source to inspect its details."
+        height={sourceDetailsHeight}
+        onHeightChange={onSourceDetailsHeightChange}
+      >
         {selected ? (
           <>
-            <Text size="xs" c="dimmed">
-              Project
-            </Text>
-            <Text size="xs">{project}</Text>
-            <Text size="xs" c="dimmed" mt="xs">
-              Source
-            </Text>
-            <Text size="xs" className="gcp-details-name">
-              {selected.label}
-            </Text>
-            <Text size="xs" c="dimmed" mt="xs">
-              Location
-            </Text>
-            <Text size="xs">{selected.region}</Text>
-            {selected.namespace && (
-              <>
-                <Text size="xs" c="dimmed" mt="xs">
-                  Namespace
-                </Text>
-                <Text size="xs">{selected.namespace}</Text>
-              </>
-            )}
-            {selected.workloads?.length ? (
-              <>
-                <Text size="xs" c="dimmed" mt="xs">
-                  Workloads
-                </Text>
-                <Text size="xs">{selected.workloads.join(", ")}</Text>
-              </>
-            ) : null}
+            <SourceDetailsName
+              icon={
+                selected.kind === "function" ? (
+                  <IconCloudCode size={14} aria-hidden="true" />
+                ) : (
+                  <IconHexagonLetterK size={14} aria-hidden="true" />
+                )
+              }
+              name={selected.label}
+              onCopy={copy}
+              copyLabel="Copy GCP source name"
+            />
+            <dl className="source-details-identity">
+              {selected.name !== selected.label && (
+                <Field label="Resource" value={selected.name} onCopy={copy} wide>
+                  {selected.name}
+                </Field>
+              )}
+              <Field label="Project" value={selected.project || project} onCopy={copy}>
+                {selected.project || project}
+              </Field>
+              <Field label="Location">{selected.region || "Not provided"}</Field>
+              {selected.kind === "function" ? (
+                <>
+                  <Field label="Generation">
+                    {selected.generation === "v1"
+                      ? "1st gen"
+                      : selected.generation === "v2"
+                        ? "2nd gen"
+                        : "Not provided"}
+                  </Field>
+                  {selected.service && (
+                    <Field label="Service" value={selected.service} onCopy={copy}>
+                      {selected.service}
+                    </Field>
+                  )}
+                </>
+              ) : (
+                <>
+                  {selected.cluster && (
+                    <Field label="Cluster" value={selected.cluster} onCopy={copy}>
+                      {selected.cluster}
+                    </Field>
+                  )}
+                  {selected.namespace && (
+                    <Field label="Namespace">{selected.namespace}</Field>
+                  )}
+                  {selected.container && (
+                    <Field label="Container">{selected.container}</Field>
+                  )}
+                  {selected.workloads?.length ? (
+                    <Field label="Workloads" wide>
+                      {selected.workloads.join(", ")}
+                    </Field>
+                  ) : null}
+                </>
+              )}
+            </dl>
           </>
-        ) : (
-          <Text size="xs" c="dimmed">
-            Select a source to view its details.
-          </Text>
-        )}
-      </div>
+        ) : null}
+      </SourceDetailsFrame>
     </aside>
   );
 }

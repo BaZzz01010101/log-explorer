@@ -206,6 +206,7 @@ for (const theme of ["light", "dark"] as const) {
       page.getByRole("menuitem", { name: "Show in split mode", exact: true }),
     ).toBeDisabled();
     await page.keyboard.press("Escape");
+    await expect(page.getByRole("menu")).toHaveCount(0);
     await tab("media-pipeline").click({ modifiers: ["Control"] });
     expect(await selected()).toEqual(["orders-api", "media-pipeline"]);
     await tab("notifications").click({ button: "right" });
@@ -223,6 +224,8 @@ for (const theme of ["light", "dark"] as const) {
     );
     expect(await selected()).toEqual(["orders-api", "media-pipeline"]);
     await expect(tab("orders-api")).toHaveAttribute("aria-selected", "true");
+    // The previous menu must finish closing before the next one opens.
+    await expect(page.getByRole("menu")).toHaveCount(0);
     await tab("media-pipeline").click({ button: "right" });
     await expect(
       page.getByRole("menuitem", { name: "Show in split mode", exact: true }),

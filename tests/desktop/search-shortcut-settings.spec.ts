@@ -429,6 +429,9 @@ for (const theme of ["light", "dark"]) {
     await expect(page.locator('.workspace-tab-label[role="tab"]')).toHaveCount(
       tabCount + 1,
     );
-    expect((await stored()).preferences.shortcuts.closeTab).toBe("Control+W");
+    // Saves are debounced; wait for the persisted workspace to catch up.
+    await expect
+      .poll(async () => (await stored()).preferences.shortcuts.closeTab)
+      .toBe("Control+W");
   });
 }

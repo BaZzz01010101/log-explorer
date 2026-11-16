@@ -12,10 +12,18 @@ import type {
 import type { ResourcePayload, ResourceActionMode } from "./resource-payload";
 
 export type WorkspaceAction =
-  | { type: "tab/merge-sources"; tabId: string; targetTabId: string }
+  | {
+      type: "tab/merge-sources";
+      tabId: string;
+      targetTabId: string;
+      /** Ctrl-drop: keep the dragged view. */
+      copy?: boolean;
+    }
   | {
       type: "source/move";
       origin: { tabId: string; sourceIndex: number; stream?: string };
+      /** Ctrl-drop: keep the source in its origin view. */
+      copy?: boolean;
       destination:
         | { kind: "sources"; tabId: string }
         | { kind: "split"; paneId: string; edge: SplitEdge | null }
@@ -41,6 +49,8 @@ export type WorkspaceAction =
       tabId: string;
       beforeTabId: string | null;
       pinned: boolean;
+      /** Ctrl-drop: insert a duplicate and keep the original. */
+      copy?: boolean;
     }
   | {
       type: "tabs/insert";
@@ -58,6 +68,8 @@ export type WorkspaceAction =
       tabId: string;
       beforeTabId: string | null;
       pinned?: boolean;
+      /** Ctrl-drop: add a copy of the panel as a tab; the split keeps it. */
+      copy?: boolean;
     }
   | {
       type: "tab/select";
@@ -68,13 +80,21 @@ export type WorkspaceAction =
   | { type: "tab/update"; tabId: string; patch: Partial<LogTab> }
   | { type: "tab/close"; tabId: string; allowPinned?: boolean }
   | { type: "tab/reopen"; tabId?: string }
-  | { type: "tab/reorder"; tabId: string; beforeTabId: string | null }
+  | {
+      type: "tab/reorder";
+      tabId: string;
+      beforeTabId: string | null;
+      /** Ctrl-drop: insert a duplicate and keep the original. */
+      copy?: boolean;
+    }
   | { type: "pane/split"; tabId?: string; paneId?: string; edge?: SplitEdge }
   | {
       type: "pane/drop-tab";
       tabId: string;
       paneId: string;
       edge: SplitEdge | null;
+      /** Ctrl-drop: place a copy and keep the dragged view where it is. */
+      copy?: boolean;
     }
   | {
       type: "pane/drop-resource";

@@ -5,6 +5,7 @@ import {
   type ReactNode,
   type Ref,
 } from "react";
+import { copyDragActive, endCopyDrag, moveCopyDrag, startCopyDrag } from "../drag-copy";
 import {
   announceResourceDragStart,
   RESOURCE_DRAG_MOVE,
@@ -86,6 +87,8 @@ export function ResourceDragLabel({
           const finish = (drop: boolean) => {
             const destination = target,
               wasDragging = dragging;
+            // Drop handlers read the copy choice through lastDragWasCopy().
+            if (payload.origin) endCopyDrag();
             if (wasDragging)
               announceResourceDragEnd(
                 drop && !destination,
@@ -116,11 +119,18 @@ export function ResourceDragLabel({
               Math.hypot(move.clientX - start.x, move.clientY - start.y) < 6
             )
               return;
-            if (!dragging) announceResourceDragStart();
+            const at = { x: move.clientX, y: move.clientY };
+            if (!dragging) {
+              announceResourceDragStart();
+              // A source badge moves; Ctrl/Cmd turns that into a copy.
+              if (payload.origin)
+                startCopyDrag(at, move.ctrlKey || move.metaKey);
+            } else if (payload.origin) moveCopyDrag(at);
             dragging = true;
             move.preventDefault();
             document.body.style.userSelect = "none";
-            document.body.style.cursor = payload.origin ? "move" : "copy";
+            document.body.style.cursor =
+              payload.origin && !copyDragActive() ? "move" : "copy";
             window.dispatchEvent(
               new CustomEvent(RESOURCE_DRAG_MOVE, {
                 detail: {

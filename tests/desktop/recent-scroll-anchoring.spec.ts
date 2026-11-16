@@ -127,6 +127,9 @@ for (const wrap of [false, true])
       await grid.hover();
       await pageFromTop(() => page.mouse.wheel(0, -100000), 340);
       // Up onto the first row only moves the selection; Up on it loads.
+      // A click (user input) ends the post-load hold before the scripted
+      // scroll; a wheel would also mark the next scroll as user scrolling.
+      await grid.locator(".virtual-event .log-cell").first().click();
       await grid.evaluate((element) => { element.scrollTop = 30; });
       await grid.locator(`[data-event-id='${fixture(241)}'] .log-cell`).first().click();
       await page.keyboard.press("ArrowUp");
@@ -135,6 +138,7 @@ for (const wrap of [false, true])
       expect((await snapshot(grid, "")).indicatorTop).toBeNull();
       await pageFromTop(() => page.keyboard.press("ArrowUp"), 240);
       // PageUp with fewer rows above the selection than a page.
+      await grid.locator(".virtual-event .log-cell").first().click();
       await grid.evaluate((element) => { element.scrollTop = 120; });
       await pageFromTop(async () => {
         await grid.locator(`[data-event-id='${fixture(143)}'] .log-cell`).first().click();

@@ -1602,12 +1602,74 @@ function moveStripEntry(
   });
 }
 
+/** A standalone copy of a tab, appended without changing the shown view. */
+function cloneTab(
+  state: Workspace,
+  tabId: string,
+): { state: Workspace; id: string } | undefined {
+  const original = state.tabs.find((tab) => tab.id === tabId);
+  if (!original || state.tabs.length >= 100) return undefined;
+  const id = nextId("tab", entryIdentities(state, state.tabs));
+  const copy = { ...structuredClone(original), id, preview: false };
+  delete copy.pinned;
+  return { id, state: { ...state, tabs: [...state.tabs, copy] } };
+}
+
+/**
+ * Ctrl-drops copy instead of move: the dragged view (or panel) is duplicated
+ * and the ordinary drop applies to the duplicate, so the original stays put.
+ * Returns undefined for actions without a copy, which the reducer handles.
+ */
+function copyDrop(
+  input: Workspace,
+  action: WorkspaceAction,
+): Workspace | undefined {
+  if (!("copy" in action) || !action.copy) return undefined;
+  switch (action.type) {
+    case "tab/move":
+    case "tab/reorder": {
+      const duplicated = workspaceReducer(input, {
+        type: "tab/duplicate",
+        tabId: action.tabId,
+      });
+      const id = activeEntryId(duplicated);
+      if (duplicated === input || !id || id === action.tabId) return input;
+      return workspaceReducer(duplicated, { ...action, tabId: id, copy: false });
+    }
+    case "pane/detach": {
+      const clone = cloneTab(modelState(input), action.tabId);
+      if (!clone) return input;
+      const moved = workspaceReducer(clone.state, {
+        type: "tab/move",
+        tabId: clone.id,
+        beforeTabId: action.beforeTabId,
+        pinned: action.pinned ?? false,
+      });
+      return workspaceReducer(moved, { type: "tab/select", tabId: clone.id });
+    }
+    case "pane/drop-tab": {
+      const clone = cloneTab(modelState(input), action.tabId);
+      if (!clone) return input;
+      const dropped = workspaceReducer(clone.state, {
+        ...action,
+        tabId: clone.id,
+        copy: false,
+      });
+      return dropped.tabs.some((tab) => tab.id === clone.id) ? dropped : input;
+    }
+    default:
+      return undefined;
+  }
+}
+
 export function workspaceReducer(
   input: Workspace,
   action: WorkspaceAction,
 ): Workspace {
   if (action.type === "workspace/restore")
     return restoreWorkspace(action.workspace);
+  const copied = copyDrop(input, action);
+  if (copied) return copied;
   const state = modelState(input);
   switch (action.type) {
     case "tab/merge-sources": {
@@ -1615,8 +1677,11 @@ export function workspaceReducer(
         (item) => item.id === action.tabId,
       );
       const target = state.tabs.find((tab) => tab.id === action.targetTabId);
-      if (!entry || !target || entry.tabIds.includes(target.id)) return input;
-      const added = entry.tabIds.flatMap((id) => {
+      // A split may also be dropped onto one of its own panes: that tab keeps
+      // its place and absorbs the other panes.
+      const merged = entry?.tabIds.filter((id) => id !== target?.id) ?? [];
+      if (!entry || !target || !merged.length) return input;
+      const added = merged.flatMap((id) => {
         const tab = state.tabs.find((item) => item.id === id);
         return tab
           ? tab.sources.map((source) => ({
@@ -1636,8 +1701,12 @@ export function workspaceReducer(
           tabId: target.id,
           patch: { sources },
         });
+        if (action.copy) return updated;
+        const closed = closeViews(updated, merged);
         return {
-          ...closeViews(updated, entry.tabIds),
+          ...(entry.tabIds.includes(target.id)
+            ? workspaceReducer(closed, { type: "tab/select", tabId: target.id })
+            : closed),
           closedTabs: state.closedTabs,
         };
       } catch {
@@ -1664,7 +1733,7 @@ export function workspaceReducer(
         action.origin.sourceIndex,
         action.origin.stream,
       );
-      if (!remaining.length) return input;
+      if (!remaining.length && !action.copy) return input;
       const item = {
         ...original,
         ...(action.origin.stream ? { logStreams: [action.origin.stream] } : {}),
@@ -1690,7 +1759,23 @@ export function workspaceReducer(
             patch: { sources },
           });
         } else {
-          const tabs = createResourceTabs(payload);
+          // A source taken out of a view keeps that view's settings: query,
+          // filters, highlights, time range, columns, wrapping and layout.
+          const {
+            id: _id,
+            closedAt: _closedAt,
+            pinned: _pinned,
+            preview: _preview,
+            title: _title,
+            customTitle: _customTitle,
+            connectionId: _connectionId,
+            sources: _sources,
+            ...settings
+          } = origin;
+          const tabs = createResourceTabs(payload).map((tab) => ({
+            ...tab,
+            ...structuredClone(settings),
+          }));
           if (action.destination.kind === "tab")
             next = workspaceReducer(state, {
               type: "tabs/insert",
@@ -1715,6 +1800,7 @@ export function workspaceReducer(
       } catch {
         return input;
       }
+      if (action.copy) return next;
       return workspaceReducer(next, {
         type: "tab/update",
         tabId: origin.id,

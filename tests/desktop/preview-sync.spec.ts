@@ -326,14 +326,17 @@ test("narrow stacked previews settle at both scroll limits and reverse without f
   await app!.evaluate(({ BrowserWindow }) =>
     BrowserWindow.getAllWindows()[0].setSize(1240, 1100, false),
   );
+  // Precondition: the resize has landed. Scaled offscreen output can round
+  // the viewport by one pixel.
   await expect
     .poll(() =>
-      page.evaluate(() => ({
-        width: window.innerWidth,
-        height: window.innerHeight,
-      })),
+      page.evaluate(
+        () =>
+          Math.abs(window.innerWidth - 1240) <= 1 &&
+          Math.abs(window.innerHeight - 1100) <= 1,
+      ),
     )
-    .toEqual({ width: 1240, height: 1100 });
+    .toBe(true);
   await page.evaluate(
     () =>
       new Promise<void>((done) =>

@@ -241,7 +241,7 @@ async function capture(filename: string) {
   await writeFile(output, Buffer.from(png, "base64"));
 }
 
-test("all 18 direction and duration choices query the clicked event source at exact milliseconds and preserve the filtered origin", async () => {
+test("all 18 direction and duration choices query the origin view sources at exact milliseconds and preserve the filtered origin", async () => {
   test.setTimeout(300000);
   await loadEvents();
   // Leave another row selected: context must use the right-clicked event.
@@ -280,18 +280,12 @@ test("all 18 direction and duration choices query the clicked event source at ex
         direction === "past"
           ? anchor.timestamp + 1
           : anchor.timestamp + durationMs;
+      // Context reads every source of the origin view, not only the
+      // clicked event's stream.
       expect(request).toMatchObject({
-        connection: {
-          id: "context-connection",
-          region: "us-east-1",
-          profile: "context-profile",
-        },
         sources: [
-          {
-            connectionId: "context-connection",
-            logGroup: anchor.logGroup,
-            logStreams: [anchor.logStream],
-          },
+          { connectionId: "offline", logGroup: anchor.logGroup },
+          { connectionId: "context-connection", logGroup: anchor.logGroup },
         ],
         startTime,
         endTime,
@@ -318,8 +312,9 @@ test("all 18 direction and duration choices query the clicked event source at ex
       const saved = await savedWorkspace();
       expect(saved.tabs.find((tab) => tab.id === originId)).toEqual(original);
       const context = saved.tabs.at(-1)!;
+      expect(context.sources).toEqual(original.sources);
+      expect(context.view.mode).toBe("table");
       expect(context).toMatchObject({
-        connectionId: "context-connection",
         timePreset: "custom",
         customStart: new Date(startTime).toISOString(),
         customEnd: new Date(endTime).toISOString(),

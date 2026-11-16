@@ -43,6 +43,7 @@ test.beforeEach(async ({}, info) => {
     tab.id = `activity-tab-${i}`;
     tab.customTitle = `Another service ${i}`;
     tab.filterPattern = "";
+    tab.timePreset = "1h";
     workspace = workspaceReducer(workspace, { type: "tab/open", tab });
   }
   workspace = workspaceReducer(workspace, {

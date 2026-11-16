@@ -186,6 +186,23 @@ it("reserves border-box height and retains taller natural strip content", () => 
   ).toBe(60);
 });
 
+it("keeps a fractional strip height so starting a drag does not move the content", () => {
+  const { workspace, ids, strips } = measuredWorkspace();
+  const strip = strips[0];
+  strip.classList.contains = () => true;
+  strip.offsetHeight = strip.clientHeight = 83;
+  strip.getBoundingClientRect = () => ({
+    left: 10,
+    top: 40,
+    width: 1000,
+    height: 82.52,
+  });
+  expect(
+    tabReorderPreview(workspace, ids[0], { beforeTabId: null, pinned: false })!
+      .heights.shared,
+  ).toBe(82.52);
+});
+
 it("follows the pickup point horizontally without snapping to the proposed slot", () => {
   const { workspace, ids } = measuredWorkspace();
   const result = tabReorderPreview(

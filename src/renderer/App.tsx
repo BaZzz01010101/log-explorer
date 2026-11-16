@@ -456,18 +456,36 @@ export default function App() {
       return;
     }
     const connectionId = event.connectionId ?? tab.connectionId;
+    // Context reads the same sources as the view it came from, over the new
+    // time range, with server and local filters cleared. The clicked event's
+    // own source is added only if it is no longer part of the view.
+    const sources = structuredClone(tab.sources);
+    if (
+      !sources.some(
+        (source) =>
+          source.logGroup === event.logGroup &&
+          (source.connectionId ?? tab.connectionId) === connectionId,
+      )
+    )
+      sources.push({
+        ...(connectionId !== tab.connectionId ? { connectionId } : {}),
+        logGroup: event.logGroup,
+        ...(event.gcpSource ? { gcp: event.gcpSource } : {}),
+      });
+    const fresh = createTab(tab.connectionId, sources);
     const contextTab = {
-      ...createTab(connectionId, [
-        {
-          connectionId,
-          logGroup: event.logGroup,
-          ...(event.gcpSource ? { gcp: event.gcpSource, ...(event.gcpSource.kind === "kubernetes" ? { logStreams: [event.logStream] } : {}) } : { logStreams: [event.logStream] }),
-        },
-      ]),
-      title: `Context · ${contextRangeLabel(range)} · ${event.logStream.split("/").at(-1)}`,
+      ...fresh,
+      title: `Context · ${contextRangeLabel(range)} · ${tab.customTitle ?? tab.title}`,
       timePreset: "custom",
       customStart: new Date(bounds.startTime).toISOString(),
       customEnd: new Date(bounds.endTime).toISOString(),
+      // Same layout as the origin; only its filters are reset.
+      view: {
+        ...structuredClone(tab.view),
+        localSearch: fresh.view.localSearch,
+        level: fresh.view.level,
+        levels: fresh.view.levels,
+      },
     };
     setContextOrigins((previous) => ({
       ...previous,
@@ -814,6 +832,10 @@ export default function App() {
               <div className="explorer-host" hidden={sidePanel !== "gcp"}>
                 <GcpExplorer
                   active={workspace.sidebarVisible && sidePanel === "gcp"}
+                  sourceDetailsHeight={workspace.preferences.sourceDetailsHeight}
+                  onSourceDetailsHeightChange={(sourceDetailsHeight) =>
+                    dispatch({ type: "preferences/update", patch: { sourceDetailsHeight } })
+                  }
                   favorites={workspace.favorites}
                   onOpenFavorite={(favoriteId) => {
                     const result = projectFavoriteOpen(workspace, favoriteId);

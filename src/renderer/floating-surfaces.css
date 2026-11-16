@@ -20,3 +20,22 @@
 .highlight-sortable-item[data-dragging="true"] {
   box-shadow: var(--app-floating-shadow) !important;
 }
+
+/* Ctrl-drag copy indicator on the top-right corner of the dragged item. */
+.drag-copy-badge {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 10001;
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  box-sizing: border-box;
+  border-radius: 50%;
+  border: 2px solid var(--mantine-color-body);
+  background: var(--mantine-color-blue-6);
+  color: #fff;
+  pointer-events: none;
+  box-shadow: 0 1px 3px #0003;
+}

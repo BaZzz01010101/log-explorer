@@ -23,18 +23,33 @@ export function tabTitle(sources: LogSource[]): string {
     sources[0].logGroup.split("/").filter(Boolean).at(-1) ||
     sources[0].logGroup;
   const streams = sources[0].logStreams;
-  if (streams?.length === 1) return `${title} Â· ${shortStreamId(streams[0])}`;
-  return streams?.length ? `${title} Â· ${streams.length} streams` : title;
+  if (streams?.length === 1) return `${title} · ${shortStreamId(streams[0])}`;
+  return streams?.length ? `${title} · ${streams.length} streams` : title;
+}
+
+/** Google Cloud sources name themselves; their paths only repeat the kind. */
+function gcpLabel(source: LogSource): string | undefined {
+  const gcp = source.gcp;
+  if (gcp?.kind === "function") return gcp.functionName;
+  if (gcp?.kind === "kubernetes")
+    return [gcp.container, gcp.cluster].filter(Boolean).join(" · ") || undefined;
+  return undefined;
 }
 
 // Strip complete shared directory segments, never the shared start of a basename.
 export function sourceBadges(sources: LogSource[]) {
-  const names = [...new Set(sources.map((source) => source.logGroup))];
+  const names = [
+    ...new Set(
+      sources.filter((source) => !gcpLabel(source)).map((source) => source.logGroup),
+    ),
+  ];
   let prefix = names[0]?.slice(0, names[0].lastIndexOf("/") + 1) ?? "";
   while (prefix && names.some((name) => !name.startsWith(prefix)))
     prefix = prefix.slice(0, prefix.slice(0, -1).lastIndexOf("/") + 1);
   return sources.flatMap((source, sourceIndex) => {
-    const label = source.logGroup.slice(prefix.length) || source.logGroup;
+    const label =
+      gcpLabel(source) ??
+      (source.logGroup.slice(prefix.length) || source.logGroup);
     return source.logStreams?.length
       ? source.logStreams.map((stream) => ({
           sourceIndex,

@@ -501,7 +501,8 @@ test("source-strip drops cancel with Escape and query another region", async () 
   await page
     .getByRole("tab", { name: /^Context \u00b7/ })
     .click({ button: "middle" });
-  await expect(page.locator(".source-control")).toBeHidden();
+  // The source strip is always shown; a single-source view has one badge.
+  await expect(page.locator(".source-control:visible .source-badge")).toHaveCount(1);
 });
 
 test("maximized state is saved before an immediate minimize without showing verification windows", async () => {
@@ -746,7 +747,8 @@ test("Explorer drags reveal another region's single-source tab without losing th
   await expect(
     page.locator(`.workspace-tab[data-tab-id="${original}"]`).getByRole("tab"),
   ).toHaveAttribute("aria-selected", "true");
-  await expect(page.locator(".source-control")).toBeHidden();
+  // The source strip is always shown; a single-source view has one badge.
+  await expect(page.locator(".source-control:visible .source-badge")).toHaveCount(1);
   await hoverTarget();
   const strip = (await page.locator(".source-badges").boundingBox())!;
   await page.mouse.move(strip.x + strip.width / 2, strip.y + strip.height / 2, {
@@ -767,7 +769,8 @@ test("Explorer drags reveal another region's single-source tab without losing th
 
 test("Explorer groups and streams create and extend splits with exact drop previews", async () => {
   test.setTimeout(180000);
-  await expect(page.locator(".source-control")).toBeHidden();
+  // The source strip is always shown; a single-source view has one badge.
+  await expect(page.locator(".source-control:visible .source-badge")).toHaveCount(1);
   const originalLabel = await page
     .locator(".query-pane")
     .getAttribute("aria-label");
@@ -805,7 +808,10 @@ test("Explorer groups and streams create and extend splits with exact drop previ
   await expect(
     page.locator(".workspace-tab[data-entry-kind='split']"),
   ).toContainText("Mixed Sources");
-  await expect(page.locator(".source-control").first()).toBeHidden();
+  await expect(page.locator(".source-control").first()).toBeVisible();
+  await expect(
+    page.locator(".source-control").first().locator(".source-badge"),
+  ).toHaveCount(1);
   await page
     .getByRole("button", {
       name: "Expand /aws/lambda/media-pipeline",

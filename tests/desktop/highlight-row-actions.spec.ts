@@ -507,6 +507,22 @@ test("tree scrolling keeps a tall expanded profile draggable past the visible vi
         .evaluate((element) => element.scrollTop),
     )
     .toBeGreaterThan(0);
+  // Drop once the drag auto-scroll has settled, as a user would.
+  await expect
+    .poll(() =>
+      settings()
+        .locator(".highlight-tree-scroll")
+        .evaluate(
+          (element) =>
+            new Promise<boolean>((done) => {
+              const before = element.scrollTop;
+              requestAnimationFrame(() =>
+                requestAnimationFrame(() => done(element.scrollTop === before)),
+              );
+            }),
+        ),
+    )
+    .toBe(true);
   await page.keyboard.press("Space");
   await expect
     .poll(async () => (await savedProfiles()).map((profile) => profile.id))

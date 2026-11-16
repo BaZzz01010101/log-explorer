@@ -293,12 +293,12 @@ export function tabReorderPreview(
         ),
       );
       const borderHeight = Math.max(0, strip.offsetHeight - strip.clientHeight);
-      heights[kind] = Math.ceil(
-        Math.max(
-          bounds.height,
-          originalHeight + borderHeight,
-          packed.height + borderHeight,
-        ) - 0.01,
+      // Keep the measured (often fractional) height: rounding it up made the
+      // tab bar grow and the content below shift as a drag started.
+      heights[kind] = Math.max(
+        bounds.height,
+        originalHeight + borderHeight,
+        packed.height + borderHeight,
       );
     }
   }

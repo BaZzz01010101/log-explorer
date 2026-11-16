@@ -904,8 +904,9 @@ export function LogViewer({
    */
   const revealToken = useRef(0);
   const revealIndex = (index: number, attempt = 0, token = ++revealToken.current) => {
-    // A newer reveal (the next key press) supersedes a pending retry.
-    if (token !== revealToken.current) return;
+    // A newer reveal (the next key press) supersedes a pending retry, and a
+    // Recent scroll lock (set by Home/Up paging) owns the position once set.
+    if (token !== revealToken.current || (attempt > 0 && scrollLock.current)) return;
     const scroll = scrollRef.current;
     const element = scroll?.querySelector<HTMLElement>(`.virtual-event[data-index="${index}"]`);
     if (!scroll || !element) {

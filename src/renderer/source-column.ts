@@ -1,12 +1,19 @@
 import type { ColumnConfig } from "../shared/contracts";
 
-/** Existing entries, including an explicit hidden choice, always take precedence. */
+/**
+ * Mixed sources get a Source column; existing entries, including an explicit
+ * hidden choice, take precedence. A single-source view never shows it (every
+ * row would repeat the same source, e.g. after a second source was removed).
+ */
 export function sourceColumnConfig(
   columns: ColumnConfig[],
   multipleSources: boolean,
 ): ColumnConfig[] {
+  if (!multipleSources)
+    return columns.some((column) => column.path === "@source")
+      ? columns.filter((column) => column.path !== "@source")
+      : columns;
   if (
-    !multipleSources ||
     columns.some((column) => column.path === "@source") ||
     columns.length >= 80
   )

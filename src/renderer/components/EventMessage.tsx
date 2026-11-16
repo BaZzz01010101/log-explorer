@@ -406,6 +406,10 @@ export function JsonTree({
     onExpansionApplied?.();
   }, [expandRequest]);
   useEffect(() => {
+    // No result yet (highlights recomputing, e.g. after a tab switch) is not a
+    // changed query: recording it would re-expand a manually folded branch
+    // when the same matches return.
+    if (match === undefined && processedMatch.current) return;
     if (
       processedMatch.current?.paths === pathKey &&
       processedMatch.current.enabled === expandMatches

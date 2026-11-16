@@ -199,6 +199,8 @@ for (const mode of ["json", "table", "hybrid"] as const) {
   test(`scrollbar overview maps offscreen severity and highlights and preserves native scrolling in ${mode}`, async () => {
     const workspace = createWorkspace();
     workspace.tabs[0].filterPattern = "";
+    // Recent opens at the newest row; these checks need the last events offscreen.
+    workspace.tabs[0].timePreset = "1h";
     workspace.tabs[0].view.mode = mode;
     await load(workspace);
     const grid = page.getByRole("grid", { name: "Log events", exact: true });
