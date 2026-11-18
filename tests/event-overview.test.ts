@@ -1,29 +1,29 @@
 import { describe, expect, it } from "vitest";
-import { buildOverviewMarks } from "../src/renderer/event-overview";
+import {
+  QUICK_MAP_COLOR,
+  SELECTION_MAP_COLOR,
+  buildOverviewMarks,
+  rowMatchesMark,
+} from "../src/renderer/event-overview";
 import { highlightEvent } from "../src/renderer/highlight-engine";
 import type { HighlightProfile } from "../src/shared/highlights";
+
+const even = (count: number, size = 40) =>
+  Array.from({ length: count }, (_, index) => ({
+    start: index * size,
+    size,
+  }));
 
 describe("event scrollbar overview", () => {
   it("scales full event areas and joins three consecutive error rows without false gaps", () => {
     const rows = ["info", "error", "error", "error", "info"].map(
-      (level, index) => ({
-        id: String(index),
-        level,
-        colors: index > 0 && index < 4 ? ["#aa00cc"] : [],
-      }),
+      (level, index) => ({ id: String(index), level, colors: [] }),
     );
-    const marks = buildOverviewMarks(
-      rows,
-      rows.map((_, index) => ({ start: index * 40, size: 40 })),
-      200,
-      100,
-    );
-    expect(marks.severity).toMatchObject([{ index: 1, top: 20, height: 60 }]);
+    const marks = buildOverviewMarks(rows, even(5), 200, 100);
     expect(marks.highlights).toMatchObject([
-      { index: 1, top: 20, height: 60, colors: ["#aa00cc"] },
+      { index: 1, endIndex: 3, top: 20, height: 60, kind: "severity" },
     ]);
-    expect(marks.severity).toHaveLength(1);
-    expect(marks.highlights).toHaveLength(1);
+    expect(marks.quick).toEqual([]);
   });
   it("gives a taller event its proportional share and preserves real gaps between errors", () => {
     const rows = ["error", "info", "error"].map((level, index) => ({
@@ -41,10 +41,91 @@ describe("event scrollbar overview", () => {
       200,
       100,
     );
-    expect(marks.severity).toMatchObject([
+    expect(marks.highlights).toMatchObject([
       { top: 0, height: 20 },
       { top: 80, height: 20 },
     ]);
+  });
+  it("shows only custom highlight text matches in the left lane", () => {
+    const rows = [
+      { id: "quick-error", level: "error", colors: [], quick: true },
+      { id: "configured", level: "info", colors: ["#111111"] },
+      { id: "quick-info", level: "info", colors: [], quick: true },
+      { id: "plain", level: "info", colors: [] },
+    ];
+    const marks = buildOverviewMarks(rows, even(4), 160, 80);
+    expect(
+      marks.quick.map(({ id, kind, colors }) => ({ id, kind, colors })),
+    ).toEqual([
+      { id: "quick-error", kind: "quick", colors: [QUICK_MAP_COLOR] },
+      { id: "quick-info", kind: "quick", colors: [QUICK_MAP_COLOR] },
+    ]);
+    expect(
+      marks.highlights.map(({ id, kind, colors }) => ({ id, kind, colors })),
+    ).toEqual([
+      {
+        id: "quick-error",
+        kind: "severity",
+        colors: ["var(--mantine-color-red-6)"],
+      },
+      { id: "configured", kind: "highlight", colors: ["#111111"] },
+    ]);
+  });
+  it("marks selected rows in light blue beside highlight text matches in the left lane", () => {
+    const rows = [
+      { id: "selected", level: "info", colors: [], selected: true },
+      { id: "both", level: "info", colors: [], quick: true, selected: true },
+      { id: "quick", level: "info", colors: [], quick: true },
+    ];
+    const marks = buildOverviewMarks(rows, even(3), 120, 60);
+    expect(
+      marks.quick.map(({ id, kind, colors }) => ({ id, kind, colors })),
+    ).toEqual([
+      { id: "selected", kind: "selection", colors: [SELECTION_MAP_COLOR] },
+      {
+        id: "both",
+        kind: "quick",
+        colors: [QUICK_MAP_COLOR, SELECTION_MAP_COLOR],
+      },
+      { id: "quick", kind: "quick", colors: [QUICK_MAP_COLOR] },
+    ]);
+    expect(marks.highlights).toEqual([]);
+    // On a shared pixel both colors show, and each row matches its own color.
+    const shared = buildOverviewMarks(
+      [rows[0], rows[2]],
+      even(2, 1),
+      100,
+      1,
+    ).quick;
+    expect(shared).toMatchObject([
+      { kind: "quick", colors: [QUICK_MAP_COLOR, SELECTION_MAP_COLOR] },
+    ]);
+    expect(
+      [rows[0], rows[2]].every((row) => rowMatchesMark(row, shared[0])),
+    ).toBe(true);
+    expect(
+      rowMatchesMark({ id: "plain", level: "info", colors: [] }, shared[0]),
+    ).toBe(false);
+  });
+  it("lets configured highlights override fixed levels on a shared pixel in either order", () => {
+    for (const order of [
+      ["fatal", "configured"],
+      ["configured", "fatal"],
+    ]) {
+      const rows = order.map((id) =>
+        id === "fatal"
+          ? { id, level: "fatal", colors: [] }
+          : { id, level: "info", colors: ["#222222"] },
+      );
+      const marks = buildOverviewMarks(rows, even(2, 1), 100, 1);
+      expect(marks.highlights, order.join()).toMatchObject([
+        { id: "configured", kind: "highlight", colors: ["#222222"] },
+      ]);
+      const mark = marks.highlights[0];
+      expect(rows.filter((row) => rowMatchesMark(row, mark))).toEqual([
+        rows.find((row) => row.id === "configured"),
+      ]);
+    }
   });
   it("maps literal highlights in decoded values and formatted columns as they appear in the viewer", () => {
     const event = {
@@ -59,60 +140,69 @@ describe("event scrollbar overview", () => {
       ["1 KiB", [{ path: "/size", width: 100, format: "bytes" }]],
       ["2026", [{ path: "@timestamp", width: 100, format: "datetime" }]],
     ] as const) {
-      expect(
-        highlightEvent(event, [], "light", [...columns], "utc", true, needle)
-          .overview,
+      const result = highlightEvent(
+        event,
+        [],
+        "light",
+        [...columns],
+        "utc",
+        true,
         needle,
-      ).toContain("var(--mantine-color-yellow-5)");
+      );
+      expect(result.quickMatch, needle).toBe(true);
+      // Highlight text has its own lane, so it adds no Settings color.
+      expect(result.overview, needle).toEqual([]);
     }
   });
   it("places markers using measured event heights and keeps the most severe collision", () => {
     const rows = [
       { id: "warning", level: "warn", colors: [] },
-      { id: "error", level: "error", colors: ["#123456"] },
-      { id: "fatal", level: "fatal", colors: ["#abcdef"] },
+      { id: "error", level: "error", colors: [] },
+      { id: "fatal", level: "fatal", colors: [] },
+      { id: "configured", level: "info", colors: ["#123456"] },
       { id: "info", level: "info", colors: [] },
     ];
     const measurements = [
       { start: 0, size: 600 },
       { start: 600, size: 1 },
       { start: 601, size: 1 },
-      { start: 602, size: 398 },
+      { start: 700, size: 10 },
+      { start: 710, size: 290 },
     ];
     const marks = buildOverviewMarks(rows, measurements, 1000, 100);
     expect(
-      marks.severity.map(({ id, top, colors }) => ({ id, top, colors })),
+      marks.highlights.map(({ id, top, colors }) => ({ id, top, colors })),
     ).toEqual([
       { id: "warning", top: 0, colors: ["var(--mantine-color-yellow-6)"] },
       { id: "fatal", top: 60, colors: ["var(--mantine-color-pink-6)"] },
-    ]);
-    expect(marks.highlights).toMatchObject([
-      { top: 60, colors: ["#123456", "#abcdef"] },
+      { id: "configured", top: 70, colors: ["#123456"] },
     ]);
   });
   it("follows the displayed order, clamps the last marker, and handles empty layouts", () => {
     expect(buildOverviewMarks([], [], 0, 0)).toEqual({
-      severity: [],
+      quick: [],
       highlights: [],
     });
     const marks = buildOverviewMarks(
-      [{ id: "last", level: "error", colors: ["red"] }],
+      [{ id: "last", level: "error", colors: ["red"], quick: true }],
       [{ start: 990, size: 10 }],
       1000,
       100,
     );
-    expect(marks.highlights[0]).toMatchObject({
-      id: "last",
-      index: 0,
-      top: 99,
-      height: 1,
-    });
+    for (const lane of [marks.highlights, marks.quick])
+      expect(lane[0]).toMatchObject({
+        id: "last",
+        index: 0,
+        top: 99,
+        height: 1,
+      });
   });
   it("bounds dense marker output to the track and preserves distinct highlight colors", () => {
     const rows = Array.from({ length: 10000 }, (_, i) => ({
       id: String(i),
       level: "error",
       colors: [i % 2 ? "red" : "blue"],
+      quick: i % 3 === 0,
     }));
     const marks = buildOverviewMarks(
       rows,
@@ -120,12 +210,16 @@ describe("event scrollbar overview", () => {
       10000,
       90,
     );
-    expect(marks.severity).toHaveLength(1);
-    expect(marks.severity[0]).toMatchObject({ top: 0, height: 90 });
-    expect(marks.severity[0].endIndex).toBe(9999);
     expect(marks.highlights).toHaveLength(1);
-    expect(marks.highlights[0]).toMatchObject({ top: 0, height: 90 });
+    expect(marks.highlights[0]).toMatchObject({
+      top: 0,
+      height: 90,
+      kind: "highlight",
+      endIndex: 9999,
+    });
     expect(marks.highlights[0].colors).toEqual(["blue", "red"]);
+    expect(marks.quick).toHaveLength(1);
+    expect(marks.quick[0]).toMatchObject({ top: 0, height: 90 });
   });
   it("summarizes scoped structured/text rules with theme colors without building text spans", () => {
     const profiles: HighlightProfile[] = [

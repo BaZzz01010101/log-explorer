@@ -82,7 +82,8 @@ it("tracks field-specific filter evidence without marking every filtered event o
     "needle",
     filters,
   );
-  expect(manualOverview.overview).toEqual(["var(--mantine-color-yellow-5)"]);
+  expect(manualOverview.overview).toEqual([]);
+  expect(manualOverview.quickMatch).toBe(true);
   expect(overview.filters).toBeUndefined();
   expect(overview.paths).toBeUndefined();
   expect(overview.matchKey).toBeUndefined();

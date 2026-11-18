@@ -48,6 +48,7 @@ for (const theme of behaviorThemes)
         const testState = globalThis as typeof globalThis & {
           __gcpQueryCursors?: boolean[];
           __gcpScanCount?: number;
+          __gcpExpireNextQuery?: boolean;
         };
         testState.__gcpQueryCursors = [];
         testState.__gcpScanCount = 0;
@@ -62,6 +63,12 @@ for (const theme of behaviorThemes)
         ipcMain.removeHandler("explorer:query");
         ipcMain.handle("explorer:query", async (event, request) => {
           if (request.connection.mode !== "gcp") return;
+          if (testState.__gcpExpireNextQuery) {
+            testState.__gcpExpireNextQuery = false;
+            throw new Error(
+              "Google Cloud credentials expired. Sign in again and retry.",
+            );
+          }
           testState.__gcpQueryCursors!.push(Boolean(request.cursor));
           const events = Array.from(
             { length: request.cursor ? 1 : 101 },
@@ -278,12 +285,26 @@ for (const theme of behaviorThemes)
       await expect(
         explorer.getByRole("option", { name: "/gcp/functions/first" }),
       ).toHaveCount(0);
+      // Expired authorization in a view asks for sign-in instead of Retry,
+      // then reruns the query by itself.
+      await app.evaluate(() => {
+        (
+          globalThis as typeof globalThis & { __gcpExpireNextQuery?: boolean }
+        ).__gcpExpireNextQuery = true;
+      });
       await explorer
         .getByRole("option", { name: "/gcp/functions/later" })
         .click();
+      const expired = page
+        .getByRole("alert")
+        .filter({ hasText: "Your Google Cloud authorization has expired" });
+      await expect(expired).toBeVisible();
+      await expect(page.getByRole("button", { name: "Retry" })).toHaveCount(0);
+      await expired.getByRole("button", { name: "Sign in" }).click();
       await expect(
         page.getByText("Google event loaded", { exact: false }).first(),
       ).toBeVisible();
+      await expect(expired).toHaveCount(0);
       const grid = page.getByRole("grid", { name: "Log events" });
       await grid.focus();
       await page.keyboard.press("Control+Q");

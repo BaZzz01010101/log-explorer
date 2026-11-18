@@ -38,6 +38,8 @@ import { ServerFilterInput } from "./ServerFilterInput";
 import { DEFAULT_RECENT_SEARCHES_LIMIT } from "../../shared/query-history";
 import { InlineDeleteConfirmation } from "./InlineDeleteConfirmation";
 import { shortcutMatches } from "../../shared/shortcuts";
+import { GcpSignInAlert } from "./GcpSignInAlert";
+import { isGcpAuthorizationError } from "../gcp-errors";
 import "./sources.css";
 
 interface Props {
@@ -426,7 +428,15 @@ export function QueryPane({
           request; run the query to apply these settings.
         </Alert>
       )}
-      {runtime?.error && (
+      {runtime?.error &&
+      runtime.state !== "cancelled" &&
+      sourceConnections.some((connection) => connection.mode === "gcp") &&
+      isGcpAuthorizationError(runtime.error) ? (
+        <GcpSignInAlert
+          live={Boolean(runtime.liveState)}
+          onRetry={() => onRun(Boolean(runtime.liveState))}
+        />
+      ) : runtime?.error ? (
         <Alert
           color="red"
           title={
@@ -448,7 +458,7 @@ export function QueryPane({
             {runtime.liveState ? "Retry Live" : "Retry"}
           </Button>
         </Alert>
-      )}
+      ) : null}
       {runtime?.sampled && (
         <Alert color="yellow" p="xs" mx="xs">
           Live Tail omitted events. This view does not contain every matching

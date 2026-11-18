@@ -27,7 +27,22 @@ All paths are repository-relative. Line numbers refer to commit `254c569`. Confi
 
 **Process note:** background sub-reviewers were tried for the renderer and test areas, but they were cut off by usage limits and produced nothing. Every finding below comes from the lead auditor's own reading.
 
-**Unexamined areas and how to finish them:** the `workspace.ts` reducer (tab/split/closed-history invariants), `WorkspaceTabs.tsx` and the drag/drop systems, `LogViewer.tsx` virtualization and copy/export, the highlight and local-filter workers (regex timeouts), `TimeRangePicker`/`time-range.ts` (DST and timezone math), and the Settings editors. A follow-up should read these files in full, using the evidence standard of this document.
+**Unexamined areas and how to finish them:** the `workspace.ts` reducer (tab/split/closed-history invariants), `WorkspaceTabs.tsx` and the drag/drop systems, `LogViewer.tsx` virtualization and copy/export, the highlight and local-filter workers (regex timeouts), `TimeRangePicker`/`time-range.ts` (DST and timezone math), and the Settings editors. A follow-up should read these files in full, using the evidence standard of this document. *Done in the follow-up below.*
+
+### Follow-up coverage (version 0.1.106, 2026-11-17)
+
+Line numbers in this section and in AUD-020 refer to the 0.1.106 working tree.
+
+| Area | Depth | Result |
+|---|---|---|
+| Workspace reducer (`src/shared/workspace-reducer.ts`, 2,248 lines after the AUD-009 split) | Measured: a new seeded fuzz test (`tests/workspace-fuzz.test.ts`) drives 31 action kinds, including every drag/drop, split, detach, swap, merge and source-move action, and checks 15 invariants after each step. The invariants include schema validity, no view in two panes or splits, no dangling pane or split references, consistent layouts and active panes, and an unchanged tab strip and active entry after a save-and-reload round trip. A 400-run sample reached 8 combined splits, 11 panes and 34 views. | No violation. The earlier random test covered 11 actions and only schema validity. |
+| Tab/pane drag-and-drop (`WorkspaceTabs.tsx`, `PaneLayout.tsx`, `useColumnHeaderDrag.ts`, `tab-insertion.ts`, `resource-drag.ts`) | Targeted read of drag start/end/cancel, pointer capture, Escape and listener cleanup | No finding. Drags release capture and state on drop, cancel and Escape. Escape reaches dnd-kit before other surfaces. Files dropped from outside cannot navigate (`will-navigate` is prevented). |
+| `LogViewer.tsx` copy/export and virtualization caches | Targeted: export path end to end (`LogViewer.tsx:1150-1175`, `log-data.ts:574-623`, `index.ts:427-442`), copy limits, and growth of the per-event caches | **AUD-020.** Caches are bounded: the deserialization projections use a `WeakMap`, and the highlight cache is capped at 10,000 entries / 32 MB. |
+| Highlight and local-filter workers (`highlight.worker.ts`, `local-filter.worker.ts`, `group-regex*.ts`, `useLocalFilter.ts`, `useEventHighlights.ts`, `highlight-engine.ts`) | Full read of the workers and their hooks; targeted read of the engine | No finding. Every user regex runs in a terminable worker with a 2 s start and 500 ms per-batch limit. Pattern, message and batch sizes are capped. Zero-width matches advance by code point. |
+| Time-range / DST math (`time-range.ts`, `query-state.ts:52-138`, `TimeRangePicker.tsx`, `RangeCalendar.tsx`) | Full read of the math; targeted read of the UI | No finding. Nonexistent local DST times are rejected rather than rolled forward. An unchanged bound keeps its original offset in a repeated hour. Relative ranges are fixed durations. Calendar arithmetic is done in UTC on date strings. |
+| Settings editors (`Settings.tsx`, `PreferencesEditor.tsx`, `ShortcutsEditor.tsx`, `ProfileConnectionsEditor.tsx`, `RelativeTimeTemplatesEditor.tsx`, `HighlightItemDetails.tsx`) | Targeted: editor bounds compared with `workspaceSchema` and the highlight schema | No finding. `preferences/update` re-parses and clamps every patch (`workspace-reducer.ts:815-829`), so an editor cannot store a value the save validation rejects. Highlight patterns are capped at 500 characters in the input, the schema and the engine, with a visible error. |
+| Playwright desktop suite | Run in full | 470/470 with both themes (0.1.105); 377/377 in the default light-only mode (0.1.106, 3.6 min). |
+| Installer | Not run | The NSIS installer is per-user and assisted. Running it adds Start-menu, desktop-shortcut and uninstall entries, and its running-app check can close an open copy of the app, so it waits for the owner's approval. |
 
 ---
 
@@ -722,6 +737,33 @@ Unit tests for stream failure followed by reconnect with backfill and dedup, usi
 
 ---
 
+### AUD-020: CSV exports have no byte-order mark, so Excel garbles non-ASCII text
+
+**Metadata**
+- Severity: Low
+- Category: Correctness
+- Confidence: High confidence (code trace; Excel not run)
+- Effort: S
+- Files: `src/main/index.ts`, `src/shared/log-data.ts`, `src/renderer/components/LogViewer.tsx`
+
+**Problem**
+
+The export menu offers "CSV · visible columns, formula-safe" (`LogViewer.tsx:1467`), which is aimed at spreadsheets. `serializeEvents` builds the CSV text (`log-data.ts:590-612`), and the main process writes it as UTF-8 with no byte-order mark (`index.ts:427-442`). Excel for Windows opens a CSV without a BOM in the system code page rather than UTF-8.
+
+**Impact**
+
+Non-ASCII log content (names, accented text, CJK, emoji, `→`) appears garbled when the export is opened in Excel. The export file itself is correct, so other tools are unaffected.
+
+**Recommended solution**
+- When writing a `.csv` export, prefix the file with U+FEFF. JSON and JSONL stay unchanged.
+
+**Verification**
+- Export a CSV containing non-ASCII text: the file starts with `EF BB BF`, and Excel shows the text correctly.
+
+**Status:** fixed in 0.1.107. The main process adds the mark when writing CSV, so the renderer's CSV text and its tests are unchanged.
+
+---
+
 ## Considered and not reported
 
 | Note | Reason |
@@ -733,3 +775,8 @@ Unit tests for stream failure followed by reconnect with backfill and dedup, usi
 | `Entry.fromApiResponse_` (internal API of `@google-cloud/logging`, `gcp-live.ts:38`) | Real but minor upgrade risk; note for dependency updates. |
 | Windows `rename` EPERM on save | Not observed; surfaced to the user if it happens. |
 | `contracts.ts` vs `workspaceSchema` field drift | None today; the structural risk is in AUD-008. |
+| CSV formula guard also quotes negative numbers (`log-data.ts:606`) | Deliberate: OWASP's recommended guard. A leading `-` can start a formula, so `-5` exports as `'-5`. |
+| CSV/JSON export is serialized on the renderer thread | Bounded to 20 MB of text (`EXPORT_LIMIT`), behind an explicit menu action that shows an "exporting" state. |
+| Regex filters and highlights stop at 500 ms per batch of up to 100 events / 1 MB | Deliberate: a clear "paused" message names the rule to edit. A heavy but legitimate pattern on a slow machine can hit it. |
+| Calendar "today" is computed at render (`RangeCalendar.tsx:36`) | It can be stale only if the popover stays open across midnight. |
+| Drag-and-drop when the window loses focus mid-drag | Pointer capture keeps the release on this window, and dnd-kit cancels on visibility change; no stuck state was found. |

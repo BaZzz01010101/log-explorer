@@ -12,7 +12,7 @@ The main risks are elsewhere:
 - **Accumulated design debt:** two cloud providers with duplicated infrastructure, leftovers from the removed Insights feature, and 1,000–3,000-line central modules.
 - **Release process:** it lives outside version control, and the daily-use app runs from inside the build folder.
 
-**Findings by severity:** Critical 0 · High 2 · Medium 11 · Low 6 (19 total).
+**Findings by severity:** Critical 0 · High 2 · Medium 11 · Low 7 (20 total). AUD-020 comes from the 2026-11-17 follow-up that covered the remaining areas.
 
 **Most significant risks**
 1. Loss of the user's entire workspace when the file fails strict validation (AUD-001).
@@ -28,8 +28,9 @@ The main risks are elsewhere:
 **Coverage and limitations.**
 - **Read in full:** the main process, preload, shared contracts, and the query-job hook.
 - **Read in part:** the workspace state module (parsing only) and the App load/save path.
-- **Not audited in depth:** the workspace reducer (lines 780-3121), tab/pane drag-and-drop, most of `LogViewer.tsx`, the highlight and filter workers, time-range math, and the settings editors.
-- **Not run:** the Playwright desktop suite and the installer.
+- **Not audited in depth (first pass):** the workspace reducer (lines 780-3121), tab/pane drag-and-drop, most of `LogViewer.tsx`, the highlight and filter workers, time-range math, and the settings editors.
+- **Not run (first pass):** the Playwright desktop suite and the installer.
+- **Follow-up, 2026-11-17 (0.1.106):** all of the areas above were covered. The reducer was fuzzed across every layout action with save-and-reload checks, and the other areas were read. The desktop suite was run in full (470/470). One new finding: AUD-020. The installer run waits for the owner's approval, because it changes the machine's shortcuts and uninstall entries.
 
 See the coverage table in [FINDINGS.md](FINDINGS.md#audit-coverage).
 
@@ -56,3 +57,4 @@ See the coverage table in [FINDINGS.md](FINDINGS.md#audit-coverage).
 | AUD-019 | Low | Testing | GCP adapter has a test-only Live code path | Production Live reconnect logic is untested | S | Confirmed | [→](FINDINGS.md#aud-019-the-production-gcp-adapter-contains-a-separate-test-only-live-implementation) |
 | AUD-018 | Low | Reliability | No renderer crash or hang handling | Blank window; jobs keep running; 5-second close error | S | Needs verification | [→](FINDINGS.md#aud-018-no-handling-of-renderer-crashes-or-hangs) |
 | AUD-015 | Low | Performance | O(n) buffer rebuild per update; empty Live updates every second | CPU and GC pressure with large buffers and live views | M | Needs verification | [→](FINDINGS.md#aud-015-event-buffer-updates-do-on-work-per-batch-aws-live-emits-an-update-every-second-even-when-empty) |
+| AUD-020 | Low | Correctness | CSV exports have no byte-order mark | Excel garbles non-ASCII text in exported CSV files | S | High confidence | [→](FINDINGS.md#aud-020-csv-exports-have-no-byte-order-mark-so-excel-garbles-non-ascii-text) |

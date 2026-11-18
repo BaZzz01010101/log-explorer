@@ -33,6 +33,7 @@ export interface HighlightSpan {
 export interface EventHighlights {
   row: HighlightColors;
   quickMatch?: boolean;
+  /** Colors of the matching Settings highlights; highlight text is `quickMatch`. */
   overview?: string[];
   text: Record<string, HighlightSpan[]>;
   manual?: Record<string, { start: number; end: number }[]>;
@@ -314,7 +315,6 @@ export function highlightEvent(
     const rowColor = result.row.background || result.row.foreground;
     if (rowColor && !result.overview!.includes(rowColor))
       result.overview!.unshift(rowColor);
-    if (quickMatch) result.overview!.push("var(--mantine-color-yellow-5)");
     result.overview = [...new Set(result.overview)].slice(0, 4);
   }
   for (const spans of Object.values(result.text))

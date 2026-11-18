@@ -434,7 +434,10 @@ handle("explorer:export", async (content, extension) => {
     filters: [{ name: ext.toUpperCase(), extensions: [ext] }],
   });
   if (choice.canceled || !choice.filePath) return false;
-  await writeFile(choice.filePath, data, { encoding: "utf8", mode: 0o600 });
+  // Excel reads a CSV without a byte-order mark in the system code page, which
+  // garbles non-ASCII log text.
+  const text = ext === "csv" ? `﻿${data}` : data;
+  await writeFile(choice.filePath, text, { encoding: "utf8", mode: 0o600 });
   return true;
 });
 

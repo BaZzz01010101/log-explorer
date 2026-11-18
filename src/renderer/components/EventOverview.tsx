@@ -6,9 +6,12 @@ import {
   type RefObject,
 } from "react";
 import {
+  QUICK_MAP_COLOR,
+  SELECTION_MAP_COLOR,
   buildOverviewMarks,
-  type OverviewRow,
+  rowMatchesMark,
   type OverviewMark,
+  type OverviewRow,
 } from "../event-overview";
 import { createOverviewColorResolver } from "../overview-colors";
 
@@ -28,7 +31,13 @@ export function EventOverview({
   const overviewRef = useRef<HTMLDivElement>(null);
   const [palette, setPalette] = useState(new Map<string, string>());
   const colors = useMemo(
-    () => [...new Set(rows.flatMap((row) => row.colors))],
+    () => [
+      ...new Set([
+        QUICK_MAP_COLOR,
+        SELECTION_MAP_COLOR,
+        ...rows.flatMap((row) => row.colors),
+      ]),
+    ],
     [rows],
   );
   useLayoutEffect(() => {
@@ -62,8 +71,10 @@ export function EventOverview({
       });
     return () => observer.disconnect();
   }, [colors]);
-  const mapColor = (color: string, lane: "severity" | "highlights") =>
-    lane === "highlights" ? (palette.get(color) ?? color) : color;
+  // Highlight colors are strengthened for the narrow lanes; the fixed
+  // severity colors are already strong.
+  const mapColor = (color: string, mark: OverviewMark) =>
+    mark.kind === "severity" ? color : (palette.get(color) ?? color);
   const [geometry, setGeometry] = useState({ height: 0, total: 0, offset: 0 });
   useLayoutEffect(() => {
     const scroll = scrollRef.current;
@@ -102,22 +113,12 @@ export function EventOverview({
       ),
     [rows, measurements, geometry],
   );
-  const jump = (
-    mark: OverviewMark,
-    lane: "severity" | "highlights",
-    y: number,
-  ) => {
+  const jump = (mark: OverviewMark, y: number) => {
     let selected = mark.index,
       nearest = Infinity;
     for (let index = mark.index; index <= mark.endIndex; index++) {
       const row = rows[index];
-      if (
-        !row ||
-        (lane === "severity"
-          ? row.level !== mark.level
-          : !row.colors.some((color) => mark.colors.includes(color)))
-      )
-        continue;
+      if (!row || !rowMatchesMark(row, mark)) continue;
       const item = measurements[index];
       const from = item
         ? ((item.start + geometry.offset) / geometry.total) * geometry.height
@@ -152,14 +153,14 @@ export function EventOverview({
         event.stopPropagation();
       }}
     >
-      {(["severity", "highlights"] as const).map((lane) => (
+      {(["quick", "highlights"] as const).map((lane) => (
         <div
           key={lane}
           className={`event-overview-lane overview-${lane}`}
           data-tooltip={
-            lane === "severity"
-              ? "Warnings, errors and fatal events"
-              : "Highlighted events"
+            lane === "quick"
+              ? "Highlight text matches and selected events"
+              : "Highlights from Settings, warnings, errors and fatal events"
           }
           onClick={(event) => {
             if (!marks[lane].length) return;
@@ -171,7 +172,7 @@ export function EventOverview({
                 ? a
                 : b,
             );
-            jump(nearest, lane, y);
+            jump(nearest, y);
           }}
         >
           {marks[lane].map((mark) => (
@@ -184,21 +185,21 @@ export function EventOverview({
               data-event-index={mark.index}
               data-event-end-index={mark.endIndex}
               data-level={mark.level}
-              aria-label={`Jump to ${lane === "severity" ? mark.level.toUpperCase() : "highlighted"} event ${mark.index + 1}`}
-              data-tooltip={`${lane === "severity" ? mark.level.toUpperCase() : "Highlight"} · event ${mark.index + 1} · Click to jump`}
+              data-kind={mark.kind}
+              aria-label={`Jump to ${markLabel(mark).toLowerCase()} event ${mark.index + 1}`}
+              data-tooltip={`${markLabel(mark)} · event ${mark.index + 1} · Click to jump`}
               style={{
                 top: mark.top,
                 height: mark.height,
                 background:
                   mark.colors.length === 1
-                    ? mapColor(mark.colors[0], lane)
-                    : `linear-gradient(to right, ${mark.colors.flatMap((color, index) => [`${mapColor(color, lane)} ${(index * 100) / mark.colors.length}%`, `${mapColor(color, lane)} ${((index + 1) * 100) / mark.colors.length}%`]).join(", ")})`,
+                    ? mapColor(mark.colors[0], mark)
+                    : `linear-gradient(to right, ${mark.colors.flatMap((color, index) => [`${mapColor(color, mark)} ${(index * 100) / mark.colors.length}%`, `${mapColor(color, mark)} ${((index + 1) * 100) / mark.colors.length}%`]).join(", ")})`,
               }}
               onClick={(event) => {
                 event.stopPropagation();
                 jump(
                   mark,
-                  lane,
                   event.clientY -
                     event.currentTarget
                       .closest(".event-overview")!
@@ -211,4 +212,14 @@ export function EventOverview({
       ))}
     </div>
   );
+}
+
+function markLabel(mark: OverviewMark): string {
+  if (mark.kind === "quick")
+    return mark.colors.includes(SELECTION_MAP_COLOR)
+      ? "Highlight text, selected"
+      : "Highlight text";
+  if (mark.kind === "selection") return "Selected";
+  if (mark.kind === "highlight") return "Highlight";
+  return mark.level.toUpperCase();
 }

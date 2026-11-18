@@ -127,6 +127,7 @@ import { shortcutMatches } from "../../shared/shortcuts";
 import { clearEditControl } from "../scoped-edit-history";
 import { regexError } from "../../shared/highlights";
 import { EventOverview } from "./EventOverview";
+import { QUICK_HIGHLIGHT_COLOR } from "../event-overview";
 import { EventLoadingIndicator } from "./EventLoadingIndicator";
 import { SurroundingContextMenu } from "./SurroundingContextMenu";
 import type { ContextRange } from "../../shared/context-range";
@@ -927,6 +928,41 @@ export function LogViewer({
       scroll.scrollTop += Math.min(rowBottom - scroll.clientHeight, rowTop - header);
     else if (rowTop < header - 0.5) scroll.scrollTop += rowTop - header;
   };
+  /**
+   * Page jumps are computed from the virtualizer's row offsets, and rows above
+   * the destination are measured only after the jump renders them. Their
+   * heights can change again a moment later (highlights, decoded values), and
+   * while the view moves up the virtualizer deliberately skips compensating a
+   * re-measured row. The destination then drifts by a few pixels, and the next
+   * page key press only realigned it. Keep the destination edge aligned for a
+   * short while, until the user scrolls, clicks or presses another key.
+   */
+  const settlePage = (index: number, direction: "up" | "down") => {
+    const token = ++revealToken.current;
+    const started = performance.now();
+    const check = () => {
+      if (
+        token !== revealToken.current ||
+        scrollLock.current ||
+        userScroll.current.pointer ||
+        userScroll.current.inputAt > started ||
+        performance.now() - started > 700
+      )
+        return;
+      const scroll = scrollRef.current;
+      const element = scroll?.querySelector<HTMLElement>(`.virtual-event[data-index="${index}"]`);
+      if (scroll && element) {
+        const top = scroll.getBoundingClientRect().top;
+        const header = scroll.querySelector<HTMLElement>(".log-table-header")?.getBoundingClientRect().height ?? 0;
+        const bounds = element.getBoundingClientRect();
+        const delta = direction === "up" ? bounds.top - top - header : bounds.bottom - top - scroll.clientHeight;
+        // The first and last scroll positions cannot move further; the browser clamps.
+        if (Math.abs(delta) > 0.5) scroll.scrollTop += delta;
+      }
+      requestAnimationFrame(check);
+    };
+    requestAnimationFrame(check);
+  };
   const inspectedIndex = selection.index;
   useEffect(() => {
     if (!revealEvent) return;
@@ -983,15 +1019,19 @@ export function LogViewer({
     needle: highlightText,
     quick,
   });
-  const overviewRows = useMemo(
-    () =>
-      rows.map(({ original: row }) => ({
-        id: row.event.id,
-        level: row.level,
-        colors: overview.results.get(row.event.id)?.overview ?? [],
-      })),
-    [rows, overview.results],
-  );
+  const selectedSet = selection.selectedSet;
+  const overviewRows = useMemo(() => {
+    return rows.map(({ original: row }) => {
+        const result = overview.results.get(row.event.id);
+        return {
+          id: row.event.id,
+          level: row.level,
+          colors: result?.overview ?? [],
+          quick: Boolean(result?.quickMatch),
+          selected: selectedSet.has(row.event.id),
+        };
+      });
+  }, [rows, overview.results, selectedSet]);
   const pendingHighlightNavigation = useRef<{ id: string | null; direction: "next" | "previous"; needle: string } | null>(null);
   const navigateHighlight = (direction: "next" | "previous") => {
     const step = direction === "next" ? 1 : -1;
@@ -1287,6 +1327,13 @@ export function LogViewer({
                 if (!event.defaultPrevented && event.key === "Escape" && !event.nativeEvent.isComposing) {
                   event.preventDefault(); event.stopPropagation();
                   scrollRef.current?.focus({ preventScroll: true });
+                  return;
+                }
+                // Ctrl+Up/Down jump between highlighted events, as in the list,
+                // while the caret stays in the field for further editing.
+                if (!event.defaultPrevented && highlightText && (event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey && (event.key === "ArrowDown" || event.key === "ArrowUp") && !event.nativeEvent.isComposing) {
+                  event.preventDefault(); event.stopPropagation();
+                  navigateHighlight(event.key === "ArrowDown" ? "next" : "previous");
                   return;
                 }
                 if (!event.defaultPrevented && event.key === "Enter" && !event.nativeEvent.isComposing && !event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey) {
@@ -1673,6 +1720,7 @@ export function LogViewer({
                     onPauseLiveFollow?.();
                     scroll.scrollTop = Math.max(0, destination.scrollTop + offset);
                     selection.select(rows[destination.index]!.original.event.id, { range: event.shiftKey });
+                    settlePage(destination.index, event.key === "PageUp" ? "up" : "down");
                   }
                   // Fewer rows above than a page: the page reaches the first row.
                   if (event.key === "PageUp" && (destination?.index ?? selection.index) === 0) {
@@ -2062,7 +2110,10 @@ export function LogViewer({
                       const row = tableRow.original;
                       const expanded = expansion.isExpanded(row.event.id);
                       const highlight = highlighting.results.get(row.event.id);
-                      const marker = overview.results.get(row.event.id)?.overview?.[0];
+                      const overviewResult = overview.results.get(row.event.id);
+                      const marker =
+                        overviewResult?.overview?.[0] ??
+                        (overviewResult?.quickMatch ? QUICK_HIGHLIGHT_COLOR : undefined);
                       const highlightPending =
                         highlighting.active &&
                         !highlight &&

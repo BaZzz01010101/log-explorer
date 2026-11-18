@@ -214,9 +214,14 @@ const messageMarks = (origin: string) =>
   messageMap().locator(
     `.inspector-message-mark[data-match-origin="${origin}"]`,
   );
-const listMarks = () =>
+// List map: highlight text in the left lane, Settings highlights in the right.
+const quickMarks = () =>
+  page.locator('.event-overview .overview-quick [data-kind="quick"]').first();
+const profileMarks = () =>
   page
-    .locator(".event-overview .overview-highlights .event-overview-mark")
+    .locator(
+      '.event-overview .overview-highlights .event-overview-mark[data-kind="highlight"]',
+    )
     .first();
 
 async function requests() {
@@ -434,7 +439,8 @@ for (const theme of ["light", "dark"])
     await expect(
       inspector().locator('[data-highlight-origins="local"]').first(),
     ).toBeVisible();
-    await expect(listMarks()).toHaveCount(0);
+    await expect(quickMarks()).toHaveCount(0);
+    await expect(profileMarks()).toHaveCount(0);
     await expect(messageMarks("server").first()).toBeVisible();
     await expect(messageMarks("local").first()).toBeVisible();
     await page
@@ -444,7 +450,7 @@ for (const theme of ["light", "dark"])
       })
       .fill("manual-hit");
     await expect(messageMarks("manual").first()).toBeVisible();
-    await expect(listMarks()).toBeVisible();
+    await expect(quickMarks()).toBeVisible();
     const colors = await messageMap().evaluate((element) =>
       ["server", "local", "manual"].map(
         (origin) =>
@@ -468,7 +474,7 @@ const rgb = (hex: string) => {
 
 test("profile matches keep both list and inspector maps with theme colors", async () => {
   await load(structuredMessage());
-  await expect(listMarks()).toBeVisible();
+  await expect(profileMarks()).toBeVisible();
   await expect(messageMarks("profile").first()).toBeVisible();
   // Map marks use the rule's light-theme color (#99ddff), contrast-adjusted
   // against the map track like every overview color.

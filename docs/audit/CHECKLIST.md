@@ -26,13 +26,15 @@ Tick a box when the finding is fixed and verified. Order follows [README.md](REA
 - [x] AUD-019 — Test-only GCP Live code path *(polling loop removed; tail function injectable; tests run the production backfill/dedup path)*
 - [x] AUD-018 — No renderer crash/hang handling *(on crash: jobs shut down, Reload/Close dialog; on hang: Wait/Reload; not unit-tested — `index.ts` has no harness)*
 - [~] AUD-015 — O(n) buffer rebuild per update; empty Live updates *(partial: AWS Live drops empty updates that change nothing; incremental `mergeEvents` (persistent key set, sorted-batch merge) not done; not profiled)*
+- [x] AUD-020 — CSV exports have no byte-order mark *(main adds U+FEFF when writing `.csv`; JSON/JSONL unchanged)*
 
-## Not yet audited
-- [ ] Workspace reducer (`workspace.ts` lines 780–3121)
-- [ ] Tab/pane drag-and-drop
-- [ ] `LogViewer.tsx` internals (virtualization, copy/export)
-- [ ] Highlight and local-filter workers
-- [ ] Time-range / DST math
-- [ ] Settings editors
-- [ ] Playwright desktop suite run
-- [ ] Installer run
+
+## Follow-up coverage (2026-11-17, details in [FINDINGS.md](FINDINGS.md#follow-up-coverage-version-01106-2026-11-17))
+- [x] Workspace reducer *(fuzzed: `tests/workspace-fuzz.test.ts`, 31 action kinds, 15 invariants incl. save-and-reload; no violation)*
+- [x] Tab/pane drag-and-drop *(cleanup on drop/cancel/Escape, pointer capture, external drops; no finding)*
+- [x] `LogViewer.tsx` internals (virtualization, copy/export) *(AUD-020; caches bounded)*
+- [x] Highlight and local-filter workers *(terminable workers, time and size limits; no finding)*
+- [x] Time-range / DST math *(nonexistent DST times rejected, repeated hours keep their offset; no finding)*
+- [x] Settings editors *(reducer clamps preferences; limits match the schemas; no finding)*
+- [x] Playwright desktop suite run *(470/470 with both themes; 377/377 default)*
+- [ ] Installer run *(waits for the owner's approval: it adds shortcuts and an uninstall entry, and can close a running copy)*

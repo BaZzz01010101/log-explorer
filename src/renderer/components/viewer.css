@@ -163,7 +163,8 @@
   pointer-events: auto;
   cursor: pointer;
 }
-.overview-severity {
+/* Left: custom highlight text only. Right: Settings highlights and levels. */
+.overview-quick {
   left: 0;
 }
 .overview-highlights {

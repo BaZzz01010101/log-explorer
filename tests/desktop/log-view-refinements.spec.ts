@@ -426,7 +426,7 @@ for (const theme of ["light", "dark"]) {
 
   test(`${theme} maps strengthen pale colors without changing row paint or drawing lane borders`, async () => {
     const mark = page
-      .locator(".overview-highlights .event-overview-mark")
+      .locator('.overview-highlights .event-overview-mark[data-kind="highlight"]')
       .first();
     await expect(mark).toBeVisible();
     const color = await mark.evaluate(
@@ -458,7 +458,9 @@ for (const theme of ["light", "dark"]) {
     ).toBe(true);
     if (theme === "dark") {
       const luminance = await page
-        .locator(".overview-highlights .event-overview-mark")
+        .locator(
+          '.overview-highlights .event-overview-mark[data-kind="highlight"]',
+        )
         .first()
         .evaluate((el) => {
           const style = getComputedStyle(el);

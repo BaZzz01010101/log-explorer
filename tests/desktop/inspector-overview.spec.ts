@@ -297,7 +297,7 @@ test("three adjacent errors form one proportional band and each part navigates t
     })
     .fill("hotspot");
   const errors = page.locator(
-    '.overview-severity .event-overview-mark[data-level="error"]',
+    '.overview-highlights .event-overview-mark[data-kind="severity"][data-level="error"]',
   );
   await expect(errors).toHaveCount(2);
   const band = errors.first(),
@@ -353,7 +353,7 @@ test("three adjacent errors form one proportional band and each part navigates t
   );
   expect(redPixels.total).toBeGreaterThan(0);
   expect(redPixels.red / redPixels.total).toBeGreaterThan(0.95);
-  const highlights = page.locator(".overview-highlights .event-overview-mark");
+  const highlights = page.locator('.overview-quick [data-kind="quick"]');
   await expect(highlights).toHaveCount(1);
   expect(
     Math.abs((await highlights.boundingBox())!.height - bandBox.height),
@@ -375,7 +375,7 @@ test("three adjacent errors form one proportional band and each part navigates t
   await capture("proportional-three-error-band.png");
 });
 
-test("decoded and formatted highlights appear in the full right lane in both themes", async () => {
+test("decoded and formatted highlight text appears in the full left lane in both themes", async () => {
   await page.getByTestId("run-query").click();
   await expect.poll(async () => (await requests()).length).toBe(1);
   const events: LogEvent[] = Array.from({ length: 40 }, (_, index) => ({
@@ -402,8 +402,12 @@ test("decoded and formatted highlights appear in the full right lane in both the
         exact: true,
       })
       .fill("hotspot");
-    const marker = page.locator(".overview-highlights .event-overview-mark");
+    const marker = page.locator('.overview-quick [data-kind="quick"]');
     await expect(marker).toHaveCount(1);
+    // Every event is INFO with no Settings highlight, so the right lane is empty.
+    await expect(
+      page.locator(".overview-highlights .event-overview-mark"),
+    ).toHaveCount(0);
     const box = (await marker.boundingBox())!;
     expect(box.width).toBe(5);
     const hit = await marker.evaluate((element) => {
@@ -428,7 +432,7 @@ test("decoded and formatted highlights appear in the full right lane in both the
         .locator('.virtual-event[data-event-id="decoded-15"] mark')
         .first(),
     ).toBeVisible();
-    await capture(`right-highlight-${theme}.png`);
+    await capture(`left-highlight-${theme}.png`);
     await page
       .getByRole("textbox", {
         name: "Highlight text in loaded events",

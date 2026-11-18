@@ -120,6 +120,8 @@ export function useEventSelection(
   return {
     selectedId,
     selectedIds: ids.filter((id) => selected.has(id)),
+    /** The selection state itself; stable until the selection changes. */
+    selectedSet: selected as ReadonlySet<string>,
     opened,
     index,
     select,

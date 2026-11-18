@@ -231,11 +231,98 @@ test("quick highlight navigation and markers follow matching messages", async ()
   await expect(grid.locator('[data-current="true"]')).toHaveAttribute('data-event-id', 'highlight-3');
   await page.keyboard.press('Control+ArrowUp');
   await expect(grid.locator('[data-current="true"]')).toHaveAttribute('data-event-id', 'highlight-1');
+  // The same keys work while editing the highlight text, which keeps focus.
+  await field.focus();
+  await page.keyboard.press('Control+ArrowDown');
+  await expect(grid.locator('[data-current="true"]')).toHaveAttribute('data-event-id', 'highlight-3');
+  await expect(field).toBeFocused();
+  await page.keyboard.press('Control+ArrowUp');
+  await expect(grid.locator('[data-current="true"]')).toHaveAttribute('data-event-id', 'highlight-1');
+  await expect(field).toBeFocused();
+  await expect(field).toHaveValue('needle');
   await page.locator('.viewer-mode-control').getByText('Hybrid', { exact: true }).click();
   await expect(grid.locator('[data-event-id="highlight-1"] .log-cell.has-highlight-marker')).toHaveCount(1);
   await page.locator('.viewer-mode-control').getByText('JSON', { exact: true }).click();
   await expect(grid.locator('[data-event-id="highlight-1"].has-highlight-marker')).toHaveCount(1);
 });
+
+for (const mode of ["Table", "JSON"])
+  test(`${mode} PageUp aligns rows of uneven, not yet measured height on the first press`, async () => {
+    await page.getByTestId("run-query").click();
+    await expect.poll(async () => (await requests()).length).toBe(1);
+    // Rows far above the bottom have never rendered, so their offsets are
+    // estimates until a page jump renders and measures them.
+    const events: LogEvent[] = Array.from({ length: 300 }, (_, index) => ({
+      id: `page-${index}`,
+      timestamp: 1000 + index,
+      message: JSON.stringify(
+        Object.fromEntries(
+          Array.from({ length: 1 + ((index * 7) % 9) }, (_, field) => [
+            `field${field}`,
+            field % 3 ? `value ${index}` : "line one\nline two\nline three",
+          ]),
+        ),
+      ),
+      logGroup: "/aws/lambda/orders-api",
+      logStream: "stream",
+    }));
+    await send(0, { state: "complete", events, replace: true }, true);
+    await page
+      .locator(".viewer-mode-control")
+      .getByText(mode, { exact: true })
+      .click();
+    if (mode === "Table")
+      await page.getByRole("button", { name: "Toggle line wrap" }).click();
+    const grid = viewer();
+    await grid.focus();
+    await page.keyboard.press("End");
+    await expect(grid.locator('[data-current="true"]')).toHaveAttribute(
+      "data-event-id",
+      "page-299",
+    );
+    const offset = () =>
+      grid.evaluate((element) => {
+        const current = element.querySelector('[data-current="true"]')!;
+        const header =
+          element.querySelector(".log-table-header")?.getBoundingClientRect()
+            .height ?? 0;
+        return (
+          current.getBoundingClientRect().top -
+          element.getBoundingClientRect().top -
+          header
+        );
+      });
+    // The first press selects the top visible row; each later press pages.
+    for (let press = 0; press < 8; press++) {
+      const before = await grid.evaluate((element) => element.scrollTop);
+      await page.keyboard.press("PageUp");
+      // A rendered row above the destination grows a moment later, as when
+      // its highlights or decoded values arrive. The virtualizer does not
+      // compensate a re-measured row while the view moves up.
+      await grid.evaluate((element) => {
+        const current = Number(
+          element.querySelector<HTMLElement>('[data-current="true"]')!.dataset
+            .index,
+        );
+        const above = element.querySelector<HTMLElement>(
+          `.virtual-event[data-index="${current - 2}"]`,
+        );
+        const late = document.createElement("div");
+        late.style.height = "37px";
+        above?.append(late);
+      });
+      await expect
+        .poll(offset, { message: `press ${press + 1}` })
+        .toBeCloseTo(0, 0);
+      // It stays aligned once the newly shown rows are measured.
+      await page.waitForTimeout(150);
+      expect(Math.abs(await offset()), `press ${press + 1}`).toBeLessThanOrEqual(1);
+      if (press > 0)
+        expect(
+          await grid.evaluate((element) => element.scrollTop),
+        ).toBeLessThan(before - 20);
+    }
+  });
 
 test("Recent selects the newest row during initial chunks and preserves the selected row when older events arrive", async () => {
   await page.getByTestId("run-query").click();

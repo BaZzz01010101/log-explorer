@@ -8,7 +8,16 @@ export function gcpErrorMessage(failure: unknown): string {
 }
 
 export function isGcpAuthorizationError(message: string): boolean {
-  return /could not obtain a google cloud access token|google cloud credentials expired/i.test(
+  return /could not obtain a google cloud access token|google cloud credentials expired|UNAUTHENTICATED|invalid authentication credentials/i.test(
     message,
   );
+}
+
+/** Announced after a successful Google Cloud sign-in from anywhere in the app. */
+export const GCP_SIGNED_IN_EVENT = "explorer:gcp-signed-in";
+
+/** Signs in through the Google Cloud CLI, then lets waiting views retry. */
+export async function signInToGoogleCloud(): Promise<void> {
+  await window.explorer.gcpSignIn();
+  window.dispatchEvent(new Event(GCP_SIGNED_IN_EVENT));
 }

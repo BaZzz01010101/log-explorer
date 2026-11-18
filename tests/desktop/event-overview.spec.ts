@@ -95,7 +95,9 @@ test("profile overview follows theme colors, sorting and local filtering without
     ];
     await load(workspace);
     const grid = page.getByRole("grid", { name: "Log events", exact: true });
-    const marker = page.locator(".overview-highlights .event-overview-mark");
+    const marker = page.locator(
+      '.overview-highlights .event-overview-mark[data-kind="highlight"]',
+    );
     await expect(marker).toHaveCount(1);
     const id = (await marker.getAttribute("data-event-id"))!;
     const before = await marker.getAttribute("data-event-index");
@@ -122,7 +124,10 @@ test("profile overview follows theme colors, sorting and local filtering without
     await expect(grid).toHaveAttribute("aria-rowcount", "1");
     await expect(marker).toHaveAttribute("data-event-index", "0");
     await expect(
-      page.locator(".overview-severity .event-overview-mark"),
+      page.locator('.overview-highlights [data-kind="severity"]'),
+    ).toHaveCount(0);
+    await expect(
+      page.locator('.overview-quick [data-kind="quick"]'),
     ).toHaveCount(0);
     await capture(`overview-profile-${theme}.png`);
     expect(
@@ -204,11 +209,12 @@ for (const mode of ["json", "table", "hybrid"] as const) {
       name: "Event scrollbar overview",
       exact: true,
     });
+    // Right lane: Settings highlights and levels. Left lane: highlight text.
     const severity = overview.locator(
-      ".overview-severity .event-overview-mark",
+      '.overview-highlights .event-overview-mark[data-kind="severity"]',
     );
     const highlights = overview.locator(
-      ".overview-highlights .event-overview-mark",
+      '.overview-quick .event-overview-mark[data-kind="quick"]',
     );
     await expect(severity.first()).toBeVisible();
     await expect(highlights).toHaveCount(0);
@@ -218,16 +224,29 @@ for (const mode of ["json", "table", "hybrid"] as const) {
       (el) => (el as HTMLElement).offsetWidth - el.clientWidth,
     );
     expect(width).toBe(20);
-    expect(await severity.locator('[data-level="info"]').count()).toBe(0);
+    expect(
+      await overview
+        .locator('.overview-highlights .event-overview-mark[data-level="info"]')
+        .count(),
+    ).toBe(0);
     const highlightInput = page.getByRole("textbox", {
       name: "Highlight text in loaded events",
       exact: true,
     });
     await highlightInput.fill("Payment");
     await expect(highlights.first()).toBeVisible();
-    const leftBox = (await severity.first().boundingBox())!,
-      rightBox = (await highlights.first().boundingBox())!;
-    expect(rightBox.x).toBeGreaterThan(leftBox.x);
+    // Highlight text marks only the left lane; the right lane keeps levels.
+    await expect(
+      overview.locator('.overview-highlights [data-kind="quick"]'),
+    ).toHaveCount(0);
+    await expect(
+      overview.locator(
+        '.overview-quick .event-overview-mark:not([data-kind="quick"]):not([data-kind="selection"])',
+      ),
+    ).toHaveCount(0);
+    const quickBox = (await highlights.first().boundingBox())!,
+      levelBox = (await severity.first().boundingBox())!;
+    expect(levelBox.x).toBeGreaterThan(quickBox.x);
     const last = highlights.last();
     const id = (await last.getAttribute("data-event-id"))!;
     await expect(grid.locator(`[data-event-id='${id}']`)).toHaveCount(0);
@@ -264,6 +283,17 @@ for (const mode of ["json", "table", "hybrid"] as const) {
       .getByRole("button", { name: "Clear text highlight", exact: true })
       .click();
     await expect(highlights).toHaveCount(0);
+    // The selected event stays marked in light blue in the left lane.
+    const selected = overview.locator(
+      '.overview-quick [data-kind="selection"]',
+    );
+    await expect(selected).toHaveCount(1);
+    const blue = await selected.evaluate(
+      (element) => getComputedStyle(element).backgroundColor,
+    );
+    const [red, green, blueChannel] = blue.match(/\d+/g)!.map(Number);
+    expect(blueChannel).toBeGreaterThan(red);
+    expect(blueChannel).toBeGreaterThan(green);
     await page
       .getByRole("textbox", { name: "Local filter loaded events", exact: true })
       .fill("no-such-event-overview-xyz");

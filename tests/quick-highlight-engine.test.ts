@@ -93,22 +93,18 @@ describe("quick highlight matching", () => {
     ).toEqual([{ start: 1, end: 10 }]);
     expect(
       run("^FAILED$", { regex: true, caseSensitive: true }, "FAILED", true)
-        .overview,
-    ).toEqual(["var(--mantine-color-yellow-5)"]);
+        .quickMatch,
+    ).toBe(true);
     expect(
       run("^FAILED$", { regex: true, caseSensitive: true }, "failed", true)
-        .overview,
-    ).toEqual([]);
-    expect(run("\\d+", { regex: true }, message, true).overview).toEqual([
-      "var(--mantine-color-yellow-5)",
-    ]);
+        .quickMatch,
+    ).toBe(false);
+    expect(run("\\d+", { regex: true }, message, true).quickMatch).toBe(true);
   });
 
   it("matches decoded displayed fields for overview when serialized text does not match", () => {
     const message = '{"value":"\\u0046AILED"}';
-    expect(run("FAILED", { regex: true }, message, true).overview).toEqual([
-      "var(--mantine-color-yellow-5)",
-    ]);
+    expect(run("FAILED", { regex: true }, message, true).quickMatch).toBe(true);
     expect(run("FAILED", { regex: true }, message).paths?.["/value"]).toEqual([
       "manual",
     ]);

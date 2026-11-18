@@ -26,7 +26,11 @@ import type {
 import { collectGcpPages } from "../gcp-pagination";
 import { discoverGcpSources } from "../gcp-source-scan";
 import { matchGroupNames } from "../group-regex";
-import { gcpErrorMessage, isGcpAuthorizationError } from "../gcp-errors";
+import {
+  gcpErrorMessage,
+  isGcpAuthorizationError,
+  signInToGoogleCloud,
+} from "../gcp-errors";
 import { shortcutMatches } from "../../shared/shortcuts";
 import { Tooltip } from "./AppTooltip";
 import { Menu } from "./AppMenu";
@@ -324,7 +328,7 @@ export function GcpExplorer({
     setAuthError("");
     setProjectError("");
     try {
-      await window.explorer.gcpSignIn();
+      await signInToGoogleCloud();
       setAuthorizationRequired(false);
       setProjectError("");
       setError("");
