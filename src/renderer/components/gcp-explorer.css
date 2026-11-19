@@ -31,17 +31,19 @@
 }
 .gcp-log-row {
   width: 100%;
-  border: 0;
-  background: transparent;
-  color: inherit;
-  text-align: left;
-  cursor: pointer;
 }
-.gcp-log-row svg {
+.gcp-log-row[data-inspected="true"]:not([aria-selected="true"]) {
+  background: color-mix(in srgb, var(--mantine-color-blue-5) 6%, transparent);
+}
+.gcp-log-label {
+  align-self: stretch;
+  font-size: inherit;
+}
+.gcp-log-label svg {
   flex: 0 0 auto;
   color: var(--muted);
 }
-.gcp-log-row span {
+.gcp-log-label span {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

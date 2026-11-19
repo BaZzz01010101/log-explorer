@@ -89,3 +89,14 @@
 .favorite-delete-trigger {
   color: var(--mantine-color-red-text);
 }
+
+/* Reordering: a line marks where the dragged favorite lands. */
+.saved-view-favorite-row.is-drop-before {
+  box-shadow: inset 0 2px 0 var(--mantine-color-blue-5);
+}
+.favorite-views-list.is-drop-end {
+  box-shadow: inset 0 -2px 0 var(--mantine-color-blue-5);
+}
+.saved-view-favorite-row.is-reordering {
+  opacity: 0.55;
+}

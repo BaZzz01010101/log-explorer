@@ -125,7 +125,7 @@ export function createLogService(
       throw new Error("Offline fixtures are not available in this build.");
     if (connection.mode === "aws" && !options.allowAws())
       throw new Error(
-        "AWS access is disabled. Enable it explicitly in a packaged application.",
+        "AWS access is disabled. It is available in the packaged application and npm run dev, not in test runs.",
       );
     if (connection.mode === "gcp" && options.allowGcp && !options.allowGcp())
       throw new Error("Google Cloud access is disabled in verification mode.");

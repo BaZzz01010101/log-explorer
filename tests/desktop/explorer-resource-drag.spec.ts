@@ -151,18 +151,21 @@ test("Google Cloud sources drag into tabs, view sources, splits and Favorites", 
     await page.getByRole("option", { name: "Demo (demo-123)" }).click();
     const orders = explorer.getByRole("option", { name: "/gcp/functions/orders" });
     const billing = explorer.getByRole("option", { name: "/gcp/functions/billing" });
+    // Rows start with a selection checkbox; drags start on the name.
+    const ordersLabel = orders.locator(".gcp-log-label");
+    const billingLabel = billing.locator(".gcp-log-label");
     await expect(orders).toBeVisible();
     const tabs = page.locator(".workspace-tab");
     const initialTabs = await tabs.count();
 
     // Favorites: saved without opening a view.
     const favorites = explorer.getByLabel("Favorite views");
-    await dropOnFavorites(page, orders, favorites);
+    await dropOnFavorites(page, ordersLabel, favorites);
     await expect(favorites.locator(".saved-view-favorite")).toHaveCount(1);
     await expect(tabs).toHaveCount(initialTabs);
 
     // Tab strip: a new tab at the end of the strip.
-    await startDrag(page, orders);
+    await startDrag(page, ordersLabel);
     await moveTo(page, page.locator(".workspace-tab-list").first(), 0.98);
     await expect(page.locator("[data-resource-tab-insertion]")).toBeVisible();
     await page.mouse.up();
@@ -171,7 +174,7 @@ test("Google Cloud sources drag into tabs, view sources, splits and Favorites", 
     await expect(page.getByText("Google event from /gcp/functions/orders").first()).toBeVisible();
 
     // View sources: the strip appears during the drag and accepts the source.
-    await startDrag(page, billing);
+    await startDrag(page, billingLabel);
     const strip = page.locator(".source-badges").first();
     await expect(strip).toBeVisible();
     await moveTo(page, strip);
@@ -182,7 +185,7 @@ test("Google Cloud sources drag into tabs, view sources, splits and Favorites", 
 
     // Split: dropping near a pane edge opens a split pane.
     await expect(page.locator(".workspace-pane")).toHaveCount(1);
-    await startDrag(page, billing);
+    await startDrag(page, billingLabel);
     await moveTo(page, page.locator("[data-pane-drop-target]").first(), 0.5, 0.97);
     await expect(page.locator('[data-resource-split-preview="bottom"]')).toBeVisible();
     await page.mouse.up();

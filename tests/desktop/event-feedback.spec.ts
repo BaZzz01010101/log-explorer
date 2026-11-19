@@ -565,3 +565,54 @@ test("Recent shows the older-page spinner below the header and keeps the existin
   await expect(indicator).toHaveCount(0);
   await expect(oldFirst).toBeVisible();
 });
+
+test("clearing the local filter scrolls back to the rows that were shown while filtered", async () => {
+  await page.getByTestId("run-query").click();
+  await expect.poll(async () => (await requests()).length).toBe(1);
+  const events: LogEvent[] = Array.from({ length: 300 }, (_, index) => ({
+    id: `row-${index}`,
+    timestamp: 1000 + index,
+    message: `${index >= 200 && index < 206 ? "cluster " : ""}${index % 10 === 0 ? "needle " : ""}message ${index}`,
+    logGroup: "/aws/lambda/orders-api",
+    logStream: "stream",
+  }));
+  await send(0, { state: "complete", events, replace: true }, true);
+  const filter = page.getByRole("textbox", { name: "Local filter loaded events", exact: true });
+  const clear = page.getByRole("button", { name: "Clear local search" });
+  const row = (id: string) => viewer().locator(`.virtual-event[data-event-id="${id}"]`);
+  /** True when the row is fully inside the scroll area, below the sticky header. */
+  const shown = (id: string) =>
+    page.evaluate((id) => {
+      const scroll = document.querySelector<HTMLElement>(".viewer-scroll")!;
+      const element = scroll.querySelector(`.virtual-event[data-event-id="${id}"]`);
+      if (!element) return false;
+      const header = scroll.querySelector(".log-table-header")?.getBoundingClientRect().height ?? 0;
+      const box = scroll.getBoundingClientRect();
+      const bounds = element.getBoundingClientRect();
+      return bounds.top >= box.top + header - 1 && bounds.bottom <= box.top + scroll.clientHeight + 1;
+    }, id);
+
+  // Neighbouring matches fit in the view: all of them come back into view.
+  await filter.fill("cluster");
+  await expect(viewer().locator(".virtual-event")).toHaveCount(6);
+  await row("row-202").click({ position: { x: 140, y: 10 } });
+  await clear.click();
+  await expect(viewer().locator(".virtual-event").nth(10)).toBeAttached();
+  await expect
+    .poll(async () => {
+      for (let index = 200; index < 206; index++) if (!(await shown(`row-${index}`))) return false;
+      return true;
+    })
+    .toBe(true);
+
+  // Spread matches do not fit: the selected row stays visible, with as many
+  // of the filtered rows around it as fit.
+  await filter.fill("needle");
+  await expect(row("row-150")).toBeAttached();
+  await row("row-150").scrollIntoViewIfNeeded();
+  await row("row-150").click({ position: { x: 140, y: 10 } });
+  await clear.click();
+  await expect.poll(() => shown("row-150")).toBe(true);
+  expect(await page.locator(".viewer-scroll").evaluate((node) => node.scrollTop)).toBeGreaterThan(0);
+  expect((await shown("row-140")) || (await shown("row-160"))).toBe(true);
+});

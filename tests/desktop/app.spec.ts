@@ -168,7 +168,7 @@ test("desktop vertical slice stays isolated and supports investigation", async (
   );
   await expect(
     page.evaluate(() => window.explorer.enableAws(true)),
-  ).rejects.toThrow(/development/);
+  ).rejects.toThrow(/disabled in test runs/);
   expect(await page.evaluate(() => window.explorer.profiles())).toEqual([]);
   await input(page.getByLabel("CloudWatch filter pattern"), "Payment");
   await expect(

@@ -235,12 +235,13 @@ export function projectResourceFavorite(
 ): { workspace: Workspace; error?: string } {
   const state = modelState(input);
   let staged = state;
-  const connection = payload.connection;
-  if (
-    connection?.id === payload.connectionId &&
-    !state.connections.some((item) => item.id === connection.id)
-  ) {
-    if (state.connections.length >= 50)
+  const missing = (payload.connections ?? []).filter(
+    (connection, index, all) =>
+      all.findIndex((item) => item.id === connection.id) === index &&
+      !state.connections.some((item) => item.id === connection.id),
+  );
+  if (missing.length) {
+    if (state.connections.length + missing.length > 50)
       return {
         workspace: input,
         error:
@@ -248,7 +249,7 @@ export function projectResourceFavorite(
       };
     staged = workspaceReducer(state, {
       type: "connections/set",
-      connections: [...state.connections, connection],
+      connections: [...state.connections, ...missing],
     });
   }
   const opened = projectResourceAction(staged, payload, "new-multisource");
@@ -1880,6 +1881,22 @@ export function workspaceReducer(
           favorite.id === action.favoriteId ? { ...favorite, title } : favorite,
         ),
       };
+    }
+    case "favorites/move": {
+      const moving = state.favorites.find(
+        (favorite) => favorite.id === action.favoriteId,
+      );
+      if (!moving || action.beforeFavoriteId === moving.id) return input;
+      const rest = state.favorites.filter((favorite) => favorite !== moving);
+      const at =
+        action.beforeFavoriteId === null
+          ? rest.length
+          : rest.findIndex((favorite) => favorite.id === action.beforeFavoriteId);
+      if (at < 0) return input;
+      const favorites = [...rest.slice(0, at), moving, ...rest.slice(at)];
+      return favorites.every((favorite, index) => favorite === state.favorites[index])
+        ? input
+        : { ...state, favorites };
     }
     case "favorites/remove":
       return {

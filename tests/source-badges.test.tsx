@@ -126,7 +126,7 @@ it("adds regional streams through the strip, removes one badge and ignores dupli
   ).toBeFalsy();
   expect(
     renderer.root
-      .findByProps({ className: "source-strip-label" })
+      .findByProps({ className: "source-strip-count" })
       .children.join(""),
   ).toBe("2 Sources");
   change.mockClear();

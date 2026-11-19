@@ -98,8 +98,9 @@ export function ResourceDragLabel({
             cleanup.current();
             // Sources joining an open view need their connection in the
             // workspace; a favorite captures the connection itself.
-            if (wasDragging && drop && destination?.matches(".source-badges") && payload.connection)
-              window.dispatchEvent(new CustomEvent(RESOURCE_CONNECTION, { detail: payload.connection }));
+            if (wasDragging && drop && destination?.matches(".source-badges") )
+              for (const connection of payload.connections ?? [])
+                window.dispatchEvent(new CustomEvent(RESOURCE_CONNECTION, { detail: connection }));
             if (wasDragging && drop && destination)
               destination.dispatchEvent(
                 new CustomEvent(SOURCE_DROP_EVENT, { detail: payload }),

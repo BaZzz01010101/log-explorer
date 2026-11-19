@@ -159,6 +159,8 @@ export interface ViewConfig {
   localSearchCaseSensitive?: boolean;
   level: string;
   levels?: string[];
+  /** Source badge keys (`sourceBadgeKey`) whose events the view hides locally. */
+  hiddenSources?: string[];
   wrap: boolean;
   sort?: { path: string; desc: boolean };
 }

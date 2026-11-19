@@ -377,14 +377,26 @@ export default function App() {
     if (!id) gcpConnectionIds.current.set(key, (id = `gcp-${crypto.randomUUID()}`));
     return { connection: { id, name: `Google Cloud · ${source.region}`, profile: identity.configuration, region: source.region, mode: "gcp", gcpIdentity: { ...identity } }, created: true };
   };
-  const gcpDragPayload = (source: GcpSource, identity: GcpIdentity): ResourcePayload | undefined => {
+  /** Each source keeps its region's connection; `connections` lists the ones still to register. */
+  const gcpPayload = (sources: GcpSource[], identity: GcpIdentity): ResourcePayload => {
+    const created = new Map<string, Connection>();
+    const items = sources.map((source) => {
+      const { connection, created: isNew } = gcpConnectionFor(source, identity);
+      if (isNew) created.set(connection.id, connection);
+      return { ...gcpResourceToLogSource(source), connectionId: connection.id };
+    });
+    if (!items.length) throw new Error("Select a Google Cloud source.");
+    return { connectionId: items[0].connectionId, sources: items, ...(created.size ? { connections: [...created.values()] } : {}) };
+  };
+  const gcpDragPayload = (sources: GcpSource[], identity: GcpIdentity): ResourcePayload | undefined => {
     try {
-      const { connection, created } = gcpConnectionFor(source, identity);
-      return { connectionId: connection.id, sources: [gcpResourceToLogSource(source)], ...(created ? { connection } : {}) };
+      return gcpPayload(sources, identity);
     } catch {
       return undefined;
     }
   };
+  const moveFavorite = (favoriteId: string, beforeFavoriteId: string | null) =>
+    dispatch({ type: "favorites/move", favoriteId, beforeFavoriteId });
   const saveResourceFavorite = (payload: ResourcePayload) => {
     const result = projectResourceFavorite(workspaceRef.current, payload);
     if (result.error)
@@ -403,17 +415,15 @@ export default function App() {
       notifications.show({ color: "red", message: error instanceof Error ? error.message : "Could not open Google Cloud source." });
     }
   };
-  const applyGcpSource = (source: GcpSource, identity: GcpIdentity, mode: "add-sources" | "add-splits" | "new-split" | "new-multisource") => {
+  const applyGcpSources = (sources: GcpSource[], identity: GcpIdentity, mode: "add-sources" | "add-splits" | "new-split" | "new-multisource") => {
     try {
-      const resource = gcpResourceToLogSource(source);
+      const { connections: created = [], ...payload } = gcpPayload(sources, identity);
       const state = workspaceRef.current;
-      const { connection, created } = gcpConnectionFor(source, identity);
       let next = state;
-      if (created) {
-        if (state.connections.length >= 50) throw new Error("Connection limit reached.");
-        next = workspaceReducer(state, { type: "connections/set", connections: [...state.connections, connection] });
+      if (created.length) {
+        if (state.connections.length + created.length > 50) throw new Error("Connection limit reached.");
+        next = workspaceReducer(state, { type: "connections/set", connections: [...state.connections, ...created] });
       }
-      const payload = { connectionId: connection.id, sources: [resource] };
       const result = projectResourceAction(next, payload, mode);
       if (result.error) throw new Error(result.error);
       if (next !== state) dispatch({ type: "connections/set", connections: next.connections });
@@ -822,6 +832,7 @@ export default function App() {
                   onRenameFavorite={(favoriteId, title) =>
                     dispatch({ type: "favorites/rename", favoriteId, title })
                   }
+                  onMoveFavorite={moveFavorite}
                   onRemoveFavorite={(favoriteId) =>
                     dispatch({ type: "favorites/remove", favoriteId })
                   }
@@ -843,6 +854,7 @@ export default function App() {
                     else if (result.workspace !== workspace) dispatch({ type: "favorites/open", favoriteId });
                   }}
                   onRenameFavorite={(favoriteId, title) => dispatch({ type: "favorites/rename", favoriteId, title })}
+                  onMoveFavorite={moveFavorite}
                   onRemoveFavorite={(favoriteId) => dispatch({ type: "favorites/remove", favoriteId })}
                   onDropFavoriteResources={saveResourceFavorite}
                   dragPayload={gcpDragPayload}
@@ -858,7 +870,7 @@ export default function App() {
                     }
                   }}
                   onOpen={openGcpSource}
-                  onSourceAction={applyGcpSource}
+                  onSourceAction={applyGcpSources}
                   shortcuts={workspace.preferences.shortcuts}
                   initialProject={workspace.preferences.gcpProjectId}
                   initialConfiguration={workspace.preferences.gcpConfiguration}

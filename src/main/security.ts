@@ -112,6 +112,7 @@ const viewSchema = z.object({
     )
     .max(7)
     .optional(),
+  hiddenSources: z.array(z.string().min(1).max(4096)).max(200).optional(),
   wrap: z.boolean(),
   sort: z.object({ path: z.string().max(2048), desc: z.boolean() }).optional(),
 });
@@ -465,7 +466,7 @@ export class AwsAccessGate {
   setEnabled(enabled: boolean): void {
     if (enabled && !this.packaged)
       throw new Error(
-        "AWS access is disabled in development. Only a packaged application can enable it.",
+        "AWS access is disabled in test runs. Only the packaged application and npm run dev can enable it.",
       );
     this.authorized = enabled;
   }

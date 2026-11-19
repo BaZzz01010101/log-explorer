@@ -69,15 +69,14 @@ export function eventSourceDisplay(
   const connectionId = event.connectionId ?? defaultConnectionId;
   const connection = connections.find((item) => item.id === connectionId);
   const badges = sourceBadges(sources);
-  const matches = badges.filter((badge) => {
-    const source = sources[badge.sourceIndex];
-    return (
-      source.logGroup === event.logGroup &&
-      (!event.gcpSource || JSON.stringify(source.gcp) === JSON.stringify(event.gcpSource)) &&
-      (source.connectionId ?? defaultConnectionId) === connectionId &&
-      (!badge.stream || badge.stream === event.logStream)
-    );
-  });
+  const matches = badges.filter((badge) =>
+    eventInSourceBadge(
+      event,
+      sources[badge.sourceIndex],
+      badge.stream,
+      defaultConnectionId,
+    ),
+  );
   const badge = matches[0];
   let label = badge?.label ?? (event.logGroup || "—");
   if (
@@ -119,4 +118,70 @@ export function removeSource(
       source.logStreams?.filter((name) => name !== stream) ?? [];
     return logStreams.length ? [{ ...source, logStreams }] : [];
   });
+}
+
+/** Identifies one source badge (a group, or one stream of it) across renders and saves. */
+export function sourceBadgeKey(
+  source: LogSource,
+  stream: string | undefined,
+  defaultConnectionId: string,
+): string {
+  return JSON.stringify([
+    source.connectionId ?? defaultConnectionId,
+    source.logGroup,
+    source.gcp ?? null,
+    stream ?? null,
+  ]);
+}
+
+/** True when an event was returned for this source badge. */
+export function eventInSourceBadge(
+  event: LogEvent,
+  source: LogSource,
+  stream: string | undefined,
+  defaultConnectionId: string,
+): boolean {
+  return (
+    source.logGroup === event.logGroup &&
+    (event.connectionId ?? defaultConnectionId) ===
+      (source.connectionId ?? defaultConnectionId) &&
+    (!event.gcpSource ||
+      JSON.stringify(source.gcp) === JSON.stringify(event.gcpSource)) &&
+    (!stream || stream === event.logStream)
+  );
+}
+
+/**
+ * Builds a predicate for events of hidden source badges, or undefined when no
+ * current badge is hidden. Hiding is local: the sources are still queried.
+ */
+export function hiddenSourcePredicate(
+  sources: LogSource[],
+  hidden: readonly string[] | undefined,
+  defaultConnectionId: string,
+): ((event: LogEvent) => boolean) | undefined {
+  if (!hidden?.length) return undefined;
+  const keys = new Set(hidden);
+  const badges = sourceBadges(sources).filter(({ sourceIndex, stream }) =>
+    keys.has(sourceBadgeKey(sources[sourceIndex], stream, defaultConnectionId)),
+  );
+  if (!badges.length) return undefined;
+  return (event) =>
+    badges.some(({ sourceIndex, stream }) =>
+      eventInSourceBadge(event, sources[sourceIndex], stream, defaultConnectionId),
+    );
+}
+
+/** Keeps only hidden keys that still name a badge of `sources`. */
+export function pruneHiddenSources(
+  sources: LogSource[],
+  hidden: readonly string[] | undefined,
+  defaultConnectionId: string,
+): string[] {
+  const current = new Set(
+    sourceBadges(sources).map(({ sourceIndex, stream }) =>
+      sourceBadgeKey(sources[sourceIndex], stream, defaultConnectionId),
+    ),
+  );
+  return (hidden ?? []).filter((key) => current.has(key));
 }

@@ -75,6 +75,7 @@ interface Props {
   onOpenFavorite?(id: string): void;
   onRemoveFavorite?(id: string): void;
   onRenameFavorite?(id: string, title: string): void;
+  onMoveFavorite?(id: string, beforeId: string | null): void;
   onDropFavoriteResources?(payload: ResourcePayload): void;
   onManage(): void;
 }
@@ -556,6 +557,7 @@ export function ExplorerSidebar(props: Props) {
         onOpen={props.onOpenFavorite}
         onRemove={props.onRemoveFavorite}
         onRename={props.onRenameFavorite}
+        onMove={props.onMoveFavorite}
         onDropResources={props.onDropFavoriteResources}
       />
       <div

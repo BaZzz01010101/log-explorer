@@ -263,6 +263,18 @@ function parseView(value: unknown): ViewConfig {
       : LOG_LEVELS.some((known) => known === raw.level)
         ? [String(raw.level)]
         : [...LOG_LEVELS],
+    ...(Array.isArray(raw.hiddenSources) && raw.hiddenSources.length
+      ? {
+          hiddenSources: [
+            ...new Set(
+              raw.hiddenSources.filter(
+                (key): key is string =>
+                  typeof key === "string" && key.length > 0 && key.length <= 4096,
+              ),
+            ),
+          ].slice(0, 200),
+        }
+      : {}),
     wrap: raw.wrap === true,
     ...(typeof sort.path === "string"
       ? {

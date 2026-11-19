@@ -347,7 +347,7 @@ body.resizing-columns * {
   bottom: 0;
   left: 0;
   width: 4px;
-  background: var(--event-marker-color);
+  background-color: var(--event-marker-color);
   pointer-events: none;
 }
 .density-comfortable .log-cell {
@@ -846,7 +846,23 @@ body.resizing-columns * {
   --event-row-bg: var(--event-highlight-bg, var(--mantine-color-body));
   --event-row-fg: var(--event-highlight-fg, var(--mantine-color-text));
 }
+/* Selection fades a blue band in from the top and bottom row edges and keeps
+   the row's own color in the middle, so a highlighted row stays recognizable. */
 .virtual-event.event-selected {
+  --event-selection-edge: color-mix(
+    in srgb,
+    var(--mantine-color-blue-3) 50%,
+    transparent
+  );
+  --event-selection-fill: linear-gradient(
+    to bottom,
+    var(--event-selection-edge),
+    transparent 40%,
+    transparent 60%,
+    var(--event-selection-edge)
+  );
+}
+.virtual-event.event-selected:not([data-highlighted="true"]) {
   --event-row-bg: var(--mantine-primary-color-light);
   --event-row-fg: var(--mantine-color-text);
 }
@@ -855,6 +871,18 @@ body.resizing-columns * {
 .virtual-event > .log-table-row > .hybrid-gutter {
   background-color: var(--event-row-bg);
   color: var(--event-row-fg);
+}
+/* Cells stretch to the row height, so their bands line up across pinned and
+   scrolled columns; JSON cards paint the band on the card itself. */
+.virtual-event.event-selected > .log-table-row,
+.virtual-event.event-selected > .log-table-row > .log-cell,
+.virtual-event.event-selected > .log-table-row > .hybrid-gutter,
+.virtual-event.event-selected.json-event-card,
+.virtual-event.event-selected .has-highlight-marker::before,
+.virtual-event.event-selected.has-highlight-marker::before {
+  /* The row itself paints the band past the last column; the highlight marker
+     keeps its color under the band. */
+  background-image: var(--event-selection-fill);
 }
 .virtual-event > .log-table-row:hover,
 .virtual-event > .log-table-row:hover > .log-cell,

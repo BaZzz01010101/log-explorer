@@ -128,6 +128,11 @@ const paint = (row: ReturnType<Page["locator"]>, mode: string) =>
     }
     return { background, foreground: style.color };
   });
+/** The selection band drawn from the top and bottom row edges. */
+const band = (row: ReturnType<Page["locator"]>, mode: string) =>
+  (mode === "JSON" ? row : row.locator(".log-cell").first()).evaluate(
+    (node) => getComputedStyle(node).backgroundImage,
+  );
 async function select(row: ReturnType<Page["locator"]>, mode: string) {
   await primary(row, mode).click({ position: { x: 140, y: 10 } });
   await expect(row).toHaveAttribute("data-selected", "true");
@@ -162,7 +167,7 @@ async function capture(filename: string) {
 
 for (const theme of ["light", "dark"] as const)
   for (const rowBackground of [true, false])
-    test(`selection overrides ${rowBackground ? "background and foreground" : "foreground-only"} highlights and every row hovers in ${theme}`, async () => {
+    test(`selection keeps ${rowBackground ? "background and foreground" : "foreground-only"} highlights under an edge band and every row hovers in ${theme}`, async () => {
       const workspace = createWorkspace();
       workspace.preferences.theme = theme;
       // Recent pins the newest row; these checks select rows from the start.
@@ -219,20 +224,39 @@ for (const theme of ["light", "dark"] as const)
         const highlightId = await highlighted.getAttribute("data-event-id");
         await select(plain, mode);
         const selectedPlain = await paint(plain, mode);
+        const unselectedHighlight = await paint(highlighted, mode);
+        expect
+          .soft(await band(highlighted, mode), `${mode}: no band unselected`)
+          .toBe("none");
         await select(highlighted, mode);
         const selectedHighlight = await paint(highlighted, mode);
         expect
           .soft(
             selectedHighlight.background,
-            `${mode}: selected profile background wins without hover`,
+            `${mode}: selected profile keeps its row color in the middle`,
           )
-          .toBe(selectedPlain.background);
+          .toBe(unselectedHighlight.background);
         expect
           .soft(
             selectedHighlight.foreground,
-            `${mode}: selected profile foreground remains readable`,
+            `${mode}: selected profile keeps its text color`,
           )
-          .toBe(selectedPlain.foreground);
+          .toBe(unselectedHighlight.foreground);
+        for (const row of [highlighted, plain])
+          expect
+            .soft(
+              await band(row, mode),
+              `${mode}: selection band only on the selected row`,
+            )
+            [row === highlighted ? "toContain" : "toBe"](
+              row === highlighted ? "linear-gradient" : "none",
+            );
+        expect
+          .soft(
+            (await paint(plain, mode)).background,
+            `${mode}: a selected plain row keeps its tinted middle`,
+          )
+          .not.toBe(selectedPlain.background);
         expect
           .soft(
             await highlighted.evaluate(
@@ -295,7 +319,35 @@ for (const theme of ["light", "dark"] as const)
               `${mode}: pinned and unpinned cells share selected color after scrolling`,
             )
             .toBe(1);
-          expect.soft(backgrounds[0]).toBe(selectedPlain.background);
+          expect.soft(backgrounds[0]).toBe(selectedHighlight.background);
+          const bands = await cells.evaluateAll((nodes) =>
+            nodes.map((node) => getComputedStyle(node).backgroundImage),
+          );
+          expect
+            .soft(
+              new Set(bands).size,
+              `${mode}: pinned and unpinned cells share the selection band`,
+            )
+            .toBe(1);
+          expect.soft(bands[0]).toContain("linear-gradient");
+          expect
+            .soft(
+              await highlighted
+                .locator(".log-table-row")
+                .evaluate((node) => getComputedStyle(node).backgroundImage),
+              `${mode}: the band continues past the last column`,
+            )
+            .toContain("linear-gradient");
+          expect
+            .soft(
+              await highlighted
+                .locator(".has-highlight-marker")
+                .evaluate(
+                  (node) => getComputedStyle(node, "::before").backgroundImage,
+                ),
+              `${mode}: the highlight marker carries the band`,
+            )
+            .toContain("linear-gradient");
           if (mode === "Hybrid")
             expect
               .soft(

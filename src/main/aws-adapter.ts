@@ -269,7 +269,7 @@ export function createAwsAdapter(
   function gate() {
     if (!options.allowAws())
       throw new Error(
-        "AWS access is disabled. Enable it explicitly in a packaged application.",
+        "AWS access is disabled. It is available in the packaged application and npm run dev, not in test runs.",
       );
     if (destroyed) throw new Error("AWS connection was closed");
   }

@@ -105,6 +105,18 @@ describe("assertTrustedSender", () => {
     expect(() => assertTrustedSender(event(window.webContents, mainFrame), null, packaged)).toThrow("Untrusted renderer");
   });
 
+  it("ignores file URL case only for Windows paths", () => {
+    const file = { rendererFile: String.raw`d:\App\renderer\index.html` };
+    const frame = { url: "file:///D:/App/renderer/index.html" };
+    const upper = { webContents: { mainFrame: frame } };
+    expect(() => assertTrustedSender(event(upper.webContents, frame), upper, file, true)).not.toThrow();
+    const posix = { url: pathToFileURL("/APP/renderer/index.html").href };
+    const other = { webContents: { mainFrame: posix } };
+    expect(() => assertTrustedSender(event(other.webContents, posix), other, packaged, false)).toThrow(
+      "Untrusted renderer URL",
+    );
+  });
+
   it("rejects a navigated main frame and accepts only the dev server URL in development", () => {
     const navigated = { url: "https://example.com/" };
     const other = { webContents: { mainFrame: navigated } };

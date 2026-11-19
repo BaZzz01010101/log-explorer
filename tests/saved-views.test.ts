@@ -223,3 +223,24 @@ it("refuses opening a favorite beyond the workspace file budget atomically", () 
     new TextEncoder().encode(JSON.stringify(state, null, 2)).byteLength,
   ).toBeLessThanOrEqual(5_000_000);
 });
+
+it("moves a favorite before another one or to the end, and keeps the order after restore", () => {
+  let state = createWorkspace();
+  state = workspaceReducer(state, { type: "favorites/save", tabId: state.activeTabId! });
+  const [base] = state.favorites;
+  state = {
+    ...state,
+    favorites: ["a", "b", "c"].map((id) => ({ ...base!, id, title: id })),
+  };
+  const order = (value: typeof state) => value.favorites.map((item) => item.id);
+  const moved = workspaceReducer(state, { type: "favorites/move", favoriteId: "c", beforeFavoriteId: "a" });
+  expect(order(moved)).toEqual(["c", "a", "b"]);
+  expect(order(workspaceReducer(moved, { type: "favorites/move", favoriteId: "c", beforeFavoriteId: null }))).toEqual(["a", "b", "c"]);
+  expect(order(workspaceReducer(state, { type: "favorites/move", favoriteId: "a", beforeFavoriteId: "c" }))).toEqual(["b", "a", "c"]);
+  // Own slot, unknown ids and an unchanged order leave the workspace as it is.
+  expect(workspaceReducer(state, { type: "favorites/move", favoriteId: "b", beforeFavoriteId: "b" })).toBe(state);
+  expect(workspaceReducer(state, { type: "favorites/move", favoriteId: "a", beforeFavoriteId: "b" })).toBe(state);
+  expect(workspaceReducer(state, { type: "favorites/move", favoriteId: "x", beforeFavoriteId: null })).toBe(state);
+  expect(workspaceReducer(state, { type: "favorites/move", favoriteId: "a", beforeFavoriteId: "x" })).toBe(state);
+  expect(order(restoreWorkspace(JSON.parse(JSON.stringify(moved))))).toEqual(["c", "a", "b"]);
+});

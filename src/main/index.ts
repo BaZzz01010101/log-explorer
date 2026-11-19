@@ -67,19 +67,22 @@ const backgroundVerification =
 if (backgroundVerification) app.disableHardwareAcceleration();
 const offlineVerification =
   verificationSwitches && process.argv.includes("--offline-verification");
-// Like AWS, development and unpackaged builds never reach Google Cloud.
-const canUseGcp =
-  app.isPackaged && !offlineVerification && !backgroundVerification;
-const canEnableAws =
-  app.isPackaged &&
+// The packaged app and `npm run dev` (electron-vite's renderer server) reach
+// AWS and Google Cloud. Test runs always pass a verification switch and stay
+// offline, as does a bare unpackaged start.
+const developmentServer = !app.isPackaged && Boolean(process.env.ELECTRON_RENDERER_URL);
+const canUseCloud =
+  (app.isPackaged || developmentServer) &&
   !offlineVerification &&
   !backgroundVerification;
+const canUseGcp = canUseCloud;
+const canEnableAws = canUseCloud;
 const gate = new AwsAccessPreference(
   canEnableAws,
   join(app.getPath("userData"), "access-settings.json"),
 );
-// With offline fixtures removed, the packaged app always uses AWS; development
-// and verification builds still never reach it.
+// With offline fixtures removed, the packaged app and development always use
+// AWS; verification runs still never reach it.
 if (canEnableAws && !gate.enabled) gate.setEnabled(true);
 let window: BrowserWindow | null = null;
 let quitting = false;
@@ -232,9 +235,9 @@ const cursorSchema = z.string().max(100000).optional();
 function allowGcpDiscovery() {
   if (!canUseGcp)
     throw new Error(
-      app.isPackaged
+      app.isPackaged || developmentServer
         ? "Google Cloud access is disabled in verification mode."
-        : "Google Cloud access is available only in the packaged application.",
+        : "Google Cloud access is available only in the packaged application or npm run dev.",
     );
 }
 const signInToGoogle = createGcpSignIn(launchGoogleLogin, () => gcloudAuth.clearTokens());
@@ -373,7 +376,7 @@ handle("explorer:enable-aws", async (enabled) => {
 });
 handle("explorer:profiles", async () => {
   if (!gate.enabled) return [];
-  // This is reached only after deliberate authorization in a packaged application.
+  // Reached only when AWS access is enabled: packaged or `npm run dev`.
   const { loadSharedConfigFiles } =
     await import("@smithy/shared-ini-file-loader");
   const { configFile, credentialsFile } = await loadSharedConfigFiles();

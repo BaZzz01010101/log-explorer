@@ -101,7 +101,11 @@ import {
   ColumnHeaderMenu,
   type ColumnHeaderMenuTarget,
 } from "./ColumnHeaderMenu";
-import { eventSourceDisplay, sourceCount } from "../../shared/source-labels";
+import {
+  eventSourceDisplay,
+  hiddenSourcePredicate,
+  sourceCount,
+} from "../../shared/source-labels";
 import { useColumnHeaderDrag } from "../useColumnHeaderDrag";
 import { useScrollPagination } from "../useScrollPagination";
 import { lockCorrection, newestIndex, RECENT_HOLD_MS, RECENT_START_MS, releasedByInput, type RecentScrollLock } from "../recent-scroll";
@@ -139,7 +143,10 @@ import {
   type EventSelectionState,
 } from "../useEventSelection";
 import { useDeserializedEvents } from "../useDeserializedEvents";
-import { eventPageDestination } from "../event-page-navigation";
+import {
+  eventPageDestination,
+  filterRestoreTop,
+} from "../event-page-navigation";
 import {
   EventHighlightContext,
   QuickHighlightContext,
@@ -551,8 +558,28 @@ export function LogViewer({
   const localSearch = useDeferredValue(view.localSearch);
   const deserialized = useDeserializedEvents(events, prepare);
   const allRows = deserialized.rows;
+  // Hidden source badges drop their events here, before the local filter;
+  // the sources are still queried.
+  const hiddenSource = useMemo(
+    () =>
+      sourceContext
+        ? hiddenSourcePredicate(
+            sourceContext.sources,
+            view.hiddenSources,
+            sourceContext.connectionId,
+          )
+        : undefined,
+    [sourceContext?.sources, sourceContext?.connectionId, view.hiddenSources],
+  );
+  const sourceRows = useMemo(
+    () =>
+      hiddenSource
+        ? allRows.filter((row) => !hiddenSource(row.event))
+        : allRows,
+    [allRows, hiddenSource],
+  );
   const localFiltered = useLocalFilter(
-    allRows,
+    sourceRows,
     localSearch,
     view.levels ?? view.level,
     localOptions,
@@ -963,6 +990,100 @@ export function LogViewer({
     };
     requestAnimationFrame(check);
   };
+  // Clearing the local filter keeps the rows that were on screen: a snapshot
+  // of them (and of the selected row) is taken while the filtered rows are
+  // still rendered, and the unfiltered list scrolls back to them.
+  const filterRestore = useRef<{ ids: string[]; anchorId?: string } | null>(
+    null,
+  );
+  const previousLocalSearch = useRef(view.localSearch);
+  useLayoutEffect(() => {
+    const previous = previousLocalSearch.current;
+    previousLocalSearch.current = view.localSearch;
+    if (view.localSearch.trim()) {
+      filterRestore.current = null;
+      return;
+    }
+    const scroll = scrollRef.current;
+    if (!previous.trim() || filterRestore.current || !scroll) return;
+    const box = scroll.getBoundingClientRect();
+    const header =
+      scroll.querySelector<HTMLElement>(".log-table-header")?.getBoundingClientRect()
+        .height ?? 0;
+    const top = box.top + header;
+    const bottom = box.top + scroll.clientHeight;
+    const ids = [
+      ...scroll.querySelectorAll<HTMLElement>(".virtual-event[data-event-id]"),
+    ]
+      .filter((element) => {
+        const bounds = element.getBoundingClientRect();
+        const shown =
+          Math.min(bounds.bottom, bottom) - Math.max(bounds.top, top);
+        return shown > 0 && shown >= Math.min(bounds.height, bottom - top) / 2;
+      })
+      .map((element) => element.dataset.eventId!);
+    filterRestore.current = {
+      ids,
+      ...(selection.selectedId ? { anchorId: selection.selectedId } : {}),
+    };
+  }, [view.localSearch]);
+  useLayoutEffect(() => {
+    const pending = filterRestore.current;
+    if (!pending || filtering || localSearch.trim()) return;
+    filterRestore.current = null;
+    if (followLive && liveState === "streaming") return;
+    const indexById = new Map(
+      rows.map((row, index) => [row.original.event.id, index]),
+    );
+    const visible = pending.ids
+      .map((id) => indexById.get(id))
+      .filter((index): index is number => index !== undefined);
+    const anchor =
+      pending.anchorId === undefined
+        ? undefined
+        : indexById.get(pending.anchorId);
+    if (!visible.length && anchor === undefined) return;
+    scrollLock.current = null;
+    const token = ++revealToken.current;
+    const started = performance.now();
+    // Rows measured after the first jump move the estimates, so the position
+    // is re-planned for a few frames unless the user takes over.
+    const apply = () => {
+      if (
+        token !== revealToken.current ||
+        scrollLock.current ||
+        userScroll.current.pointer ||
+        userScroll.current.inputAt > started ||
+        performance.now() - started > 700
+      )
+        return;
+      const scroll = scrollRef.current;
+      const list = scroll?.querySelector<HTMLElement>(".virtual-events");
+      const cache = virtualizer.measurementsCache;
+      if (scroll && list) {
+        const header =
+          scroll.querySelector<HTMLElement>(".log-table-header")?.getBoundingClientRect()
+            .height ?? 0;
+        const base =
+          list.getBoundingClientRect().top -
+          scroll.getBoundingClientRect().top +
+          scroll.scrollTop;
+        const span = (index: number) =>
+          cache[index] ? { start: cache[index].start, end: cache[index].end } : undefined;
+        const top = filterRestoreTop(
+          visible.flatMap((index) => span(index) ?? []),
+          anchor === undefined ? undefined : span(anchor),
+          Math.max(1, scroll.clientHeight - header),
+        );
+        if (top !== undefined) {
+          const target = Math.max(0, top + base - header);
+          if (Math.abs(scroll.scrollTop - target) > 0.5) scroll.scrollTop = target;
+        }
+      }
+      requestAnimationFrame(apply);
+    };
+    apply();
+  }, [rows, filtering, localSearch]);
   const inspectedIndex = selection.index;
   useEffect(() => {
     if (!revealEvent) return;

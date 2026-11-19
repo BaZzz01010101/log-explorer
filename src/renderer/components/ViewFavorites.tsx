@@ -1,4 +1,10 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type PointerEvent as ReactPointerEvent,
+} from "react";
 import { useDroppable } from "@dnd-kit/core";
 import { Button, Group, Modal, Text, TextInput } from "@mantine/core";
 import { Menu } from "./AppMenu";
@@ -17,9 +23,22 @@ function FavoriteItem({
   onRename,
   opened,
   onMenuChange,
+  onMoveUp,
+  onMoveDown,
+  onReorderStart,
+  consumeClick,
+  dropBefore,
+  dragging,
 }: {
   opened: boolean;
   onMenuChange(opened: boolean): void;
+  onMoveUp?(): void;
+  onMoveDown?(): void;
+  onReorderStart?(event: ReactPointerEvent<HTMLButtonElement>): void;
+  /** True once after a reorder drag, so the trailing click does not open it. */
+  consumeClick?(): boolean;
+  dropBefore?: boolean;
+  dragging?: boolean;
   favorite: ViewFavorite;
   onOpen?(id: string): void;
   onRemove?(id: string): void;
@@ -44,14 +63,17 @@ function FavoriteItem({
       >
         <Menu.ContextMenu>
           <div
-            className={`saved-view-favorite-row${confirmingDelete ? " is-confirming-delete" : ""}`}
+            className={`saved-view-favorite-row${confirmingDelete ? " is-confirming-delete" : ""}${dropBefore ? " is-drop-before" : ""}${dragging ? " is-reordering" : ""}`}
             data-favorite-id={favorite.id}
             data-confirming-delete={confirmingDelete || undefined}
           >
             <button
               type="button"
               className="quick-resource saved-view-favorite"
-              onClick={() => onOpen?.(favorite.id)}
+              onClick={() => {
+                if (!consumeClick?.()) onOpen?.(favorite.id);
+              }}
+              onPointerDown={onReorderStart}
               onKeyDown={(event) => {
                 if (
                   event.key === "ContextMenu" ||
@@ -124,6 +146,16 @@ function FavoriteItem({
           >
             Rename
           </Menu.Item>
+          {(onMoveUp || onMoveDown) && (
+            <>
+              <Menu.Item disabled={!onMoveUp} onClick={onMoveUp}>
+                Move up
+              </Menu.Item>
+              <Menu.Item disabled={!onMoveDown} onClick={onMoveDown}>
+                Move down
+              </Menu.Item>
+            </>
+          )}
           <Menu.Item
             color="red"
             leftSection={<IconTrash size={14} />}
@@ -173,6 +205,7 @@ export function ViewFavorites({
   onOpen,
   onRemove,
   onRename,
+  onMove,
   onDropResources,
   dropId = "view-favorites",
 }: {
@@ -180,11 +213,108 @@ export function ViewFavorites({
   onOpen?(id: string): void;
   onRemove?(id: string): void;
   onRename?(id: string, title: string): void;
+  /** Moves a favorite before another one, or to the end when `beforeId` is null. */
+  onMove?(id: string, beforeId: string | null): void;
   /** Saves log groups, streams or sources dragged from an Explorer. */
   onDropResources?(payload: ResourcePayload): void;
   dropId?: string;
 }) {
   const [menuId, setMenuId] = useState<string | null>(null);
+  // Reordering uses its own pointer gesture; dnd-kit keeps tab drops.
+  const [reorder, setReorder] = useState<{
+    id: string;
+    before: string | null | undefined;
+  } | null>(null);
+  const list = useRef<HTMLDivElement | null>(null);
+  const suppressClick = useRef(false);
+  const stopReorder = useRef<() => void>(() => {});
+  useEffect(() => () => stopReorder.current(), []);
+  const startReorder = (
+    event: ReactPointerEvent<HTMLButtonElement>,
+    id: string,
+  ) => {
+    if (!onMove || event.button !== 0 || favorites.length < 2) return;
+    stopReorder.current();
+    const pointerId = event.pointerId;
+    const start = { x: event.clientX, y: event.clientY };
+    let active = false;
+    let before: string | null | undefined;
+    const slot = (y: number) => {
+      const rows = [
+        ...(list.current?.querySelectorAll<HTMLElement>("[data-favorite-id]") ??
+          []),
+      ];
+      const scroller = list.current;
+      if (scroller) {
+        const box = scroller.getBoundingClientRect();
+        if (y < box.top + 12) scroller.scrollTop -= 8;
+        else if (y > box.bottom - 12) scroller.scrollTop += 8;
+      }
+      for (const row of rows) {
+        const box = row.getBoundingClientRect();
+        if (y < box.top + box.height / 2) return row.dataset.favoriteId ?? null;
+      }
+      return null;
+    };
+    const finish = (commit: boolean) => {
+      window.removeEventListener("pointermove", move, true);
+      window.removeEventListener("pointerup", up, true);
+      window.removeEventListener("pointercancel", cancel, true);
+      window.removeEventListener("keydown", key, true);
+      document.body.style.removeProperty("cursor");
+      document.body.style.removeProperty("user-select");
+      stopReorder.current = () => {};
+      setReorder(null);
+      if (!active) return;
+      suppressClick.current = true;
+      setTimeout(() => {
+        suppressClick.current = false;
+      }, 0);
+      if (commit && before !== undefined) {
+        const index = favorites.findIndex((favorite) => favorite.id === id);
+        const next =
+          before === null
+            ? null
+            : favorites.findIndex((favorite) => favorite.id === before);
+        // Dropping onto its own slot leaves the order unchanged.
+        const unchanged =
+          before === id ||
+          (before === null
+            ? index === favorites.length - 1
+            : next === index + 1);
+        if (!unchanged) onMove(id, before);
+      }
+    };
+    const move = (next: PointerEvent) => {
+      if (next.pointerId !== pointerId) return;
+      if (
+        !active &&
+        Math.hypot(next.clientX - start.x, next.clientY - start.y) < 6
+      )
+        return;
+      active = true;
+      next.preventDefault();
+      document.body.style.cursor = "grabbing";
+      document.body.style.userSelect = "none";
+      before = slot(next.clientY);
+      setReorder({ id, before });
+    };
+    const up = (next: PointerEvent) => {
+      if (next.pointerId === pointerId) finish(true);
+    };
+    const cancel = () => finish(false);
+    const key = (next: KeyboardEvent) => {
+      if (next.key !== "Escape" || !active) return;
+      next.preventDefault();
+      next.stopPropagation();
+      finish(false);
+    };
+    window.addEventListener("pointermove", move, true);
+    window.addEventListener("pointerup", up, true);
+    window.addEventListener("pointercancel", cancel, true);
+    window.addEventListener("keydown", key, true);
+    stopReorder.current = () => finish(false);
+  };
   const { setNodeRef, isOver } = useDroppable({
     id: dropId,
     data: { kind: "view-favorites" },
@@ -234,11 +364,31 @@ export function ViewFavorites({
       <Text size="xs" fw={700} c="dimmed">
         FAVORITES
       </Text>
-      <div className="favorite-views-list">
-        {favorites.map((favorite) => (
+      <div
+        ref={list}
+        className={
+          "favorite-views-list" +
+          (reorder?.before === null ? " is-drop-end" : "")
+        }
+      >
+        {favorites.map((favorite, index) => (
           <FavoriteItem
             key={favorite.id}
             favorite={favorite}
+            dragging={reorder?.id === favorite.id}
+            dropBefore={reorder?.before === favorite.id}
+            onReorderStart={(event) => startReorder(event, favorite.id)}
+            consumeClick={() => suppressClick.current}
+            onMoveUp={
+              onMove && index > 0
+                ? () => onMove(favorite.id, favorites[index - 1]!.id)
+                : undefined
+            }
+            onMoveDown={
+              onMove && index < favorites.length - 1
+                ? () => onMove(favorite.id, favorites[index + 2]?.id ?? null)
+                : undefined
+            }
             opened={menuId === favorite.id}
             onMenuChange={(opened) =>
               setMenuId((current) =>

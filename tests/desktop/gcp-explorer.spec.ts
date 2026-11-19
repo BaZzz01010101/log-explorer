@@ -375,6 +375,62 @@ for (const theme of behaviorThemes)
       await expect(
         page.getByText("Google event loaded", { exact: false }).first(),
       ).toBeVisible();
+      // Several sources are checked with Ctrl+click and open together.
+      const later = explorer.getByRole("option", { name: "/gcp/functions/later" });
+      const worker = explorer.getByRole("option", {
+        name: "/gcp/kubernetes/worker/dev",
+      });
+      await later.click();
+      await worker.click({ modifiers: ["Control"] });
+      await expect(later).toHaveAttribute("aria-selected", "true");
+      await expect(worker).toHaveAttribute("aria-selected", "true");
+      await expect(
+        explorer.getByLabel("Select /gcp/kubernetes/worker/dev"),
+      ).toBeChecked();
+      await worker.click({ button: "right" });
+      await expect(
+        page.getByRole("menu").getByText("2 selected sources"),
+      ).toBeVisible();
+      await expect(
+        page.getByRole("menuitem", { name: "Open in new multi-source tab" }),
+      ).toBeVisible();
+      await page.keyboard.press("Escape");
+      const tabCount = await page
+        .locator(".workspace-tab-list [data-tab-id]")
+        .count();
+      await explorer
+        .getByRole("button", { name: "Open 2 selected sources" })
+        .click();
+      await expect(
+        page.locator(".workspace-tab-list [data-tab-id]"),
+      ).toHaveCount(tabCount + 1);
+      await expect(
+        page
+          .getByRole("group", { name: "Log sources" })
+          .locator(".source-badge-drag-label"),
+      ).toContainText(["later", "worker · dev"]);
+      // The source editor checks a container against the discovered sources.
+      await page
+        .getByRole("group", { name: "Log sources" })
+        .locator(".source-badge", { hasText: "worker · dev" })
+        .click({ button: "right" });
+      await page.getByRole("menuitem", { name: "Edit source…" }).click();
+      const editor = page.getByRole("dialog", { name: "Edit Google Cloud source" });
+      await expect(editor.getByLabel("Container")).toHaveValue("worker");
+      await expect(editor.getByLabel("Cluster", { exact: true })).toHaveValue("dev");
+      await editor.getByLabel("Container").fill("missing");
+      await editor.getByRole("button", { name: "Save" }).click();
+      await expect(editor.getByRole("alert")).toContainText(
+        'Container "missing" was not found in cluster dev',
+      );
+      await editor.getByLabel("Container").fill("worker");
+      await editor.getByRole("button", { name: "Save" }).click();
+      await expect(editor).toHaveCount(0);
+      await expect(
+        page
+          .getByRole("group", { name: "Log sources" })
+          .locator(".source-badge-drag-label"),
+      ).toContainText(["later", "worker · dev"]);
       await explorer.getByLabel("Search GCP sources").fill("later");
       await expect(
         explorer.getByText("/gcp/functions/later", { exact: true }).last(),

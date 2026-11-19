@@ -29,6 +29,7 @@ interface Props {
   onOpenFavorite?(id: string): void;
   onRemoveFavorite?(id: string): void;
   onRenameFavorite?(id: string, title: string): void;
+  onMoveFavorite?(id: string, beforeId: string | null): void;
   onDropFavoriteResources?(payload: ResourcePayload): void;
   onManage(): void;
 }

@@ -17,6 +17,7 @@ export function assertTrustedSender(
   event: IpcSender,
   window: TrustedWindow | null,
   renderer: { developmentUrl?: string; rendererFile: string },
+  windowsPaths = process.platform === "win32",
 ): void {
   if (
     !window ||
@@ -29,7 +30,23 @@ export function assertTrustedSender(
   if (
     developmentUrl
       ? url !== developmentUrl && url !== `${developmentUrl}/`
-      : url !== pathToFileURL(rendererFile).href
+      : !sameFileUrl(url, pathToFileURL(rendererFile).href, windowsPaths)
   )
     throw new Error("Untrusted renderer URL");
+}
+
+/**
+ * Windows paths ignore case, and Chromium reports the drive letter in upper
+ * case even when the app was started from `d:\...`; compare file URLs there
+ * without case. Other platforms compare exactly.
+ */
+function sameFileUrl(
+  url: string | undefined,
+  expected: string,
+  ignoreCase: boolean,
+): boolean {
+  if (!url) return false;
+  return ignoreCase
+    ? url.toLowerCase() === expected.toLowerCase()
+    : url === expected;
 }

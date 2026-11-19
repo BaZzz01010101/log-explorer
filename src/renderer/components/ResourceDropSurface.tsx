@@ -34,7 +34,7 @@ export function ResourceDropSurface({
     origin: string | null;
     hovered: boolean;
     resourceOrigin?: ResourceOrigin;
-    connection?: Connection;
+    connections?: Connection[];
   } | null>(null);
   const hover = useRef<{
     id: string;
@@ -114,7 +114,7 @@ export function ResourceDropSurface({
           origin: activeEntryId(current.current),
           hovered: false,
           resourceOrigin: payload.origin,
-          connection: payload.connection,
+          connections: payload.connections,
         };
       }
       session.current.point = point;
@@ -181,7 +181,7 @@ export function ResourceDropSurface({
         (event as CustomEvent<{ drop: boolean }>).detail.drop &&
         refreshRef.current();
       if (destination && (destination.insertion || destination.placement) && !drag.resourceOrigin)
-        ensureConnection(drag.connection);
+        for (const connection of drag.connections ?? []) ensureConnection(connection);
       if (destination && destination.insertion && drag.resourceOrigin)
         dispatch({
           type: "source/move",

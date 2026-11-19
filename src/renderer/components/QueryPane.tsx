@@ -223,7 +223,18 @@ export function QueryPane({
               sources={tab.sources}
               connectionId={tab.connectionId}
               connections={workspace.connections}
-              onChange={(sources) => onPatch({ sources })}
+              onChange={(sources, hiddenSources) =>
+                onPatch({
+                  sources,
+                  ...(hiddenSources
+                    ? { view: { ...tab.view, hiddenSources } }
+                    : {}),
+                })
+              }
+              hiddenSources={tab.view.hiddenSources}
+              onHiddenChange={(hiddenSources) =>
+                patchView({ ...tab.view, hiddenSources })
+              }
             />
           </Group>
           <Group gap={6}>

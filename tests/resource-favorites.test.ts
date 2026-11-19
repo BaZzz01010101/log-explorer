@@ -54,7 +54,7 @@ it("captures a new Google Cloud connection in the favorite without registering i
   };
   const result = projectResourceFavorite(state, {
     connectionId: connection.id,
-    connection,
+    connections: [connection],
     sources: [
       {
         logGroup: "orders",
@@ -76,4 +76,32 @@ it("reports a drag whose connection is unknown", () => {
   const result = projectResourceFavorite(state, { connectionId: "missing", sources: [{ logGroup: "/a" }] });
   expect(result.workspace).toBe(state);
   expect(result.error).toMatch(/connection/i);
+});
+
+it("captures every new Google Cloud region connection of a multi-source drag", () => {
+  const state = createWorkspace();
+  const gcp = (id: string, region: string): Connection => ({
+    id,
+    name: `Google Cloud · ${region}`,
+    profile: "default",
+    region,
+    mode: "gcp",
+    gcpIdentity: { configuration: "default", account: "dev@example.com" },
+  });
+  const west = gcp("gcp-west", "europe-west1");
+  const east = gcp("gcp-east", "us-east1");
+  const source = (name: string, region: string, connectionId: string) => ({
+    connectionId,
+    logGroup: name,
+    gcp: { kind: "function" as const, project: "demo-project", region, functionName: name, generation: "v2" as const },
+  });
+  const result = projectResourceFavorite(state, {
+    connectionId: west.id,
+    connections: [west, east],
+    sources: [source("orders", "europe-west1", west.id), source("billing", "us-east1", east.id)],
+  });
+  expect(result.error).toBeUndefined();
+  const [favorite] = result.workspace.favorites;
+  expect(favorite!.connections.map((item) => item.id).sort()).toEqual([east.id, west.id]);
+  expect(favorite!.tabs[0]!.sources).toHaveLength(2);
 });

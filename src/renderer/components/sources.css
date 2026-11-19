@@ -22,11 +22,31 @@
   scrollbar-width: thin;
 }
 .source-strip-label {
+  display: inline-grid;
   color: var(--mantine-color-text);
   font-size: 13px;
   font-weight: 650;
+  font-variant-numeric: tabular-nums;
   flex-shrink: 0;
   white-space: nowrap;
+}
+/* An invisible copy of the longest form keeps the label width fixed. */
+.source-strip-label > .source-strip-count,
+.source-strip-label::after {
+  grid-area: 1 / 1;
+}
+.source-strip-label::after {
+  content: attr(data-reserve);
+  visibility: hidden;
+  pointer-events: none;
+}
+.source-strip-label[data-hidden-count] > .source-strip-count {
+  color: var(--mantine-color-orange-7);
+}
+[data-mantine-color-scheme="dark"]
+  .source-strip-label[data-hidden-count]
+  > .source-strip-count {
+  color: var(--mantine-color-orange-4);
 }
 .source-badge {
   display: inline-flex;
@@ -108,4 +128,29 @@
   border-radius: 5px;
   padding: 8px 12px;
   font-size: 12px;
+}
+
+/* A hidden source: amber dashed outline, striped fill and struck-through name. */
+.source-badge.source-badge-hidden {
+  border: 1px dashed var(--mantine-color-orange-6);
+  background: repeating-linear-gradient(
+    -45deg,
+    color-mix(in srgb, var(--mantine-color-orange-5) 16%, transparent) 0 6px,
+    transparent 6px 12px
+  );
+}
+.source-badge.source-badge-hidden .source-badge-drag-label {
+  text-decoration: line-through;
+  opacity: 0.7;
+}
+.source-badge button.source-visibility {
+  margin-left: -4px;
+}
+.source-badge.source-badge-hidden button.source-visibility {
+  color: var(--mantine-color-orange-7);
+}
+[data-mantine-color-scheme="dark"]
+  .source-badge.source-badge-hidden
+  button.source-visibility {
+  color: var(--mantine-color-orange-4);
 }

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 import {
   ActionIcon,
   Button,
@@ -12,6 +12,7 @@ import {
   IconCopy,
   IconCloudCode,
   IconHexagonLetterK,
+  IconPlus,
   IconRefresh,
   IconSearch,
   IconX,
@@ -40,6 +41,10 @@ import { ResourceDragLabel } from "./ResourceDragLabel";
 import type { ResourcePayload } from "../resource-drag";
 import { FilterMatchButtons } from "./FilterMatchButtons";
 import { clearEditControl } from "../scoped-edit-history";
+import {
+  changeExplorerSelection,
+  type SelectedResource,
+} from "../explorer-selection";
 import "./gcp-explorer.css";
 
 export function GcpExplorer({
@@ -55,6 +60,7 @@ export function GcpExplorer({
   favorites = [],
   onOpenFavorite,
   onRenameFavorite,
+  onMoveFavorite,
   onRemoveFavorite,
   onDropFavoriteResources,
   dragPayload,
@@ -76,19 +82,21 @@ export function GcpExplorer({
     identity: GcpIdentity,
     mode: "preview" | "permanent",
   ): void;
+  /** Acts on the checked sources when the row is one of them. */
   onSourceAction?(
-    source: GcpSource,
+    sources: GcpSource[],
     identity: GcpIdentity,
     mode: "add-sources" | "add-splits" | "new-split" | "new-multisource",
   ): void;
   favorites?: ViewFavorite[];
   onOpenFavorite?(id: string): void;
   onRenameFavorite?(id: string, title: string): void;
+  onMoveFavorite?(id: string, beforeId: string | null): void;
   onRemoveFavorite?(id: string): void;
   onDropFavoriteResources?(payload: ResourcePayload): void;
-  /** Resolves the drag payload (and any connection to create) for a source. */
+  /** Resolves the drag payload (and any connections to create) for sources. */
   dragPayload?(
-    source: GcpSource,
+    sources: GcpSource[],
     identity: GcpIdentity,
   ): ResourcePayload | undefined;
   onAuthorized?(configuration: string, account: string): void;
@@ -99,6 +107,9 @@ export function GcpExplorer({
   const [project, setProject] = useState("");
   const [logs, setLogs] = useState<GcpSource[]>([]);
   const [selected, setSelected] = useState<GcpSource | null>(null);
+  // Checked sources, keyed by resource name, as in the AWS explorer.
+  const [checked, setChecked] = useState(new Map<string, SelectedResource>());
+  const selectionAnchor = useRef<string | null>(null);
   const copy = (value: string) => void window.explorer.copy(value);
   const [cachedNames, setCachedNames] = useState<Set<string>>(new Set());
   const restoredProject = useRef(false);
@@ -149,6 +160,7 @@ export function GcpExplorer({
       setProjects([]);
       setLogs([]);
       setSelected(null);
+      setChecked(new Map());
       setProject("");
       setProjectLoading(false);
       setLoading(false);
@@ -267,6 +279,8 @@ export function GcpExplorer({
     setSelected((current) =>
       current && collected.has(current.name) ? current : null,
     );
+    setChecked(new Map());
+    selectionAnchor.current = null;
     setLoading(true);
     setError("");
     onProjectChange?.(next);
@@ -386,6 +400,49 @@ export function GcpExplorer({
       (caseSensitive ? log.label : log.label.toLowerCase()).includes(needle),
     );
   }, [logs, search, regex, caseSensitive, regexMatches]);
+  useEffect(() => {
+    setChecked(new Map());
+    selectionAnchor.current = null;
+  }, [search, regex, caseSensitive]);
+  const resourceOf = (log: GcpSource): SelectedResource => ({
+    key: log.name,
+    connectionId: "gcp",
+    logGroup: log.name,
+  });
+  const byName = useMemo(
+    () => new Map(logs.map((log) => [log.name, log])),
+    [logs],
+  );
+  const checkedSources = [...checked.keys()].flatMap((name) => {
+    const log = byName.get(name);
+    return log ? [log] : [];
+  });
+  const targetsFor = (log: GcpSource) =>
+    checked.has(log.name) && checkedSources.length ? checkedSources : [log];
+  const check = (
+    log: GcpSource,
+    mode: "toggle" | "range" | "add-range" | "context" | "single" = "toggle",
+  ) => {
+    setSelected(log);
+    const anchor = selectionAnchor.current;
+    if (mode !== "range" && mode !== "add-range")
+      selectionAnchor.current = log.name;
+    setChecked((previous) =>
+      changeExplorerSelection(
+        previous,
+        filtered.map(resourceOf),
+        resourceOf(log),
+        anchor,
+        mode,
+      ),
+    );
+  };
+  const checkMode = (event: MouseEvent) =>
+    event.shiftKey
+      ? event.ctrlKey || event.metaKey
+        ? "add-range"
+        : "range"
+      : "toggle";
   const duplicateLabels = useMemo(() => {
     const counts = new Map<string, number>();
     for (const item of filtered)
@@ -593,6 +650,7 @@ export function GcpExplorer({
           favorites={favorites}
           onOpen={onOpenFavorite}
           onRename={onRenameFavorite}
+          onMove={onMoveFavorite}
           onRemove={onRemoveFavorite}
           onDropResources={onDropFavoriteResources}
         />
@@ -604,14 +662,24 @@ export function GcpExplorer({
         aria-busy={loading}
       >
         {filtered.map((log) => {
-          const payload = identity && dragPayload?.(log, identity);
-          const select = () => {
-            setSelected(log);
+          const targets = targetsFor(log);
+          const payload = identity && dragPayload?.(targets, identity);
+          const click = (event?: MouseEvent<HTMLButtonElement>) => {
+            if (event?.shiftKey || event?.ctrlKey || event?.metaKey) {
+              check(log, checkMode(event));
+              return;
+            }
+            check(log, "single");
             if (identity) onOpen?.(log, identity, "preview");
           };
           const open = () => {
             if (identity) onOpen?.(log, identity, "permanent");
           };
+          const text = `${log.label}${
+            duplicateLabels.has(log.label)
+              ? ` (${[log.namespace, log.region].filter(Boolean).join(", ")})`
+              : ""
+          }${cachedNames.has(log.name) ? " · cached" : ""}`;
           const content = (
             <>
               {log.kind === "function" ? (
@@ -619,62 +687,74 @@ export function GcpExplorer({
               ) : (
                 <IconHexagonLetterK size={15} />
               )}
-              <span>
-                {log.label}
-                {duplicateLabels.has(log.label)
-                  ? ` (${[log.namespace, log.region].filter(Boolean).join(", ")})`
-                  : ""}
-                {cachedNames.has(log.name) ? " · cached" : ""}
-              </span>
+              <span>{text}</span>
             </>
           );
+          const many = targets.length > 1;
+          const act = (
+            mode: "add-sources" | "add-splits" | "new-split" | "new-multisource",
+          ) => identity && onSourceAction?.(targets, identity, mode);
           return (
           <Menu key={log.name} withinPortal>
             <Menu.ContextMenu>
-              {payload ? (
-                // Drag to tabs, panes (splits), view sources or Favorites.
-                <ResourceDragLabel
-                  payload={payload}
-                  className="resource-row gcp-log-row"
-                  role="option"
-                  aria-selected={selected?.name === log.name}
-                  onClick={select}
-                  onDoubleClick={open}
-                >
-                  {content}
-                </ResourceDragLabel>
-              ) : (
-              <button
-                type="button"
+              <div
                 className="resource-row gcp-log-row"
                 role="option"
-                aria-selected={selected?.name === log.name}
-                onClick={select}
-                onDoubleClick={open}
+                aria-label={text}
+                aria-selected={checked.has(log.name)}
+                data-inspected={selected?.name === log.name || undefined}
+                onContextMenu={() => check(log, "context")}
               >
-                {content}
-              </button>
-              )}
+                <input
+                  type="checkbox"
+                  aria-label={`Select ${log.label}`}
+                  checked={checked.has(log.name)}
+                  onChange={() => {}}
+                  onClick={(event) => check(log, checkMode(event))}
+                />
+                {payload ? (
+                  // Drag to tabs, panes (splits), view sources or Favorites.
+                  <ResourceDragLabel
+                    payload={payload}
+                    className="resource-label gcp-log-label"
+                    onClick={click}
+                    onDoubleClick={open}
+                  >
+                    {content}
+                  </ResourceDragLabel>
+                ) : (
+                  <button
+                    type="button"
+                    className="resource-label gcp-log-label"
+                    onClick={click}
+                    onDoubleClick={open}
+                  >
+                    {content}
+                  </button>
+                )}
+              </div>
             </Menu.ContextMenu>
             <Menu.Dropdown>
-              <Menu.Item
-                onClick={() => identity && onOpen?.(log, identity, "permanent")}
-              >
-                Open in new tab
-              </Menu.Item>
-              <Menu.Item
-                onClick={() =>
-                  identity && onSourceAction?.(log, identity, "add-sources")
-                }
-              >
+              <Menu.Label>
+                {many ? `${targets.length} selected sources` : "Source actions"}
+              </Menu.Label>
+              {many ? (
+                <>
+                  <Menu.Item onClick={() => act("new-multisource")}>
+                    Open in new multi-source tab
+                  </Menu.Item>
+                  <Menu.Item onClick={() => act("new-split")}>
+                    Open in new split tab
+                  </Menu.Item>
+                </>
+              ) : (
+                <Menu.Item onClick={open}>Open in new tab</Menu.Item>
+              )}
+              <Menu.Item onClick={() => act("add-sources")}>
                 Add to current tab
               </Menu.Item>
-              <Menu.Item
-                onClick={() =>
-                  identity && onSourceAction?.(log, identity, "add-splits")
-                }
-              >
-                Add as split
+              <Menu.Item onClick={() => act("add-splits")}>
+                {many ? "Add as splits" : "Add as split"}
               </Menu.Item>
             </Menu.Dropdown>
           </Menu>
@@ -704,6 +784,21 @@ export function GcpExplorer({
           </Text>
         )}
       </div>
+      {checkedSources.length > 0 && (
+        <Button
+          size="xs"
+          mx="xs"
+          mb="xs"
+          leftSection={<IconPlus size={14} />}
+          disabled={!identity}
+          onClick={() =>
+            identity &&
+            onSourceAction?.(checkedSources, identity, "new-multisource")
+          }
+        >
+          Open {checkedSources.length} selected sources
+        </Button>
+      )}
       <SourceDetailsFrame
         title={
           selected
