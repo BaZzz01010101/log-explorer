@@ -1,4 +1,5 @@
 import type { Connection, LogEvent, LogSource } from "./contracts";
+import { formatSourceName, type SourceNameFormats } from "./display-rules";
 
 export const sourceCount = (sources: LogSource[]): number =>
   sources.reduce(
@@ -36,8 +37,79 @@ function gcpLabel(source: LogSource): string | undefined {
   return undefined;
 }
 
+const sourceFormat = (source: LogSource, formats?: SourceNameFormats) =>
+  (source.gcp ? formats?.gcp : formats?.aws)?.trim() || undefined;
+
+/** Values for the `{PLACEHOLDER}`s of a source name format. */
+function sourceNameValues(
+  source: LogSource,
+  name: string,
+  stream: string | undefined,
+  connection: Connection | undefined,
+  event?: LogEvent,
+): Record<string, string | undefined> {
+  const gcp = source.gcp;
+  if (gcp)
+    return {
+      NAME: gcp.container ?? gcp.functionName,
+      FULL_NAME: source.logGroup,
+      CLUSTER: gcp.cluster,
+      NAMESPACE: event?.gcpSource?.namespace ?? gcp.namespace,
+      REGION: event?.gcpSource?.region ?? gcp.region ?? connection?.region,
+      PROJECT: gcp.project,
+    };
+  return {
+    NAME: name,
+    FULL_NAME: source.logGroup,
+    STREAM: stream ? shortStreamId(stream) : undefined,
+    FULL_STREAM: stream,
+    REGION: connection?.region,
+    PROFILE: connection?.profile,
+  };
+}
+
+/** Full, unformatted source details, one `Field: value` per line. */
+export function sourceDetails(
+  source: LogSource,
+  stream: string | undefined,
+  connection: Connection | undefined,
+): string {
+  const gcp = source.gcp;
+  const lines: [string, string | undefined][] = gcp
+    ? [
+        gcp.kind === "kubernetes"
+          ? ["Container", gcp.container]
+          : ["Function", gcp.functionName],
+        ["Cluster", gcp.cluster],
+        ["Namespace", gcp.namespace],
+        ["Project", gcp.project],
+        ["Region", gcp.region || connection?.region],
+        ["Account", connection?.gcpIdentity?.account],
+        ["Source", source.logGroup],
+      ]
+    : [
+        ["Log group", source.logGroup],
+        ["Log stream", stream],
+        ["Profile", connection?.profile],
+        ["Region", connection?.region],
+      ];
+  return lines
+    .filter((line): line is [string, string] => Boolean(line[1]))
+    .map(([field, value]) => `${field}: ${value}`)
+    .join("\n");
+}
+
+export interface SourceLabelOptions {
+  formats?: SourceNameFormats;
+  connections?: Connection[];
+  connectionId?: string;
+}
+
 // Strip complete shared directory segments, never the shared start of a basename.
-export function sourceBadges(sources: LogSource[]) {
+export function sourceBadges(
+  sources: LogSource[],
+  options: SourceLabelOptions = {},
+) {
   const names = [
     ...new Set(
       sources.filter((source) => !gcpLabel(source)).map((source) => source.logGroup),
@@ -47,16 +119,32 @@ export function sourceBadges(sources: LogSource[]) {
   while (prefix && names.some((name) => !name.startsWith(prefix)))
     prefix = prefix.slice(0, prefix.slice(0, -1).lastIndexOf("/") + 1);
   return sources.flatMap((source, sourceIndex) => {
-    const label =
-      gcpLabel(source) ??
-      (source.logGroup.slice(prefix.length) || source.logGroup);
+    const name = source.logGroup.slice(prefix.length) || source.logGroup;
+    const label = gcpLabel(source) ?? name;
+    const format = sourceFormat(source, options.formats);
+    const connection = options.connections?.find(
+      (item) => item.id === (source.connectionId ?? options.connectionId),
+    );
+    const badge = (stream: string | undefined, automatic: string) => {
+      const formatted =
+        format &&
+        formatSourceName(
+          format,
+          sourceNameValues(source, name, stream, connection),
+        );
+      return {
+        sourceIndex,
+        stream,
+        name,
+        label: formatted || automatic,
+        formatted: Boolean(formatted),
+      };
+    };
     return source.logStreams?.length
-      ? source.logStreams.map((stream) => ({
-          sourceIndex,
-          stream,
-          label: `${label} · ${shortStreamId(stream)}`,
-        }))
-      : [{ sourceIndex, stream: undefined as string | undefined, label }];
+      ? source.logStreams.map((stream) =>
+          badge(stream, `${label} · ${shortStreamId(stream)}`),
+        )
+      : [badge(undefined, label)];
   });
 }
 
@@ -65,6 +153,7 @@ export function eventSourceDisplay(
   sources: LogSource[],
   connections: Connection[],
   defaultConnectionId: string,
+  formats?: SourceNameFormats,
 ): { label: string; detail: string } {
   const connectionId = event.connectionId ?? defaultConnectionId;
   const connection = connections.find((item) => item.id === connectionId);
@@ -78,6 +167,28 @@ export function eventSourceDisplay(
     ),
   );
   const badge = matches[0];
+  const detail = [
+    event.logGroup,
+    event.gcpSource?.namespace,
+    event.logStream,
+    connection ? connection.profile + " / " + connection.region : connectionId,
+  ]
+    .filter(Boolean)
+    .join("\n");
+  const format = badge && sourceFormat(sources[badge.sourceIndex], formats);
+  const formatted =
+    format &&
+    formatSourceName(
+      format,
+      sourceNameValues(
+        sources[badge.sourceIndex],
+        badge.name,
+        event.logStream || badge.stream,
+        connection,
+        event,
+      ),
+    );
+  if (formatted) return { label: formatted, detail };
   let label = badge?.label ?? (event.logGroup || "—");
   if (
     badge?.stream &&
@@ -98,12 +209,7 @@ export function eventSourceDisplay(
     ? connection.profile + " / " + connection.region
     : connectionId;
   if (multipleConnections) label += " · " + endpoint;
-  return {
-    label,
-    detail: [event.logGroup, event.gcpSource?.namespace, event.logStream, endpoint]
-      .filter(Boolean)
-      .join("\n"),
-  };
+  return { label, detail };
 }
 
 export function removeSource(

@@ -142,6 +142,9 @@ import {
   useEventSelection,
   type EventSelectionState,
 } from "../useEventSelection";
+import { useAppCommands } from "../app-commands";
+import { highlightHelp, localFilterHelp } from "../filter-help";
+import { eventSourceName, pointerMessagePath } from "../../shared/display-rules";
 import { useDeserializedEvents } from "../useDeserializedEvents";
 import {
   eventPageDestination,
@@ -301,6 +304,7 @@ export function LogViewer({
   onScrollElement,
   onScrollPositionChange,
 }: LogViewerProps) {
+  const commands = useAppCommands();
   const highlightText = view.highlightText ?? preferences.highlightText;
   const quick = useMemo(
     () => ({
@@ -682,6 +686,11 @@ export function LogViewer({
     setColumnNotice("");
     onViewChange({ ...view, columns });
   };
+  const setAsMessage = (event: LogEvent, path: string) =>
+    commands.addMessageRule({
+      source: eventSourceName(event),
+      path: pointerMessagePath(path),
+    });
   const addColumn = (path: string) => {
     if (
       path !== "" &&
@@ -756,6 +765,7 @@ export function LogViewer({
               sourceContext?.sources ?? [],
               sourceContext?.connections ?? [],
               sourceContext?.connectionId ?? "",
+              preferences.sourceNameFormats,
             );
             return <span className="event-source-label">{source.label}</span>;
           }
@@ -778,7 +788,7 @@ export function LogViewer({
           );
           const preview =
             automatic && column.path === "@message"
-              ? messagePreview(row.parsed)
+              ? messagePreview(row.parsed, row.event, preferences.messageRules)
               : undefined;
           if (preview) text = summarizeValue(preview.value, 1500);
           return (
@@ -792,7 +802,15 @@ export function LogViewer({
           );
         },
       })),
-    [config, preferences.timezone, highlightText, sourceContext, view.mode],
+    [
+      config,
+      preferences.timezone,
+      preferences.sourceNameFormats,
+      preferences.messageRules,
+      highlightText,
+      sourceContext,
+      view.mode,
+    ],
   );
   // TanStack's sorted row model resets pagination when sorting changes.
   // Keep its reference stable so that reset cannot schedule another render loop.
@@ -1270,6 +1288,7 @@ export function LogViewer({
           sourceContext?.sources ?? [],
           sourceContext?.connections ?? [],
           sourceContext?.connectionId ?? "",
+          preferences.sourceNameFormats,
         ).label;
       await copy(
         serializeSelectedEvents(
@@ -1287,7 +1306,10 @@ export function LogViewer({
                 return inferLevel(parsed, event.message, event.severity).toUpperCase();
               if (path === "@source") return sourceLabel(event);
               if (path === "@message")
-                return messagePreview(parsed)?.value ?? event.message;
+                return (
+                  messagePreview(parsed, event, preferences.messageRules)
+                    ?.value ?? event.message
+                );
             }
             return formatColumnValue(
               eventColumnValue(event, parsed, path),
@@ -1366,7 +1388,10 @@ export function LogViewer({
               value={view.localSearch}
               spellCheck={false}
               error={Boolean(localFiltered.error)}
-              data-tooltip={localFiltered.error}
+              data-tooltip={
+                localFiltered.error || localFilterHelp(preferences.shortcuts)
+              }
+              data-tooltip-hover-only={localFiltered.error ? undefined : "true"}
               onKeyDown={(event) => {
                 matchKeys(event, "localFilter");
                 if (!event.defaultPrevented && event.key === "Escape" && !event.nativeEvent.isComposing) {
@@ -1442,7 +1467,13 @@ export function LogViewer({
               maxLength={200}
               spellCheck={false}
               error={Boolean(quick.regex && regexError(highlightText))}
-              data-tooltip={quick.regex ? regexError(highlightText) : undefined}
+              data-tooltip={
+                (quick.regex && regexError(highlightText)) ||
+                highlightHelp(preferences.shortcuts)
+              }
+              data-tooltip-hover-only={
+                quick.regex && regexError(highlightText) ? undefined : "true"
+              }
               onKeyDown={(event) => {
                 matchKeys(event, "highlight");
                 if (!event.defaultPrevented && event.key === "Escape" && !event.nativeEvent.isComposing) {
@@ -1548,7 +1579,7 @@ export function LogViewer({
               },
             ]}
           />
-          <Tooltip label="Column order, size, visibility and pinning">
+          <Tooltip label="Configure columns">
             <ActionIcon
               aria-label="Configure columns"
               variant="default"
@@ -2385,6 +2416,9 @@ export function LogViewer({
                                       )
                                     }
                                     onAddColumn={addColumn}
+                                    onSetMessage={(path) =>
+                                      setAsMessage(row.event, path)
+                                    }
                                     onAddFilter={addFilter}
                                     onDeserialize={(path, encoding) =>
                                       deserialized.deserialize(
@@ -2540,6 +2574,9 @@ export function LogViewer({
                                         )
                                       }
                                       onAddColumn={addColumn}
+                                      onSetMessage={(path) =>
+                                        setAsMessage(row.event, path)
+                                      }
                                       onAddFilter={addFilter}
                                       onDeserialize={(path, encoding) =>
                                         deserialized.deserialize(
@@ -2859,6 +2896,9 @@ export function LogViewer({
                         highlight={highlightText}
                         onCopyValue={(text) => void copy(text)}
                         onAddColumn={addColumn}
+                        onSetMessage={(path) =>
+                          setAsMessage(inspected.event, path)
+                        }
                         onDeserialize={(path, encoding) =>
                           deserialized.deserialize(
                             inspected.event,

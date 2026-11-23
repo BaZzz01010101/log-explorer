@@ -6,7 +6,9 @@ import {
   removeSource,
   sourceBadgeKey,
   sourceBadges,
+  sourceDetails,
 } from "../../shared/source-labels";
+import type { SourceNameFormats } from "../../shared/display-rules";
 import { decodeResourceDrop, mergeSources } from "../../shared/source-management";
 import {
   RESOURCE_CONNECTION,
@@ -26,10 +28,12 @@ export function SourceBadges({
   hiddenSources,
   onHiddenChange,
   tabId,
+  formats,
 }: {
   sources: LogSource[];
   connectionId: string;
   connections: Connection[];
+  formats?: SourceNameFormats;
   /** `hiddenSources` is passed when the change also changes the hidden badges. */
   onChange(sources: LogSource[], hiddenSources?: string[]): void;
   /** Badge keys whose events the view hides locally. */
@@ -196,7 +200,7 @@ export function SourceBadges({
     strip.addEventListener("wheel", wheel, { passive: false });
     return () => strip.removeEventListener("wheel", wheel);
   }, []);
-  const badges = sourceBadges(sources);
+  const badges = sourceBadges(sources, { formats, connections, connectionId });
   const hiddenCount = badges.filter(({ sourceIndex, stream }) =>
     hidden.has(sourceBadgeKey(sources[sourceIndex], stream, connectionId)),
   ).length;
@@ -240,7 +244,6 @@ export function SourceBadges({
         role="group"
         aria-label="Log sources"
         data-source-tab-id={tabId}
-        data-tooltip="Drag log groups or streams here to add sources"
       >
         {/* The label always reserves the width of its "shown/total" form, so
             hiding a source changes its text without moving the badges. */}
@@ -248,7 +251,7 @@ export function SourceBadges({
           className="source-strip-label"
           data-reserve={`${badges.length}/${badges.length} ${sourcesWord}`}
           data-hidden-count={hiddenCount || undefined}
-          title={
+          data-tooltip={
             hiddenCount
               ? `${hiddenCount} of ${badges.length} ${sourcesWord.toLowerCase()} hidden`
               : undefined
@@ -262,7 +265,7 @@ export function SourceBadges({
           </span>
         </span>
         <div className="source-badge-list" ref={list}>
-          {badges.map(({ sourceIndex, stream, label }) => {
+          {badges.map(({ sourceIndex, stream, label, formatted }) => {
             const source = sources[sourceIndex];
             const connection = connections.find(
               (connection) =>
@@ -284,7 +287,7 @@ export function SourceBadges({
                   });
                 }}
                 className={`source-badge${isHidden ? " source-badge-hidden" : ""}`}
-                data-tooltip={`${fullName}\n${connection?.profile ?? ""} · ${connection?.region ?? ""}${isHidden ? "\nHidden: its events are not shown" : ""}${onHiddenChange && badges.length > 1 ? "\nClick to show only this source, again to show all" : ""}`}
+                data-tooltip={sourceDetails(source, stream, connection)}
                 data-source-group={source.logGroup}
                 data-source-stream={stream}
                 data-source-connection={source.connectionId ?? connectionId}
@@ -299,7 +302,7 @@ export function SourceBadges({
                     data-tooltip={
                       isHidden
                         ? "Show this source's events"
-                        : "Hide this source's events in the view (no new query)"
+                        : "Hide this source's events"
                     }
                     onClick={() => toggleHidden(key)}
                   >
@@ -337,12 +340,13 @@ export function SourceBadges({
                   }}
                 >
                   {label}
-                  {multipleConnections && connection
+                  {!formatted && multipleConnections && connection
                     ? ` · ${multipleProfiles ? connection.profile + "/" : ""}${connection.region}`
                     : ""}
                 </ResourceDragLabel>
                 <button
                   type="button"
+                  data-tooltip="Remove source"
                   aria-label={`Remove source ${fullName} (${connection?.region ?? ""})`}
                   onClick={() => removeBadge(sourceIndex, stream)}
                 >

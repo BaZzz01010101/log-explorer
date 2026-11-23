@@ -96,6 +96,7 @@ it("reads CloudWatch recent history newest first and continues into older histor
   const aws = createAwsAdapter({ ...west, mode: "aws" }, { allowAws: () => true, transportFactory: async () => ({
     destroy() {},
     send: async (command) => {
+      if (command.constructor.name !== "FilterLogEventsCommand") return {};
       const input = command.input as typeof inputs[number]; inputs.push(input);
       if (input.startFromHead === false) return { events: [{ eventId: "new", timestamp: boundary + 100, message: "new" }] };
       return { events: input.startTime! <= boundary - 100 && input.endTime! >= boundary - 100 ? [{ eventId: "old", timestamp: boundary - 100, message: "old" }] : [] };
@@ -111,6 +112,125 @@ it("reads CloudWatch recent history newest first and continues into older histor
   expect(inputs[0]).toMatchObject({ startTime: boundary, startFromHead: false });
   expect(inputs[1].startFromHead).toBe(true);
   expect(second.cursor).toBeUndefined();
+});
+
+it("skips an idle stream's empty history and stops at the group's retention", async () => {
+  const day = 86400000;
+  const now = Date.now();
+  const calls: Array<{ startTime: number; endTime: number }> = [];
+  const aws = createAwsAdapter({ ...west, mode: "aws" }, { allowAws: () => true, transportFactory: async () => ({
+    destroy() {},
+    send: async (command) => {
+      const name = command.constructor.name;
+      if (name === "DescribeLogGroupsCommand") return { logGroups: [{ logGroupName: "/same", retentionInDays: 30, creationTime: now - 400 * day }] };
+      if (name === "DescribeLogStreamsCommand") return { logStreams: [{ logStreamName: "idle1" }, { logStreamName: "idle", creationTime: now - 25 * day, lastEventTimestamp: now - 20 * day }] };
+      const input = command.input as { startTime: number; endTime: number };
+      calls.push(input);
+      const at = now - 20 * day;
+      return { events: input.startTime <= at && input.endTime >= at ? [{ eventId: "last", timestamp: at, message: "last" }] : [] };
+    },
+  }) });
+  const input = request({ connection: { ...west, mode: "aws" }, connections: [], sources: [{ logGroup: "/same", logStreams: ["idle"] }], startTime: 0, endTime: now, direction: "older" });
+  const signal = new AbortController().signal;
+  const first = await aws.events(input, signal);
+  expect(first.events?.map((event) => event.message)).toEqual(["last"]);
+  // The newest-first search covers only the metadata lag window.
+  expect(calls[0].startTime).toBeGreaterThanOrEqual(now - 6 * 3600000 - 1000);
+  // Older windows start at the stream's last event, not at the present.
+  expect(calls[1].endTime).toBeLessThanOrEqual(now - 20 * day + 2 * 3600000);
+  expect(first.cursorUpperBound).toBeLessThan(now - 20 * day);
+  let cursor = first.cursor;
+  while (cursor) cursor = (await aws.events({ ...input, cursor }, signal)).cursor;
+  // Nothing before the stream's creation (minus the ingestion grace) is searched.
+  expect(Math.min(...calls.map((call) => call.startTime))).toBeGreaterThanOrEqual(now - 40 * day - 1000);
+});
+
+it("does not search history older than the group's retention", async () => {
+  const day = 86400000;
+  const now = Date.now();
+  const starts: number[] = [];
+  const aws = createAwsAdapter({ ...west, mode: "aws" }, { allowAws: () => true, transportFactory: async () => ({
+    destroy() {},
+    send: async (command) => {
+      if (command.constructor.name === "DescribeLogGroupsCommand") return { logGroups: [{ logGroupName: "/same", retentionInDays: 7 }] };
+      if (command.constructor.name === "DescribeLogStreamsCommand") return { logStreams: [{ logStreamName: "active", creationTime: now - 100 * day, lastEventTimestamp: now }] };
+      starts.push((command.input as { startTime: number }).startTime);
+      return { events: [] };
+    },
+  }) });
+  const input = request({ connection: { ...west, mode: "aws" }, connections: [], sources: [{ logGroup: "/same" }], startTime: 0, endTime: now, direction: "older" });
+  const signal = new AbortController().signal;
+  let page = await aws.events(input, signal);
+  while (page.cursor) page = await aws.events({ ...input, cursor: page.cursor }, signal);
+  expect(starts).toHaveLength(1);
+  expect(starts[0]).toBeGreaterThanOrEqual(now - 10 * day - 1000);
+});
+
+it("bounds an idle group by its newest stream and an empty group by the lag window", async () => {
+  const day = 86400000;
+  const now = Date.now();
+  const run = async (logStreams: unknown[]) => {
+    const calls: Array<{ startTime: number; endTime: number }> = [];
+    const listings: unknown[] = [];
+    const aws = createAwsAdapter({ ...west, mode: "aws" }, { allowAws: () => true, transportFactory: async () => ({
+      destroy() {},
+      send: async (command) => {
+        const name = command.constructor.name;
+        if (name === "DescribeLogGroupsCommand") return { logGroups: [{ logGroupName: "/same", retentionInDays: 365 }] };
+        if (name === "DescribeLogStreamsCommand") { listings.push(command.input); return { logStreams }; }
+        calls.push(command.input as { startTime: number; endTime: number });
+        return { events: [] };
+      },
+    }) });
+    const input = request({ connection: { ...west, mode: "aws" }, connections: [], sources: [{ logGroup: "/same" }], startTime: 0, endTime: now, direction: "older" });
+    const signal = new AbortController().signal;
+    let page = await aws.events(input, signal);
+    while (page.cursor) page = await aws.events({ ...input, cursor: page.cursor }, signal);
+    return { calls, listings };
+  };
+  const idle = await run([{ logStreamName: "old", creationTime: now - 300 * day, lastEventTimestamp: now - 200 * day }]);
+  expect(idle.listings).toEqual([expect.objectContaining({ orderBy: "LastEventTime", descending: true, limit: 1 })]);
+  expect(idle.calls[0].startTime).toBeGreaterThanOrEqual(now - 6 * 3600000 - 1000);
+  expect(Math.max(...idle.calls.slice(1).map((call) => call.endTime))).toBeLessThanOrEqual(now - 200 * day + 2 * 3600000);
+  const empty = await run([]);
+  expect(empty.calls).toHaveLength(1);
+  expect(empty.calls[0].startTime).toBeGreaterThanOrEqual(now - 6 * 3600000 - 1000);
+});
+
+it("searches only the lag window for a selected stream that no longer exists", async () => {
+  const now = Date.now();
+  const calls: Array<{ startTime: number }> = [];
+  const aws = createAwsAdapter({ ...west, mode: "aws" }, { allowAws: () => true, transportFactory: async () => ({
+    destroy() {},
+    send: async (command) => {
+      const name = command.constructor.name;
+      if (name === "DescribeLogGroupsCommand") return { logGroups: [] };
+      if (name === "DescribeLogStreamsCommand") return { logStreams: [{ logStreamName: "gone-but-similar" }] };
+      calls.push(command.input as { startTime: number });
+      return { events: [] };
+    },
+  }) });
+  const input = request({ connection: { ...west, mode: "aws" }, connections: [], sources: [{ logGroup: "/same", logStreams: ["gone"] }], startTime: 0, endTime: now, direction: "older" });
+  const page = await aws.events(input, new AbortController().signal);
+  expect(page.cursor).toBeUndefined();
+  expect(calls).toHaveLength(1);
+  expect(calls[0].startTime).toBeGreaterThanOrEqual(now - 6 * 3600000 - 1000);
+});
+
+it("keeps the full Recent search when metadata is unavailable", async () => {
+  const boundary = Date.UTC(2024, 0, 1);
+  const starts: number[] = [];
+  const aws = createAwsAdapter({ ...west, mode: "aws" }, { allowAws: () => true, transportFactory: async () => ({
+    destroy() {},
+    send: async (command) => {
+      if (command.constructor.name !== "FilterLogEventsCommand") throw Object.assign(new Error("denied"), { name: "AccessDeniedException" });
+      starts.push((command.input as { startTime: number }).startTime);
+      return { events: [] };
+    },
+  }) });
+  const input = request({ connection: { ...west, mode: "aws" }, connections: [], sources: [{ logGroup: "/same", logStreams: ["s"] }], startTime: 0, endTime: Date.now(), direction: "older" });
+  await aws.events(input, new AbortController().signal);
+  expect(starts[0]).toBe(boundary);
 });
 
 it("pages pre-2024 CloudWatch windows backward without losing equal-timestamp events", async () => {

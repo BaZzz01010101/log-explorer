@@ -227,13 +227,16 @@ export default function App() {
       patch: { sidebarVisible: !workspace.sidebarVisible },
     });
   };
-  const showTimeRangesRef = useRef(() => {});
-  showTimeRangesRef.current = () => {
+  const [focusMessageRule, setFocusMessageRule] = useState<string | null>(
+    null,
+  );
+  const showSettingsPageRef = useRef((_page: string) => {});
+  showSettingsPageRef.current = (page: string) => {
     if (!settingsVisibleRef.current)
       setSettingsPreview(
         captureSettingsPreview(workspaceRef.current, runtimesRef.current),
       );
-    setSettingsPage("time-ranges");
+    setSettingsPage(page);
     setSettingsPageRequest((request) => request + 1);
     const detached =
       workspaceRef.current.preferences.settingsDetached === true;
@@ -243,7 +246,21 @@ export default function App() {
       dispatch({ type: "workspace/update", patch: { sidebarVisible: true } });
   };
   const appCommands = useRef<AppCommands>({
-    openTimeRangeSettings: () => showTimeRangesRef.current(),
+    openTimeRangeSettings: () => showSettingsPageRef.current("time-ranges"),
+    addMessageRule: (rule) => {
+      const rules = workspaceRef.current.preferences.messageRules ?? [];
+      const existing = rules.find(
+        (item) => item.source === rule.source && item.path === rule.path,
+      );
+      const id = existing?.id ?? `message-${crypto.randomUUID()}`;
+      if (!existing)
+        dispatch({
+          type: "preferences/update",
+          patch: { messageRules: [...rules, { id, ...rule }] },
+        });
+      setFocusMessageRule(id);
+      showSettingsPageRef.current("display");
+    },
   }).current;
   const toggleExplorer = () => {
     const visible = workspace.sidebarVisible && sidePanel === "explorer";
@@ -917,6 +934,7 @@ export default function App() {
                 }}
                 requestedTab={settingsPage}
                 requestedTabKey={settingsPageRequest}
+                focusMessageRule={focusMessageRule}
                 onClose={() => setSettingsOpen(false)}
                 workspace={workspace}
                 dispatch={dispatch}

@@ -232,3 +232,142 @@ for (const theme of behaviorThemes)
     await expect(label).not.toHaveAttribute("data-hidden-count");
     await expect(label).toHaveText("1 Source");
   });
+
+test("source name formats, badge hints and Set as message rules", async () => {
+  const strip = page.getByRole("group", { name: "Log sources" });
+  const orders = strip.locator(
+    '.source-badge[data-source-group="/aws/lambda/orders-api"]',
+  );
+  const rows = page.locator(".virtual-event");
+  const tooltip = page.getByRole("tooltip");
+  await expect(page.locator(".query-status")).toHaveAttribute(
+    "data-query-state",
+    "complete",
+  );
+
+  // Badges use the pointer cursor and hidden ones are not struck through.
+  const name = orders.locator(".source-badge-drag-label");
+  await expect(name).toHaveCSS("cursor", "pointer");
+  await strip
+    .getByRole("button", { name: "Hide source /aws/lambda/orders-api" })
+    .click();
+  await expect(name).toHaveCSS("text-decoration-line", "none");
+  await strip
+    .getByRole("button", { name: "Show source /aws/lambda/orders-api" })
+    .click();
+
+  // The remove button has its own hint; the badge hint lists full details.
+  await orders.getByRole("button", { name: /^Remove source/ }).hover();
+  await expect(tooltip).toHaveText("Remove source");
+  await name.hover();
+  await expect(tooltip).toContainText("Log group: /aws/lambda/orders-api");
+  await expect(tooltip).toContainText("Region: eu-west-1");
+
+  // Filter fields explain their syntax and shortcuts.
+  await page
+    .getByRole("textbox", { name: "Local filter loaded events" })
+    .hover();
+  await expect(tooltip).toContainText("@/level=ERROR");
+  await expect(tooltip).toContainText("Ctrl+F: focus this field");
+  await page
+    .getByRole("textbox", { name: "Highlight text in loaded events" })
+    .hover();
+  await expect(tooltip).toContainText("Ctrl+H: focus this field");
+  await page.getByRole("button", { name: /^Filter mode:/ }).hover();
+  await expect(tooltip).toContainText("UNIFIED SYNTAX");
+  await expect(tooltip).toContainText("$.status >= 500");
+  await page.getByRole("button", { name: "Configure columns" }).hover();
+  await expect(tooltip).toHaveText("Configure columns");
+
+  // Set as message adds a rule for the event's source and opens it.
+  const pathCells = rows
+    .locator(".log-cell")
+    .filter({ hasText: /^\/api\/orders\/\d+$/ });
+  await expect(pathCells).toHaveCount(0);
+  const json = rows.filter({ hasText: "Request processed" }).first();
+  await json.locator(".inspect-cell").first().dblclick();
+  const inspector = page.getByRole("region", {
+    name: "Event inspector",
+    exact: true,
+  });
+  await expect(inspector).toBeVisible();
+  const expand = inspector.getByRole("button", {
+    name: "Expand /request",
+    exact: true,
+  });
+  if (await expand.count()) await expand.click();
+  await inspector
+    .getByRole("button", {
+      name: "Field actions for /request/path",
+      exact: true,
+    })
+    .click();
+  await page
+    .getByRole("menuitem", { name: "Set /request/path as message" })
+    .click();
+  await expect(page.getByRole("tab", { name: "Display" })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+  const rulePath = page.getByRole("textbox", { name: "Rule 1 path" });
+  await expect(rulePath).toHaveValue("$.request.path");
+  await expect(rulePath).toBeFocused();
+  await expect(
+    page.getByRole("textbox", { name: "Rule 1 source" }),
+  ).toHaveValue(/^\/aws\/lambda\/(orders-api|payments-worker)$/);
+  // The source filter supports regex and case like the local filter.
+  const ruleSource = page.getByRole("textbox", { name: "Rule 1 source" });
+  await ruleSource.fill("(orders|payments)-");
+  await expect(pathCells).toHaveCount(0);
+  await page
+    .getByRole("button", { name: "Use rule 1 source regular expression" })
+    .click();
+  await expect(pathCells.first()).toBeVisible();
+  await ruleSource.fill("(ORDERS|PAYMENTS)-");
+  await expect(pathCells.first()).toBeVisible();
+  await page.getByRole("button", { name: "Match rule 1 source case" }).click();
+  await expect(pathCells).toHaveCount(0);
+  await ruleSource.fill("(");
+  await expect(page.locator("[data-message-rule]").first()).toContainText(
+    /Invalid regular expression/i,
+  );
+  await ruleSource.fill("");
+  await expect(pathCells.first()).toBeVisible();
+
+  // An AWS format renames badges and the Source column.
+  await page
+    .getByRole("button", { name: "Help for Source names", exact: true })
+    .click();
+  await expect(tooltip).toContainText("Examples");
+  await expect(tooltip).toContainText(
+    "checkout · dev · payments / europe-west1",
+  );
+  await page.keyboard.press("Escape");
+  await page
+    .getByRole("button", { name: "Help for AWS source name", exact: true })
+    .click();
+  await expect(tooltip).toContainText("{FULL_NAME}");
+  await expect(tooltip).not.toContainText("Examples");
+  await expect(tooltip).not.toContainText("{CLUSTER}");
+  await page.keyboard.press("Escape");
+  await page
+    .getByRole("textbox", { name: "AWS source name", exact: true })
+    .fill("{FULL_NAME} : {REGION}");
+  await expect(name).toHaveText("/aws/lambda/orders-api : eu-west-1");
+  await expect(rows.locator(".event-source-label").first()).toHaveText(
+    /^\/aws\/lambda\/(orders-api|payments-worker) : eu-west-1$/,
+  );
+  await page.getByRole("button", { name: "Delete rule 1" }).click();
+  await expect(pathCells).toHaveCount(0);
+  await expect
+    .poll(async () => {
+      const saved = JSON.parse(
+        await readFile(join(directory, "workspace.json"), "utf8"),
+      );
+      return [
+        saved.preferences.sourceNameFormats?.aws,
+        saved.preferences.messageRules?.length,
+      ];
+    })
+    .toEqual(["{FULL_NAME} : {REGION}", 0]);
+});

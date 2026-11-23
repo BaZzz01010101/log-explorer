@@ -9,8 +9,25 @@ export interface LoginCommand {
 }
 const args = ["auth", "login", "--no-activate", "--quiet"];
 let activeLogin: ChildProcess | undefined;
-export function cancelGoogleLogin() {
-  activeLogin?.kill();
+let cancelledLogin: ChildProcess | undefined;
+
+/** The error of a sign-in that the user cancelled; not shown as a failure. */
+export const GCP_SIGN_IN_CANCELLED = "Google sign-in was cancelled.";
+
+/** Stops the running browser sign-in; resolves once its process has exited. */
+export function cancelGoogleLogin(): Promise<void> {
+  const child = activeLogin;
+  if (!child || child.exitCode !== null || child.signalCode !== null)
+    return Promise.resolve();
+  cancelledLogin = child;
+  return new Promise((resolve) => {
+    const timer = setTimeout(resolve, 5000);
+    child.once("exit", () => {
+      clearTimeout(timer);
+      resolve();
+    });
+    child.kill();
+  });
 }
 
 /** Execute the SDK's Python entry point directly: no shell or string-built command. */
@@ -81,9 +98,10 @@ export function googleLoginCommand(
 export function createGcpSignIn(
   launch: () => Promise<void>,
   reset: () => void,
+  stop: () => Promise<void> | void = () => {},
 ) {
   let pending: Promise<void> | undefined;
-  return () => {
+  const signIn = () => {
     if (pending) return pending;
     const operation = launch().then(() => reset());
     pending = operation.finally(() => {
@@ -91,6 +109,13 @@ export function createGcpSignIn(
     });
     return pending;
   };
+  /** Cancels the running sign-in; a new one can start once this resolves. */
+  signIn.cancel = async () => {
+    const current = pending;
+    await stop();
+    await current?.catch(() => {});
+  };
+  return signIn;
 }
 
 export function launchGoogleLogin(): Promise<void> {
@@ -126,11 +151,15 @@ export function launchGoogleLogin(): Promise<void> {
     child.once("exit", (code) => {
       clearTimeout(timer);
       if (activeLogin === child) activeLogin = undefined;
-      if (code === 0) resolve();
+      const cancelled = cancelledLogin === child;
+      if (cancelled) cancelledLogin = undefined;
+      if (code === 0 && !cancelled) resolve();
       else
         reject(
           new Error(
-            "Google sign-in was cancelled or failed. Please try again.",
+            cancelled
+              ? GCP_SIGN_IN_CANCELLED
+              : "Google sign-in was cancelled or failed. Please try again.",
           ),
         );
     });

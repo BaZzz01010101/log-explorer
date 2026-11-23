@@ -1,3 +1,4 @@
+import type { MessageRule } from "../shared/display-rules";
 import type { ColumnConfig, LogEvent, Preferences } from "../shared/contracts";
 import type { QuickHighlightOptions } from "../shared/quick-highlight";
 import type { LocalFilterOptions } from "../shared/log-data";
@@ -79,6 +80,7 @@ export function highlightEvent(
   filters?: HighlightFilters,
   messageComplete = true,
   quick: QuickHighlightOptions = {},
+  messageRules?: readonly MessageRule[],
 ): EventHighlights {
   const result: EventHighlights = { row: {}, text: Object.create(null) };
   if (overviewOnly) result.overview = [];
@@ -184,7 +186,7 @@ export function highlightEvent(
         (!column.format || column.format === "auto") &&
         parsed.kind === "json"
       ) {
-        const preview = messagePreview(parsed);
+        const preview = messagePreview(parsed, event, messageRules);
         if (preview) {
           path = preview.path;
           text = summarizeValue(preview.value, 1500);

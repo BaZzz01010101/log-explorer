@@ -260,7 +260,7 @@ export function createAwsAdapter(
 ): LogAdapter {
   const slots = new Semaphore(4);
   const cursors = new Map<string, EventCursor>();
-  type RecentCursor = { signature: string; expires: number; phase: "recent" | "old"; token?: string; seen: string[]; end: number; span: number; start?: number; buffer: LogEvent[]; ready: boolean };
+  type RecentCursor = { signature: string; expires: number; phase: "recent" | "old"; token?: string; seen: string[]; floor: number; recentStart: number; end: number; span: number; start?: number; buffer: LogEvent[]; ready: boolean };
   const recentCursors = new Map<string, RecentCursor>();
   const metadataContinuations = new MetadataContinuations();
   const arnCache = new Map<string, { arn: string; expires: number }>();
@@ -387,6 +387,115 @@ export function createAwsAdapter(
       "Log group was not found for Live Tail; verify the region and logs:DescribeLogGroups permission",
     );
   }
+  /**
+   * Bounds a Recent search with metadata. CloudWatch accepts events at most 14
+   * days older than ingestion and within retention (expired events are deleted
+   * up to 3 days late), so nothing predates `floor`. `ceiling` is the newest
+   * event the selected streams (or the whole group) can hold; stream metadata may lag by about an
+   * hour, so callers still search the latest hours. Missing permissions or
+   * metadata leave the search unbounded.
+   */
+  async function recentBounds(
+    source: QueryRequest["sources"][number],
+    signal: AbortSignal,
+  ): Promise<{ floor: number; ceiling?: number }> {
+    const day = 86400000;
+    const sdk = await awsSdk();
+    const quiet = <T,>(operation: Promise<T>) =>
+      operation.catch(() => {
+        throwIfAborted(signal);
+        return undefined;
+      });
+    const name = nameFromIdentifier(source.logGroup);
+    const names = source.logStreams ?? [];
+    const [groups, streams] = await Promise.all([
+      quiet(
+        send<DescribeLogGroupsCommandOutput>(
+          new sdk.DescribeLogGroupsCommand({
+            logGroupIdentifiers: [source.logGroup.replace(/:\*$/, "")],
+          }),
+          signal,
+        ),
+      ),
+      names.length && names.length <= 20
+        ? Promise.all(
+            names.map((stream) =>
+              quiet(
+                send<DescribeLogStreamsCommandOutput>(
+                  new sdk.DescribeLogStreamsCommand({
+                    ...identifier(source.logGroup),
+                    logStreamNamePrefix: stream,
+                    limit: 50,
+                  }),
+                  signal,
+                ),
+              ).then((response) =>
+                // null: the listing succeeded and the stream does not exist.
+                Array.isArray(response?.logStreams)
+                  ? (response.logStreams.find(
+                      (item) => item.logStreamName === stream,
+                    ) ?? null)
+                  : undefined,
+              ),
+            ),
+          )
+        : names.length
+          ? undefined
+          : // The newest stream bounds the whole group: one listing replaces
+            // a year-long scan of an idle group's streams.
+            quiet(
+              send<DescribeLogStreamsCommandOutput>(
+                new sdk.DescribeLogStreamsCommand({
+                  ...identifier(source.logGroup),
+                  orderBy: "LastEventTime",
+                  descending: true,
+                  limit: 1,
+                }),
+                signal,
+              ),
+            ).then((response) =>
+              Array.isArray(response?.logStreams)
+                ? response.logStreams
+                : undefined,
+            ),
+    ]);
+    let floor = -Infinity;
+    const group = groups?.logGroups?.find(
+      (item) => item.logGroupName === name,
+    );
+    if (group?.retentionInDays)
+      floor = Math.max(floor, Date.now() - (group.retentionInDays + 3) * day);
+    if (group?.creationTime)
+      floor = Math.max(floor, group.creationTime - 15 * day);
+    if (!streams || streams.some((stream) => stream === undefined))
+      return { floor };
+    const found = streams.filter((stream) => stream !== null) as Array<
+      NonNullable<(typeof streams)[number]>
+    >;
+    // Missing streams (or a group without streams) hold no events outside
+    // the lag window.
+    if (!found.length) return { floor, ceiling: -Infinity };
+    if (!found.every((stream) => stream.creationTime)) return { floor };
+    // Only a full stream selection bounds the oldest possible event.
+    if (names.length)
+      floor = Math.max(
+        floor,
+        Math.min(...found.map((stream) => stream.creationTime!)) - 15 * day,
+      );
+    // Events may be stamped up to 2 hours ahead of ingestion.
+    const ceiling =
+      Math.max(
+        ...found.map((stream) =>
+          Math.max(
+            stream.creationTime!,
+            stream.lastEventTimestamp ?? 0,
+            stream.lastIngestionTime ?? 0,
+          ),
+        ),
+      ) +
+      2 * 3600000;
+    return { floor, ceiling };
+  }
   return {
     async listGroups(search, cursor, signal) {
       const response = await send<DescribeLogGroupsCommandOutput>(
@@ -494,8 +603,24 @@ export function createAwsAdapter(
         for (const [id, cursor] of recentCursors) if (cursor.expires <= started) recentCursors.delete(id);
         const saved = request.cursor ? recentCursors.get(request.cursor) : undefined;
         if (request.cursor && (!saved || saved.signature !== key)) throw new Error("Continuation expired or belongs to a different query. Run the query again.");
-        const state: RecentCursor = saved ? structuredClone(saved) : { signature: key, expires: 0, phase: request.endTime >= boundary ? "recent" : "old", seen: [], end: Math.min(request.endTime, boundary - 1), span: 86400000, buffer: [], ready: false };
         const source = request.sources[0];
+        let state: RecentCursor;
+        if (saved) state = structuredClone(saved);
+        else {
+          const bounds = await recentBounds(source, signal);
+          throwIfAborted(signal);
+          const floor = Math.max(request.startTime, bounds.floor);
+          let recentStart = Math.max(boundary, floor);
+          let end = Math.min(request.endTime, boundary - 1);
+          // An idle stream: search only the metadata lag window newest first,
+          // then continue from its last event instead of scanning empty history.
+          const lag = Date.now() - 6 * 3600000;
+          if (bounds.ceiling !== undefined && bounds.ceiling < lag) {
+            recentStart = Math.max(floor, lag);
+            end = Math.min(request.endTime, bounds.ceiling, recentStart - 1);
+          }
+          state = { signature: key, expires: 0, phase: request.endTime >= recentStart ? "recent" : "old", seen: [], floor, recentStart, end, span: 86400000, buffer: [], ready: false };
+        }
         let events: LogEvent[] = [];
         let finished = false;
         for (let calls = 0; calls < 32 && !events.length && !finished; calls++) {
@@ -503,14 +628,14 @@ export function createAwsAdapter(
           if (state.phase === "old" && state.ready) {
             events = state.buffer.splice(0, request.limit);
             if (!state.buffer.length) { state.ready = false; state.end = state.start! - 1; state.start = undefined; }
-            if (state.end < request.startTime && !state.buffer.length) finished = true;
+            if (state.end < state.floor && !state.buffer.length) finished = true;
             continue;
           }
-          if (state.phase === "old" && state.end < request.startTime) { finished = true; break; }
-          if (state.phase === "old" && state.start === undefined) state.start = Math.max(request.startTime, state.end - state.span + 1);
+          if (state.phase === "old" && state.end < state.floor) { finished = true; break; }
+          if (state.phase === "old" && state.start === undefined) state.start = Math.max(state.floor, state.end - state.span + 1);
           const response = await send<FilterLogEventsCommandOutput>(new (await awsSdk()).FilterLogEventsCommand({
             ...identifier(source.logGroup), logStreamNames: source.logStreams?.length ? source.logStreams : undefined,
-            startTime: state.phase === "recent" ? Math.max(boundary, request.startTime) : state.start,
+            startTime: state.phase === "recent" ? state.recentStart : state.start,
             endTime: state.phase === "recent" ? request.endTime : state.end,
             startFromHead: state.phase === "old", filterPattern: request.filterPattern || undefined,
             nextToken: state.token, limit: Math.min(10000, request.limit),
@@ -527,7 +652,7 @@ export function createAwsAdapter(
           }));
           if (state.phase === "recent") {
             events = page;
-            if (!token) { state.phase = "old"; state.seen = []; if (state.end < request.startTime) finished = true; }
+            if (!token) { state.phase = "old"; state.seen = []; if (state.end < state.floor) finished = true; }
           } else {
             state.buffer.push(...page);
             const over = state.buffer.length > Math.max(2000, request.limit * 4) || state.buffer.reduce((sum, item) => sum + item.message.length, 0) > 8_000_000;

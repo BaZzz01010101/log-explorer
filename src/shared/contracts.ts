@@ -264,6 +264,10 @@ export interface Preferences {
   timezone: "local" | "utc";
   highlightText: string;
   autoExpandFilterMatches?: boolean;
+  /** Source name formats for badges and the Source column. */
+  sourceNameFormats?: import("./display-rules").SourceNameFormats;
+  /** Paths checked first for the Message column. */
+  messageRules?: import("./display-rules").MessageRule[];
   shortcuts: Record<string, string>;
 }
 export interface Workspace {
@@ -305,6 +309,8 @@ export interface WorkspaceLoad {
 export interface ExplorerApi {
   gcpProfiles(): Promise<GcpProfiles>;
   gcpSignIn(): Promise<void>;
+  /** Cancels a running Google Cloud sign-in. */
+  gcpCancelSignIn(): Promise<void>;
   gcpInstallCli(): Promise<void>;
   gcpProjects(
     identity: GcpIdentity,

@@ -22,6 +22,7 @@ const temporaryRoot = resolve(".tmp/desktop-settings-simplification");
 const categories = [
   "Connections",
   "Preferences",
+  "Display",
   "Time ranges",
   "Highlights",
   "Shortcuts",

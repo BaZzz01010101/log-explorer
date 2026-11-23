@@ -321,6 +321,24 @@ export const workspaceSchema = z
       pinnedTabsSeparateRow: z.boolean().optional(),
       highlightText: z.string().max(1000),
       autoExpandFilterMatches: z.boolean().optional(),
+      sourceNameFormats: z
+        .object({
+          aws: z.string().max(200).optional(),
+          gcp: z.string().max(200).optional(),
+        })
+        .optional(),
+      messageRules: z
+        .array(
+          z.object({
+            id: z.string().min(1).max(120),
+            source: z.string().max(512),
+            path: z.string().max(512),
+            regex: z.boolean().optional(),
+            caseSensitive: z.boolean().optional(),
+          }),
+        )
+        .max(100)
+        .optional(),
       highlightProfiles: highlightProfilesSchema.optional(),
       shortcuts: z.record(z.string().max(60), z.string().max(80)),
     }),

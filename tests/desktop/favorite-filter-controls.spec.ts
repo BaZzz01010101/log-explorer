@@ -508,7 +508,7 @@ for (const theme of behaviorThemes) {
       await expect(page.getByRole("tooltip")).toHaveCount(0);
     }
     await option("Configure columns").hover();
-    await expect(page.getByRole("tooltip")).toContainText("Column order");
+    await expect(page.getByRole("tooltip")).toHaveText("Configure columns");
     expect(await requests()).toBe(1);
   });
 

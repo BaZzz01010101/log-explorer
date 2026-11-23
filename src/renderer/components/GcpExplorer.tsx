@@ -30,8 +30,8 @@ import { matchGroupNames } from "../group-regex";
 import {
   gcpErrorMessage,
   isGcpAuthorizationError,
-  signInToGoogleCloud,
 } from "../gcp-errors";
+import { useGcpSignIn } from "../useGcpSignIn";
 import { shortcutMatches } from "../../shared/shortcuts";
 import { Tooltip } from "./AppTooltip";
 import { Menu } from "./AppMenu";
@@ -117,8 +117,25 @@ export function GcpExplorer({
   const [loading, setLoading] = useState(false);
   const [projectError, setProjectError] = useState("");
   const [error, setError] = useState("");
-  const [authenticating, setAuthenticating] = useState(false);
   const [authError, setAuthError] = useState("");
+  const gcpSignIn = useGcpSignIn(async () => {
+    setAuthorizationRequired(false);
+    setProjectError("");
+    setError("");
+    const selected = await refreshProfiles(true);
+    if (selected?.configuration && selected.account) {
+      onAuthorized?.(selected.configuration, selected.account);
+      if (
+        selected.configuration === configuration &&
+        selected.account === account
+      ) {
+        void discover();
+        if (project) void load(project);
+      }
+    }
+  });
+  const authenticating = gcpSignIn.signingIn;
+  const signInError = authError || gcpSignIn.error;
   const [authorizationRequired, setAuthorizationRequired] = useState(false);
   const [configurations, setConfigurations] = useState<GcpConfiguration[]>([]);
   const [accounts, setAccounts] = useState<string[]>([]);
@@ -337,31 +354,10 @@ export function GcpExplorer({
       void load(initialProject);
     }
   }, [active, configuration, account]);
-  const signIn = async () => {
-    setAuthenticating(true);
+  const signIn = () => {
     setAuthError("");
     setProjectError("");
-    try {
-      await signInToGoogleCloud();
-      setAuthorizationRequired(false);
-      setProjectError("");
-      setError("");
-      const selected = await refreshProfiles(true);
-      if (selected?.configuration && selected.account) {
-        onAuthorized?.(selected.configuration, selected.account);
-        if (
-          selected.configuration === configuration &&
-          selected.account === account
-        ) {
-          void discover();
-          if (project) void load(project);
-        }
-      }
-    } catch (failure) {
-      setAuthError(gcpErrorMessage(failure));
-    } finally {
-      setAuthenticating(false);
-    }
+    return gcpSignIn.signIn();
   };
   useEffect(() => {
     if (!regex || !search) {
@@ -463,20 +459,22 @@ export function GcpExplorer({
         <div className="gcp-sign-in-panel">
           <Text fw={600}>Sign in to Google Cloud</Text>
           <Text size="sm" c="dimmed">Sign in to browse projects and logs with your Google Cloud CLI account.</Text>
-          <Button loading={authenticating} onClick={() => void signIn()}>
-            Sign in
-          </Button>
-          {authenticating && (
-            <Text size="xs" c="dimmed">
-              Complete sign-in in your browser…
-            </Text>
-          )}
-          {authError && (
+          <Group gap={6} justify="center">
+            <Button loading={authenticating} onClick={() => void signIn()}>
+              Sign in
+            </Button>
+            {authenticating && (
+              <Button variant="default" onClick={() => void gcpSignIn.cancel()}>
+                Cancel
+              </Button>
+            )}
+          </Group>
+          {signInError && (
             <Text size="xs" c="red" role="alert">
-              {authError}
+              {signInError}
             </Text>
           )}
-          {/Google Cloud CLI was not found/i.test(authError) && (
+          {/Google Cloud CLI was not found/i.test(signInError) && (
             <Button
               size="compact-xs"
               variant="subtle"
@@ -570,12 +568,12 @@ export function GcpExplorer({
             );
           }}
         />
-        {authError && (
+        {signInError && (
           <Text size="xs" c="red" role="alert">
-            {authError}
+            {signInError}
           </Text>
         )}
-        {/Google Cloud CLI was not found/i.test(authError) && (
+        {/Google Cloud CLI was not found/i.test(signInError) && (
           <Button
             size="compact-xs"
             variant="subtle"

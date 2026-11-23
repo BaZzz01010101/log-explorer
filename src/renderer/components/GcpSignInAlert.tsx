@@ -1,10 +1,7 @@
-import { useEffect, useRef, useState } from "react";
-import { Alert, Button, Text } from "@mantine/core";
-import {
-  GCP_SIGNED_IN_EVENT,
-  gcpErrorMessage,
-  signInToGoogleCloud,
-} from "../gcp-errors";
+import { useEffect, useRef } from "react";
+import { Alert, Button, Group, Text } from "@mantine/core";
+import { GCP_SIGNED_IN_EVENT } from "../gcp-errors";
+import { useGcpSignIn } from "../useGcpSignIn";
 
 /**
  * Replaces a failed view's Retry when Google Cloud authorization expired.
@@ -18,8 +15,7 @@ export function GcpSignInAlert({
   live: boolean;
   onRetry(): void;
 }) {
-  const [signingIn, setSigningIn] = useState(false);
-  const [error, setError] = useState("");
+  const { signingIn, error, signIn, cancel } = useGcpSignIn();
   const retry = useRef(onRetry);
   retry.current = onRetry;
   useEffect(() => {
@@ -27,17 +23,6 @@ export function GcpSignInAlert({
     window.addEventListener(GCP_SIGNED_IN_EVENT, signedIn);
     return () => window.removeEventListener(GCP_SIGNED_IN_EVENT, signedIn);
   }, []);
-  const signIn = async () => {
-    setSigningIn(true);
-    setError("");
-    try {
-      await signInToGoogleCloud();
-    } catch (failure) {
-      setError(gcpErrorMessage(failure));
-    } finally {
-      setSigningIn(false);
-    }
-  };
   return (
     <Alert color="blue" title="Sign in to Google Cloud" m="xs">
       <Text size="xs">
@@ -45,19 +30,24 @@ export function GcpSignInAlert({
         {live ? "Live streaming resumes" : "The query runs again"} automatically
         after you sign in.
       </Text>
-      <Button
-        mt="xs"
-        size="compact-xs"
-        loading={signingIn}
-        onClick={() => void signIn()}
-      >
-        Sign in
-      </Button>
-      {signingIn && (
-        <Text size="xs" c="dimmed" mt={4}>
-          Complete sign-in in your browser…
-        </Text>
-      )}
+      <Group gap={6} mt="xs">
+        <Button
+          size="compact-xs"
+          loading={signingIn}
+          onClick={() => void signIn()}
+        >
+          Sign in
+        </Button>
+        {signingIn && (
+          <Button
+            size="compact-xs"
+            variant="default"
+            onClick={() => void cancel()}
+          >
+            Cancel
+          </Button>
+        )}
+      </Group>
       {error && (
         <Text size="xs" c="red" mt={4} role="alert">
           {error}

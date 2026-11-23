@@ -80,6 +80,7 @@ export function useEventHighlights(
     Boolean(filters?.localOptions?.caseSensitive),
     preferences.timezone,
     columns.map(({ path, format, hidden }) => ({ path, format, hidden })),
+    preferences.messageRules ?? [],
   ]);
   const priority =
     options?.priority ?? (overview ? [] : events.map((event) => event.id));
@@ -183,6 +184,7 @@ export function useEventHighlights(
         needle,
         quick,
         filters,
+        messageRules: preferences.messageRules ?? [],
       });
     };
     const update = () => {

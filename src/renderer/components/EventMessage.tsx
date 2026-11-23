@@ -24,6 +24,7 @@ import {
   IconChevronDown,
   IconChevronRight,
   IconColumns3,
+  IconMessage,
   IconFilter,
   IconDots,
   IconBraces,
@@ -141,9 +142,11 @@ function JsonFieldMenu({
   onAddFilter,
   onCopyValue,
   onDeserialize,
+  onSetMessage,
 }: {
   path: string;
   value: JsonValue;
+  onSetMessage?: (path: string) => void;
   onAddColumn?: (path: string) => void;
   onAddFilter?: (path: string, value: JsonValue) => void;
   onCopyValue?: (text: string) => void;
@@ -224,6 +227,16 @@ function JsonFieldMenu({
             onClick={() => onAddColumn(path)}
           >
             Add as column
+          </Menu.Item>
+        )}
+        {onSetMessage && (
+          <Menu.Item
+            aria-label={`Set ${path || "root"} as message`}
+            disabled={!path}
+            leftSection={<IconMessage size={14} />}
+            onClick={() => onSetMessage(path)}
+          >
+            Set as message
           </Menu.Item>
         )}
         {onAddFilter && (
@@ -329,6 +342,7 @@ export function JsonTree({
   value,
   highlight,
   compact = false,
+  onSetMessage,
   onAddColumn,
   onAddFilter,
   onCopyValue,
@@ -349,6 +363,7 @@ export function JsonTree({
   value: JsonValue;
   highlight: string;
   compact?: boolean;
+  onSetMessage?: (path: string) => void;
   onAddColumn?: (path: string) => void;
   onAddFilter?: (path: string, value: JsonValue) => void;
   onCopyValue?: (text: string) => void;
@@ -549,10 +564,15 @@ export function JsonTree({
             ) : (
               <span className="json-toggle json-toggle-spacer" />
             )}
-            {(onCopyValue || onAddColumn || onAddFilter || onDeserialize) && (
+            {(onCopyValue ||
+              onAddColumn ||
+              onAddFilter ||
+              onDeserialize ||
+              onSetMessage) && (
               <JsonFieldMenu
                 path={row.path}
                 value={row.value}
+                onSetMessage={onSetMessage}
                 onCopyValue={onCopyValue}
                 onAddColumn={onAddColumn}
                 onAddFilter={onAddFilter}
@@ -625,6 +645,7 @@ export function MessageContent({
   row,
   highlight,
   compact = false,
+  onSetMessage,
   onAddColumn,
   onAddFilter,
   onCopyValue,
@@ -644,6 +665,7 @@ export function MessageContent({
   row: EventRow;
   highlight: string;
   compact?: boolean;
+  onSetMessage?: (path: string) => void;
   onAddColumn?: (path: string) => void;
   onAddFilter?: (path: string, value: JsonValue) => void;
   onCopyValue?: (text: string) => void;
@@ -668,6 +690,7 @@ export function MessageContent({
         highlight={highlight}
         compact={compact}
         onCopyValue={onCopyValue}
+        onSetMessage={onSetMessage}
         onAddColumn={onAddColumn}
         onAddFilter={onAddFilter}
         controls={controls}

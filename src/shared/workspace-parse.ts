@@ -1,4 +1,5 @@
 import { DEFAULT_SHORTCUTS } from "./shortcut-definitions";
+import { MESSAGE_RULE_LIMIT, SOURCE_NAME_FORMAT_LIMIT } from "./display-rules";
 import type {
   Connection,
   Favorite,
@@ -510,6 +511,36 @@ export function parsePreferences(value: unknown): Preferences {
     timezone: raw.timezone === "utc" ? "utc" : "local",
     highlightText: string(raw.highlightText, "", 1000),
     autoExpandFilterMatches: raw.autoExpandFilterMatches !== false,
+    sourceNameFormats: {
+      aws: string(
+        record(raw.sourceNameFormats).aws,
+        "",
+        SOURCE_NAME_FORMAT_LIMIT,
+      ),
+      gcp: string(
+        record(raw.sourceNameFormats).gcp,
+        "",
+        SOURCE_NAME_FORMAT_LIMIT,
+      ),
+    },
+    messageRules: unique(
+      list(raw.messageRules, MESSAGE_RULE_LIMIT).flatMap((value) => {
+        const rule = record(value);
+        return typeof rule.id === "string" && rule.id.length <= 120
+          ? [
+              {
+                id: rule.id,
+                source: string(rule.source, "", 512),
+                path: string(rule.path, "", 512),
+                ...(rule.regex === true ? { regex: true } : {}),
+                ...(rule.caseSensitive === true
+                  ? { caseSensitive: true }
+                  : {}),
+              },
+            ]
+          : [];
+      }),
+    ),
     highlightProfiles: parseHighlightProfiles(raw.highlightProfiles),
     profileVisibility: Object.fromEntries(
       Object.entries(record(raw.profileVisibility))

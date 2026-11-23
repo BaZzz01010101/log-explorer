@@ -16,6 +16,7 @@ import { notifications } from "@mantine/notifications";
 import type { EnvironmentInfo, Workspace } from "../../shared/contracts";
 import type { WorkspaceAction } from "../../shared/workspace";
 import { PreferencesEditor } from "./PreferencesEditor";
+import { DisplaySettingsEditor } from "./DisplaySettingsEditor";
 import { ShortcutsEditor } from "./ShortcutsEditor";
 import { SettingLabel } from "./SettingLabel";
 import {
@@ -45,6 +46,7 @@ export function Settings({
   onReturnToPane,
   requestedTab,
   requestedTabKey,
+  focusMessageRule = null,
   previewSnapshot = null,
 }: {
   opened: boolean;
@@ -58,6 +60,8 @@ export function Settings({
   onReturnToPane?(): void;
   requestedTab?: string | null;
   requestedTabKey?: number;
+  /** A Message column rule to focus on the Display page. */
+  focusMessageRule?: string | null;
   previewSnapshot?: SettingsPreviewSnapshot | null;
 }) {
   const [profiles, setProfiles] = useState<string[]>([]);
@@ -142,6 +146,7 @@ export function Settings({
       [
         "connections",
         "appearance",
+        "display",
         "time-ranges",
         "highlights",
         "shortcuts",
@@ -167,6 +172,7 @@ export function Settings({
       <Tabs.List aria-label="Settings categories">
         <Tabs.Tab value="connections">Connections</Tabs.Tab>
         <Tabs.Tab value="appearance">Preferences</Tabs.Tab>
+        <Tabs.Tab value="display">Display</Tabs.Tab>
         <Tabs.Tab value="time-ranges">Time ranges</Tabs.Tab>
         <Tabs.Tab value="highlights">Highlights</Tabs.Tab>
         <Tabs.Tab value="shortcuts">Shortcuts</Tabs.Tab>
@@ -242,6 +248,14 @@ export function Settings({
       <Tabs.Panel value="appearance" pt="md" className="settings-form-page">
         <PreferencesEditor
           value={preferences}
+          onChange={(patch) => dispatch({ type: "preferences/update", patch })}
+        />
+      </Tabs.Panel>
+      <Tabs.Panel value="display" pt="md" className="settings-form-page">
+        <DisplaySettingsEditor
+          value={preferences}
+          focusRule={focusMessageRule}
+          focusKey={requestedTabKey}
           onChange={(patch) => dispatch({ type: "preferences/update", patch })}
         />
       </Tabs.Panel>

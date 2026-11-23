@@ -223,6 +223,7 @@ export function QueryPane({
               sources={tab.sources}
               connectionId={tab.connectionId}
               connections={workspace.connections}
+              formats={workspace.preferences.sourceNameFormats}
               onChange={(sources, hiddenSources) =>
                 onPatch({
                   sources,

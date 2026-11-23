@@ -17,6 +17,7 @@ import {
   type FilterProvider,
   type ServerFilterMode,
 } from "../../shared/server-filter";
+import { serverFilterHelp } from "../filter-help";
 import "./server-filter.css";
 
 const labels = {
@@ -191,7 +192,7 @@ export function ServerFilterInput({
                   type="button"
                   className="server-filter-mode"
                   aria-label={`Filter mode: ${providerLabels[mode]}`}
-                  data-tooltip={`${providerLabels[mode]}${mode === "auto" ? ` → ${syntax === "plain" ? "Text" : syntax === "aws" ? "AWS Pattern" : syntax === "gcp" ? "GCP Pattern" : "Unified"}` : ""}. Enter runs the query.${syntax === "unified" ? "\nExample: $.count > 10 AND $.seller IS NULL" : ""}`}
+                  data-tooltip={serverFilterHelp(mode, syntax, provider)}
                 >
                   {mode === "auto"
                     ? `A:${syntax === "plain" ? "TXT" : syntax === "aws" ? "AWS-PAT" : syntax === "gcp" ? "GCP-PAT" : "UNI"}`

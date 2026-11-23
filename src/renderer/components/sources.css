@@ -92,7 +92,7 @@
   white-space: nowrap;
   text-overflow: ellipsis;
   color: inherit;
-  cursor: grab;
+  cursor: pointer;
   text-align: left;
 }
 .source-badge .source-badge-drag-label:hover {
@@ -140,7 +140,6 @@
   );
 }
 .source-badge.source-badge-hidden .source-badge-drag-label {
-  text-decoration: line-through;
   opacity: 0.7;
 }
 .source-badge button.source-visibility {

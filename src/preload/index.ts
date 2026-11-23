@@ -6,6 +6,7 @@ const api: ExplorerApi = {
   gcpProjects: (identity, cursor) =>
     ipcRenderer.invoke("gcp:projects", identity, cursor),
   gcpSignIn: () => ipcRenderer.invoke("gcp:signin"),
+  gcpCancelSignIn: () => ipcRenderer.invoke("gcp:signin-cancel"),
   gcpInstallCli: () => ipcRenderer.invoke("gcp:install-cli"),
   gcpLogs: (identity, project, cursor) =>
     ipcRenderer.invoke("gcp:logs", identity, project, cursor),

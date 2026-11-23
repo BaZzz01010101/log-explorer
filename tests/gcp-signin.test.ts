@@ -33,6 +33,26 @@ describe("Google sign-in", () => {
     expect(reset).toHaveBeenCalledTimes(1);
   });
 
+  it("cancels a running sign-in and allows a new one at once", async () => {
+    let fail: (error: Error) => void = () => {};
+    const launch = vi
+      .fn()
+      .mockImplementationOnce(
+        () => new Promise<void>((_resolve, reject) => (fail = reject)),
+      )
+      .mockResolvedValueOnce(undefined);
+    const stop = vi.fn(() => fail(new Error("Google sign-in was cancelled.")));
+    const reset = vi.fn();
+    const signIn = createGcpSignIn(launch, reset, stop);
+    const first = signIn();
+    await signIn.cancel();
+    expect(stop).toHaveBeenCalledTimes(1);
+    await expect(first).rejects.toThrow("Google sign-in was cancelled.");
+    await signIn();
+    expect(launch).toHaveBeenCalledTimes(2);
+    expect(reset).toHaveBeenCalledTimes(1);
+  });
+
   it("reports when the Google Cloud CLI is missing", () => {
     expect(() =>
       googleLoginCommand("win32", { Path: "C:\\missing" }, () => false),

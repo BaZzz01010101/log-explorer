@@ -238,6 +238,9 @@ export function TextTooltips() {
           ? event.target.closest<HTMLElement>("[data-tooltip]")
           : null;
       if (!target?.dataset.tooltip) return;
+      // Long help on text fields opens on hover only, never on focus.
+      if (event instanceof FocusEvent && target.dataset.tooltipHoverOnly)
+        return;
       if (
         activeTarget === target &&
         event.relatedTarget instanceof Node &&
@@ -284,6 +287,13 @@ export function TextTooltips() {
     };
     const key = (event: KeyboardEvent) => {
       if (event.key === "Escape") hide();
+      // Typing into a field closes its hover-only help.
+      else if (
+        activeTarget?.dataset.tooltipHoverOnly &&
+        event.target instanceof Node &&
+        activeTarget.contains(event.target)
+      )
+        hide();
     };
     document.addEventListener("mouseover", over);
     document.addEventListener("mouseout", out);

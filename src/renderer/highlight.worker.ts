@@ -6,6 +6,7 @@ import {
 import type { HighlightProfile } from "../shared/highlights";
 import type { ColumnConfig, LogEvent, Preferences } from "../shared/contracts";
 import type { QuickHighlightOptions } from "../shared/quick-highlight";
+import type { MessageRule } from "../shared/display-rules";
 
 self.onmessage = (
   event: MessageEvent<{
@@ -18,6 +19,7 @@ self.onmessage = (
     needle?: string;
     quick?: QuickHighlightOptions;
     filters?: HighlightFilters;
+    messageRules?: MessageRule[];
   }>,
 ) => {
   const {
@@ -30,6 +32,7 @@ self.onmessage = (
     needle = "",
     quick,
     filters,
+    messageRules,
   } = event.data;
   self.postMessage({ ready: true });
   let batch: { id: string; result: EventHighlights }[] = [];
@@ -46,6 +49,7 @@ self.onmessage = (
       filters,
       item.messageComplete,
       quick,
+      messageRules,
     );
     if (overview) {
       if (result.overview!.length || needle) batch.push({ id: item.id, result });

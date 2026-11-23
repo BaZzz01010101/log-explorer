@@ -240,7 +240,11 @@ function allowGcpDiscovery() {
         : "Google Cloud access is available only in the packaged application or npm run dev.",
     );
 }
-const signInToGoogle = createGcpSignIn(launchGoogleLogin, () => gcloudAuth.clearTokens());
+const signInToGoogle = createGcpSignIn(
+  launchGoogleLogin,
+  () => gcloudAuth.clearTokens(),
+  cancelGoogleLogin,
+);
 const gcpIdentity = z.object({
   configuration: z.string().min(1).max(256),
   account: z.string().min(1).max(256),
@@ -254,6 +258,7 @@ handle("gcp:signin", () => {
   allowGcpDiscovery();
   return signInToGoogle();
 });
+handle("gcp:signin-cancel", () => signInToGoogle.cancel());
 handle("gcp:install-cli", () => {
   allowGcpDiscovery();
   return shell.openExternal("https://cloud.google.com/sdk/docs/install");
@@ -638,7 +643,7 @@ app.on("second-instance", () => {
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();
 });
-app.on("will-quit", cancelGoogleLogin);
+app.on("will-quit", () => void cancelGoogleLogin());
 app.on("quit", () => shutdownStep("app quit"));
 process.on("exit", (code) => shutdownStep(`process exit ${code}`));
 app.on("before-quit", (event) => {

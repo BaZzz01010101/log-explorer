@@ -6,8 +6,11 @@ import { createContext, useContext } from "react";
  */
 export interface AppCommands {
   openTimeRangeSettings(): void;
+  /** Adds a Message column rule and opens it in Settings. */
+  addMessageRule(rule: { source: string; path: string }): void;
 }
 export const AppCommandsContext = createContext<AppCommands>({
   openTimeRangeSettings: () => {},
+  addMessageRule: () => {},
 });
 export const useAppCommands = (): AppCommands => useContext(AppCommandsContext);

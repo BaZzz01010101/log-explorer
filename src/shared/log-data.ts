@@ -1,4 +1,5 @@
 import type { ColumnConfig, LogEvent, Preferences } from "./contracts";
+import { compileMessageRules, type MessageRule } from "./display-rules";
 
 export type JsonValue =
   null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
@@ -474,11 +475,32 @@ export function matchesLocalFilter(
   return true;
 }
 
-/** The automatic message cell prefers meaningful msg text, then message. */
+/**
+ * The automatic message cell first uses the configured message paths of the
+ * event's source, then meaningful msg text, then message.
+ */
 export function messagePreview(
   parsed: ParsedMessage,
+  event?: LogEvent,
+  rules?: readonly MessageRule[],
 ): { path: string; value: string } | undefined {
   if (parsed.kind !== "json") return undefined;
+  if (event)
+    for (const rule of compileMessageRules(rules)) {
+      if (!rule.matches(event)) continue;
+      const value = getPointer(parsed.value, rule.pointer);
+      const text =
+        typeof value === "string"
+          ? value
+          : value === null || value === undefined
+            ? ""
+            : typeof value === "object"
+              ? Object.keys(value).length
+                ? JSON.stringify(value)
+                : ""
+              : String(value);
+      if (text.trim()) return { path: rule.pointer, value: text };
+    }
   for (const path of ["/msg", "/message"]) {
     const value = getPointer(parsed.value, path);
     if (typeof value === "string" && value.trim()) return { path, value };

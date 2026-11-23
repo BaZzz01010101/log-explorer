@@ -10,17 +10,24 @@ export function FilterMatchButtons({
   onCaseChange,
   onRegexChange,
 }: {
-  scope: "highlight" | "local filter" | "explorer";
+  scope: string;
   caseSensitive: boolean;
   regex: boolean;
-  caseShortcut: string;
-  regexShortcut: string;
+  /** Omitted when the option has no shortcut at all. */
+  caseShortcut?: string;
+  regexShortcut?: string;
   onCaseChange(): void;
   onRegexChange(): void;
 }) {
   return (
     <>
-      <Tooltip label={`Match case (${caseShortcut || "unassigned"})`}>
+      <Tooltip
+        label={
+          caseShortcut === undefined
+            ? "Match case"
+            : `Match case (${caseShortcut || "unassigned"})`
+        }
+      >
         <ActionIcon
           size={22}
           variant={caseSensitive ? "light" : "subtle"}
@@ -33,7 +40,11 @@ export function FilterMatchButtons({
         </ActionIcon>
       </Tooltip>
       <Tooltip
-        label={`Use regular expression (${regexShortcut || "unassigned"})`}
+        label={
+          regexShortcut === undefined
+            ? "Use regular expression"
+            : `Use regular expression (${regexShortcut || "unassigned"})`
+        }
       >
         <ActionIcon
           size={22}

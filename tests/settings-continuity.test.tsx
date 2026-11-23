@@ -32,6 +32,9 @@ vi.mock("../src/renderer/components/AppTooltip", () => ({
 vi.mock("../src/renderer/components/PreferencesEditor", () => ({
   PreferencesEditor: () => null,
 }));
+vi.mock("../src/renderer/components/DisplaySettingsEditor", () => ({
+  DisplaySettingsEditor: () => null,
+}));
 vi.mock("../src/renderer/components/RelativeTimeTemplatesEditor", () => ({
   RelativeTimeTemplatesEditor: () => null,
 }));

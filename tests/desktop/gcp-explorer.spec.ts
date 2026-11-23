@@ -59,6 +59,7 @@ for (const theme of behaviorThemes)
         ipcMain.removeHandler("gcp:clusters");
         ipcMain.removeHandler("gcp:workloads");
         ipcMain.removeHandler("gcp:signin");
+        ipcMain.removeHandler("gcp:signin-cancel");
         ipcMain.removeHandler("gcp:profiles");
         ipcMain.removeHandler("explorer:query");
         ipcMain.handle("explorer:query", async (event, request) => {
@@ -108,12 +109,23 @@ for (const theme of behaviorThemes)
         }));
         let signInAttempts = 0;
         let authorized = false;
+        let waitingSignIn: ((error: Error) => void) | undefined;
         ipcMain.handle("gcp:signin", async () => {
-          if (signInAttempts++ === 0)
+          const attempt = signInAttempts++;
+          if (attempt === 0)
             throw new Error(
               "Google sign-in was cancelled or failed. Please try again.",
             );
+          // The next two attempts wait for a browser that never answers.
+          if (attempt <= 2)
+            return new Promise<void>((_resolve, reject) => {
+              waitingSignIn = reject;
+            });
           authorized = true;
+        });
+        ipcMain.handle("gcp:signin-cancel", async () => {
+          waitingSignIn?.(new Error("Google sign-in was cancelled."));
+          waitingSignIn = undefined;
         });
         ipcMain.handle("gcp:projects", async (_event, identity, cursor) => {
           if (!authorized)
@@ -255,6 +267,16 @@ for (const theme of behaviorThemes)
       await expect(explorer.getByRole("alert").last()).toContainText(
         "cancelled or failed",
       );
+      // A sign-in stuck in the browser can be cancelled without an error,
+      // then started again.
+      for (let attempt = 0; attempt < 2; attempt++) {
+        await explorer.getByRole("button", { name: "Sign in" }).click();
+        await explorer.getByRole("button", { name: "Cancel" }).click();
+        await expect(
+          explorer.getByRole("button", { name: "Cancel" }),
+        ).toHaveCount(0);
+        await expect(explorer.getByRole("alert")).toHaveCount(0);
+      }
       await explorer.getByRole("button", { name: "Sign in" }).click();
       await expect(
         explorer.getByLabel("Google Cloud configuration"),
