@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { highlightProfilesSchema } from "../shared/highlights";
+import { HIGHLIGHT_TEXT_COLORS } from "../shared/quick-highlight";
 import type { PaneLayout } from "../shared/contracts";
 import {
   layoutPaneIds,
@@ -125,6 +126,7 @@ const tabSchema = z.object({
   connectionId: id,
   sources: z.array(sourceSchema).max(50),
   preview: z.boolean().optional(),
+  favoriteId: id.optional(),
   kind: z.enum(["events", "insights"]),
   filterPattern: text,
   filterMode: z
@@ -158,6 +160,7 @@ function boundedPaneLayoutSchema(): z.ZodType<PaneLayout> {
     .transform((layout) => normalizeLayout(layout, layoutPaneIds(layout))!);
 }
 const splitSchema = z.object({
+  favoriteId: id.optional(),
   pinned: z.boolean().optional(),
   id,
   title: z.string().max(512).optional(),
@@ -320,6 +323,12 @@ export const workspaceSchema = z
       tabBarLayout: z.enum(["scroll", "wrap"]).optional(),
       pinnedTabsSeparateRow: z.boolean().optional(),
       highlightText: z.string().max(1000),
+      highlightTextColors: z
+        .object({
+          light: z.enum(HIGHLIGHT_TEXT_COLORS).optional(),
+          dark: z.enum(HIGHLIGHT_TEXT_COLORS).optional(),
+        })
+        .optional(),
       autoExpandFilterMatches: z.boolean().optional(),
       sourceNameFormats: z
         .object({

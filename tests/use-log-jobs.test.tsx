@@ -387,6 +387,45 @@ it("switching tabs during an explicit Stop never turns that stop into a resumabl
   });
 });
 
+it("keeps events flushed by Stop and drops a source failure afterwards", async () => {
+  await mount();
+  await act(async () => jobs.run(workspace.tabs[0]!, true));
+  const requestId = liveRequests[0]!.requestId;
+  const id = workspace.tabs[0]!.id;
+  const liveFailures = [
+    { connectionId: "gcp", name: "Google", error: "failed" },
+  ];
+  await emit({
+    requestId,
+    state: "running",
+    liveState: "streaming",
+    liveFailures,
+  });
+  await emit({ requestId, state: "running", liveState: "streaming" });
+  expect(jobs.runtimes[id]!.liveFailures).toEqual(liveFailures);
+  cancelHandler = async (cancelled) => {
+    for (const listener of listeners) {
+      listener({
+        requestId: cancelled,
+        state: "running",
+        liveState: "streaming",
+        events: [logEvent],
+      });
+      listener({ requestId: cancelled, state: "cancelled" });
+    }
+  };
+  await act(async () => jobs.cancel(id));
+  expect(jobs.runtimes[id]).toMatchObject({
+    state: "cancelled",
+    live: false,
+    liveState: "stopped",
+  });
+  expect(jobs.runtimes[id]!.events.map((item) => item.id)).toEqual([
+    "fresh-event",
+  ]);
+  expect(jobs.runtimes[id]!.liveFailures).toBeUndefined();
+});
+
 it("Live retains matching history and counts appended events independently of loaded history", async () => {
   await mount();
   const tab = workspace.tabs[0]!;

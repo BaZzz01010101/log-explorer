@@ -108,15 +108,28 @@ export function QueryPane({
   useEffect(() => {
     if (!runtime?.live) setFollowLive(false);
   }, [runtime?.live]);
-  const liveUnavailable =
-    sourceConnections.length !== 1
-      ? "Live Tail requires sources from one connection and region."
-      : tab.sources.length > 10
-        ? "Live Tail supports at most 10 log groups."
-        : tab.sources.length > 1 &&
-            tab.sources.some((source) => source.logStreams?.length)
-          ? "Live Tail supports selected streams only with one log group."
-          : undefined;
+  // CloudWatch limits apply to each connection's own Live Tail session.
+  const liveSessions = sourceConnections
+    .filter((item) => item.mode !== "gcp")
+    .map((item) =>
+      tab.sources.filter(
+        (source) => (source.connectionId ?? tab.connectionId) === item.id,
+      ),
+    );
+  const perConnection = sourceConnections.length > 1 ? " per connection" : "";
+  const liveUnavailable = !sourceConnections.length
+    ? "Live requires at least one source."
+    : liveSessions.some((sources) => sources.length > 10)
+      ? `Live Tail supports at most 10 log groups${perConnection}.`
+      : liveSessions.some(
+            (sources) =>
+              sources.length > 1 &&
+              sources.some((source) => source.logStreams?.length),
+          )
+        ? `Live Tail supports selected streams only with one log group${perConnection}.`
+        : undefined;
+  const liveFailures =
+    runtime?.live && !runtime.livePaused ? (runtime.liveFailures ?? []) : [];
   const running = runtime?.state === "queued" || runtime?.state === "running";
   const stale =
     runtime?.request &&
@@ -471,6 +484,29 @@ export function QueryPane({
           </Button>
         </Alert>
       ) : null}
+      {liveFailures.some((item) => isGcpAuthorizationError(item.error)) ? (
+        <GcpSignInAlert live onRetry={() => onRun(true)} />
+      ) : null}
+      {liveFailures
+        .filter((item) => !isGcpAuthorizationError(item.error))
+        .map((item) => (
+          <Alert
+            key={item.connectionId}
+            color="yellow"
+            p="xs"
+            mx="xs"
+            data-testid="live-failure"
+          >
+            {item.name}: {item.error}{" "}
+            <Button
+              size="compact-xs"
+              variant="subtle"
+              onClick={() => onRun(true)}
+            >
+              Retry
+            </Button>
+          </Alert>
+        ))}
       {runtime?.sampled && (
         <Alert color="yellow" p="xs" mx="xs">
           Live Tail omitted events. This view does not contain every matching

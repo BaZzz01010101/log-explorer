@@ -529,7 +529,7 @@ it("bounds child page reads and continues a long one-event-per-page query withou
   expect(new Set(events.map((event) => event.id)).size).toBe(600);
 });
 
-it("rejects missing connections, legacy queries, cross-region Live and disabled AWS before constructing adapters", async () => {
+it("rejects missing connections, legacy queries and disabled AWS before constructing adapters", async () => {
   const factory = vi.fn(() => adapter(vi.fn()));
   const service = createLogService(() => {}, {
     allowAws: () => false,
@@ -541,9 +541,6 @@ it("rejects missing connections, legacy queries, cross-region Live and disabled 
   );
   await expect(service.query(request({ kind: "insights" as never }))).rejects.toThrow(
     /only Events/i,
-  );
-  await expect(service.live(request())).rejects.toThrow(
-    /one connection and region/,
   );
   await expect(
     service.query(request({ connections: [{ ...east, mode: "aws" }] })),

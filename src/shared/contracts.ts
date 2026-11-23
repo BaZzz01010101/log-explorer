@@ -120,6 +120,12 @@ export interface QueryStats {
   elapsedMs?: number;
 }
 export type LiveState = "connecting" | "streaming" | "stopped";
+/** A source connection that stopped while the rest of a Live view continues. */
+export interface LiveFailure {
+  connectionId: string;
+  name: string;
+  error: string;
+}
 export interface QueryUpdate {
   requestId: string;
   state: "queued" | "running" | "complete" | "cancelled" | "error";
@@ -134,6 +140,7 @@ export interface QueryUpdate {
   sampled?: boolean;
   truncated?: boolean;
   liveState?: LiveState;
+  liveFailures?: LiveFailure[];
 }
 export type ViewMode = "hybrid" | "table" | "json";
 export interface ColumnConfig {
@@ -169,6 +176,8 @@ export interface LogTab {
   closedAt?: number;
   pinned?: boolean;
   preview?: boolean;
+  /** Favorite this view was opened from or saved to. */
+  favoriteId?: string;
   title: string;
   customTitle?: string;
   connectionId: string;
@@ -201,6 +210,7 @@ export type PaneLayout =
     };
 export interface SplitTab {
   id: string;
+  favoriteId?: string;
   pinned?: boolean;
   title?: string;
   panes: Pane[];
@@ -263,6 +273,8 @@ export interface Preferences {
   maxEvents: number;
   timezone: "local" | "utc";
   highlightText: string;
+  /** Highlight text color of each theme. */
+  highlightTextColors?: import("./quick-highlight").HighlightTextColors;
   autoExpandFilterMatches?: boolean;
   /** Source name formats for badges and the Source column. */
   sourceNameFormats?: import("./display-rules").SourceNameFormats;

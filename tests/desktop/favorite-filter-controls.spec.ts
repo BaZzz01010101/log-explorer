@@ -258,6 +258,7 @@ for (const theme of behaviorThemes) {
     await open.click({ button: "right" });
     await expect(page.getByRole("menu").getByRole("menuitem")).toHaveText([
       "Open",
+      "Open in new tab",
       "Rename",
       "Delete",
     ]);

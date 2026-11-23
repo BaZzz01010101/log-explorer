@@ -157,6 +157,23 @@ function cleanLinks(state: Workspace): Workspace {
   };
 }
 
+/** The view without its link to a favorite: copies and snapshots are separate. */
+function unlinkFavorite<T extends { favoriteId?: string }>(view: T): T {
+  if (view.favoriteId === undefined) return view;
+  const copy = { ...view };
+  delete copy.favoriteId;
+  return copy;
+}
+
+/** Configuration of a view for a favorite, which is never pinned. */
+function favoriteView<T extends { favoriteId?: string; pinned?: boolean }>(
+  view: T,
+): T {
+  const copy = { ...unlinkFavorite(view) };
+  delete copy.pinned;
+  return structuredClone(copy);
+}
+
 /** Capture configuration, including connection identity, without retaining log payloads. */
 export function captureViewFavorite(
   input: Workspace,
@@ -166,7 +183,7 @@ export function captureViewFavorite(
     entry = workspaceEntries(state).find((entry) => entry.id === tabId);
   if (!entry) return null;
   const tabs = entry.tabIds.map((id) =>
-    structuredClone(state.tabs.find((tab) => tab.id === id)!),
+    favoriteView(state.tabs.find((tab) => tab.id === id)!),
   );
   const referenced = new Set(
     tabs.flatMap((tab) => [
@@ -182,8 +199,35 @@ export function captureViewFavorite(
     connections: structuredClone(
       state.connections.filter((connection) => referenced.has(connection.id)),
     ),
-    ...(split ? { split: structuredClone(split) } : {}),
+    ...(split ? { split: favoriteView(split) } : {}),
     timezone: state.preferences.timezone,
+  };
+}
+
+/** The saved configuration, without the favorite's own ID and name. */
+function favoriteSnapshot({ id: _id, title: _title, ...saved }: ViewFavorite) {
+  return JSON.stringify({
+    ...saved,
+    // Pinning and preview belong to the tab; older favorites saved them.
+    tabs: saved.tabs.map(({ pinned: _pinned, preview: _preview, ...tab }) => tab),
+    split: saved.split && favoriteView(saved.split),
+  });
+}
+
+/** Clicking a favorite shows the view it was saved from while that is open. */
+function linkFavorite(
+  state: Workspace,
+  entryId: string,
+  favoriteId: string,
+): Workspace {
+  const link = <T extends { id: string; favoriteId?: string }>(view: T) =>
+    view.id === entryId && view.favoriteId !== favoriteId
+      ? { ...view, favoriteId }
+      : view;
+  return {
+    ...state,
+    tabs: state.tabs.map(link),
+    splitTabs: state.splitTabs?.map(link),
   };
 }
 
@@ -194,24 +238,24 @@ export function projectFavoriteSave(
   const state = modelState(input),
     favorite = captureViewFavorite(state, tabId);
   if (!favorite) return { workspace: input };
-  const { id: _id, title: _title, ...snapshot } = favorite;
-  if (
-    state.favorites.some(
-      ({ id: _savedId, title: _savedTitle, ...saved }) =>
-        JSON.stringify(saved) === JSON.stringify(snapshot),
-    )
-  )
-    return { workspace: input };
+  const entryId = favorite.split?.id ?? favorite.tabs[0].id;
+  const snapshot = favoriteSnapshot(favorite);
+  const existing = state.favorites.find(
+    (saved) => favoriteSnapshot(saved) === snapshot,
+  );
+  if (existing)
+    return { workspace: linkFavorite(state, entryId, existing.id) };
   if (state.favorites.length >= 500)
     return {
       workspace: input,
       error:
         "The workspace can hold up to 500 saved views. Remove an unused favorite and try again.",
     };
-  const next = {
-    ...state,
-    favorites: [...state.favorites, favorite],
-  };
+  const next = linkFavorite(
+    { ...state, favorites: [...state.favorites, favorite] },
+    entryId,
+    favorite.id,
+  );
   if (
     new TextEncoder().encode(JSON.stringify(next, null, 2)).byteLength >
     5_000_000
@@ -269,9 +313,16 @@ export function projectResourceFavorite(
   return { workspace: { ...state, favorites: saved.workspace.favorites } };
 }
 
-function openViewFavorite(input: Workspace, favorite: ViewFavorite): Workspace {
+function openViewFavorite(
+  input: Workspace,
+  favorite: ViewFavorite,
+  reuse = false,
+): Workspace {
   const state = modelState(input);
-  if (state.tabs.length + favorite.tabs.length > 100) return input;
+  // One reusable preview tab, shared with the Explorer; splits have none.
+  const replace =
+    reuse && !favorite.split ? previewEntry(state)?.id : undefined;
+  if (!replace && state.tabs.length + favorite.tabs.length > 100) return input;
   const connections = [...state.connections],
     connectionIds = new Map<string, string>();
   for (const saved of favorite.connections) {
@@ -298,10 +349,12 @@ function openViewFavorite(input: Workspace, favorite: ViewFavorite): Workspace {
   for (const saved of favorite.tabs) {
     const copy = parseTab(
       {
-        ...structuredClone(saved),
+        ...favoriteView(saved),
         id: nextId("tab", entryIdentities(state, tabs)),
-        preview: false,
-        ...(!favorite.split ? { customTitle: favorite.title } : {}),
+        preview: reuse && !favorite.split,
+        ...(!favorite.split
+          ? { customTitle: favorite.title, favoriteId: favorite.id }
+          : {}),
         connectionId: connectionIds.get(saved.connectionId),
         sources: saved.sources.map((source) => ({
           ...source,
@@ -313,7 +366,9 @@ function openViewFavorite(input: Workspace, favorite: ViewFavorite): Workspace {
       connections,
     );
     if (!copy) return input;
-    tabs.push(copy);
+    const index = tabs.findIndex((tab) => tab.id === replace);
+    if (index >= 0) tabs[index] = copy;
+    else tabs.push(copy);
     tabIds.set(saved.id, copy.id);
   }
   const id = favorite.split
@@ -322,8 +377,9 @@ function openViewFavorite(input: Workspace, favorite: ViewFavorite): Workspace {
   const savedSplit = favorite.split ? { ...favorite.split } : undefined;
   const split = savedSplit
     ? {
-        ...structuredClone(savedSplit),
+        ...favoriteView(savedSplit),
         title: favorite.title,
+        favoriteId: favorite.id,
         id,
         panes: savedSplit.panes.map((pane) => ({
           ...pane,
@@ -340,7 +396,11 @@ function openViewFavorite(input: Workspace, favorite: ViewFavorite): Workspace {
         splitTabs: split
           ? [...(state.splitTabs ?? []), split]
           : state.splitTabs,
-        tabOrder: [...(state.tabOrder ?? []), id],
+        tabOrder: replace
+          ? (state.tabOrder ?? []).map((entryId) =>
+              entryId === replace ? id : entryId,
+            )
+          : [...(state.tabOrder ?? []), id],
         preferences: { ...state.preferences, timezone: favorite.timezone },
       },
       id,
@@ -348,15 +408,79 @@ function openViewFavorite(input: Workspace, favorite: ViewFavorite): Workspace {
   );
 }
 
+/** The views of a tab or split as the set of sources each one reads. */
+function paneSources(tabs: LogTab[], connections: Connection[]): string {
+  return JSON.stringify(
+    tabs
+      .map((tab) =>
+        JSON.stringify(
+          tab.sources
+            .map((source) => {
+              const id = source.connectionId ?? tab.connectionId;
+              const connection = connections.find((item) => item.id === id);
+              // Opening a favorite finds its connections by the same fields.
+              return JSON.stringify([
+                connection?.mode,
+                connection?.profile,
+                connection?.region,
+                source.logGroup,
+                source.gcp ?? null,
+                [...(source.logStreams ?? [])].sort(),
+              ]);
+            })
+            .sort(),
+        ),
+      )
+      .sort(),
+  );
+}
+
 export function projectFavoriteOpen(
   input: Workspace,
   favoriteId: string,
+  reuse = false,
 ): { workspace: Workspace; error?: string } {
   const favorite = input.favorites.find(
     (favorite) => favorite.id === favoriteId,
   );
   if (!favorite) return { workspace: input };
-  const next = openViewFavorite(input, favorite);
+  if (reuse) {
+    const state = modelState(input);
+    // A view that joined a split is no longer the favorite's own tab.
+    const entries = new Map(
+      workspaceEntries(state).map((entry) => [entry.id, entry]),
+    );
+    const saved = paneSources(favorite.tabs, favorite.connections);
+    // Nor is one whose panes or sources changed since.
+    const open = (favorite.split ? (state.splitTabs ?? []) : state.tabs).filter(
+      (view) => {
+        const entry = entries.get(view.id);
+        return (
+          view.favoriteId === favoriteId &&
+          entry &&
+          paneSources(
+            entry.tabIds.map((id) => state.tabs.find((tab) => tab.id === id)!),
+            state.connections,
+          ) === saved
+        );
+      },
+    );
+    const active = activeEntryId(state);
+    let shown: { id: string } | undefined =
+      open.find((view) => view.id === active) ?? open[0];
+    if (!shown) {
+      // Favorites saved before links existed: their unchanged original view.
+      const id = favorite.split?.id ?? favorite.tabs[0].id;
+      const original = entries.has(id) && captureViewFavorite(state, id);
+      if (
+        original &&
+        favoriteSnapshot(original) === favoriteSnapshot(favorite)
+      )
+        shown = { id };
+    }
+    if (shown) return { workspace: activateViewOrEntry(state, shown.id) };
+  }
+  const next = openViewFavorite(input, favorite, reuse);
   if (next === input)
     return {
       workspace: input,
@@ -1045,6 +1169,15 @@ function closeViews(state: Workspace, ids: string[]): Workspace {
   return projectEntry(next, nextActive);
 }
 
+/** The reusable preview tab: the active one, or the first in the strip. */
+function previewEntry(state: Workspace) {
+  const active = activeEntryId(state);
+  const previews = workspaceEntries(state).filter(
+    (entry) => entry.kind === "single" && entry.preview,
+  );
+  return previews.find((entry) => entry.id === active) ?? previews[0];
+}
+
 function addView(
   state: Workspace,
   input: LogTab,
@@ -1053,14 +1186,7 @@ function addView(
 ): Workspace {
   const parsed = parseTab(input, state.connections);
   if (!parsed) return state;
-  const entries = workspaceEntries(state);
-  const active = activeEntryId(state);
-  const replace = replacePreview
-    ? (entries.find(
-        (entry) =>
-          entry.kind === "single" && entry.preview && entry.id === active,
-      ) ?? entries.find((entry) => entry.kind === "single" && entry.preview))
-    : undefined;
+  const replace = replacePreview ? previewEntry(state) : undefined;
   if (!replace && state.tabs.length >= 100) return state;
   const id = entryIdentities(state).some((tab) => tab.id === parsed.id)
     ? nextId("tab", entryIdentities(state))
@@ -1277,7 +1403,7 @@ export function projectWorkspaceDrop(
     if (edge === null || state.tabs.length >= 100) return null;
     const original = state.tabs.find((tab) => tab.id === source.id)!;
     const copy = {
-      ...structuredClone(original),
+      ...structuredClone(unlinkFavorite(original)),
       id: nextId("tab", entryIdentities(state)),
       preview: false,
     };
@@ -1611,7 +1737,11 @@ function cloneTab(
   const original = state.tabs.find((tab) => tab.id === tabId);
   if (!original || state.tabs.length >= 100) return undefined;
   const id = nextId("tab", entryIdentities(state, state.tabs));
-  const copy = { ...structuredClone(original), id, preview: false };
+  const copy = {
+    ...structuredClone(unlinkFavorite(original)),
+    id,
+    preview: false,
+  };
   delete copy.pinned;
   return { id, state: { ...state, tabs: [...state.tabs, copy] } };
 }
@@ -1767,6 +1897,7 @@ export function workspaceReducer(
             closedAt: _closedAt,
             pinned: _pinned,
             preview: _preview,
+            favoriteId: _favoriteId,
             title: _title,
             customTitle: _customTitle,
             connectionId: _connectionId,
@@ -1898,15 +2029,23 @@ export function workspaceReducer(
         ? input
         : { ...state, favorites };
     }
-    case "favorites/remove":
+    case "favorites/remove": {
+      // A later favorite can get this ID again.
+      const unlink = <T extends { favoriteId?: string }>(view: T) =>
+        view.favoriteId === action.favoriteId ? unlinkFavorite(view) : view;
       return {
         ...state,
+        tabs: state.tabs.map(unlink),
+        closedTabs: state.closedTabs.map(unlink),
+        splitTabs: state.splitTabs?.map(unlink),
         favorites: state.favorites.filter(
           (favorite) => favorite.id !== action.favoriteId,
         ),
       };
+    }
     case "favorites/open":
-      return projectFavoriteOpen(state, action.favoriteId).workspace;
+      return projectFavoriteOpen(state, action.favoriteId, action.reuse)
+        .workspace;
     case "tab/update":
       return legacyWorkspaceReducer(state, action);
     case "connection/select":
@@ -1996,7 +2135,7 @@ export function workspaceReducer(
       for (const tabId of entry.tabIds) {
         const original = tabs.find((tab) => tab.id === tabId)!;
         const copy = {
-          ...structuredClone(original),
+          ...structuredClone(unlinkFavorite(original)),
           id: nextId("tab", entryIdentities(state, tabs)),
           preview: false,
         };
@@ -2009,7 +2148,7 @@ export function workspaceReducer(
         : map.get(entry.id)!;
       const copySplit = split
         ? {
-            ...structuredClone(split),
+            ...structuredClone(unlinkFavorite(split)),
             id,
             panes: split.panes.map((pane) => ({
               ...pane,
@@ -2183,7 +2322,7 @@ export function workspaceReducer(
       );
       if (!original || state.tabs.length >= 100) return input;
       const copy = {
-        ...structuredClone(original),
+        ...structuredClone(unlinkFavorite(original)),
         id: nextId("tab", entryIdentities(state)),
         preview: false,
       };

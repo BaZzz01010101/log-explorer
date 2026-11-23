@@ -20,9 +20,12 @@ export interface OverviewMark {
   level: string;
   kind: OverviewMarkKind;
 }
-export const QUICK_HIGHLIGHT_COLOR = "var(--mantine-color-yellow-5)";
+// The viewer sets these variables from the chosen highlight text color.
+export const QUICK_HIGHLIGHT_COLOR =
+  "var(--quick-highlight-marker, var(--mantine-color-yellow-5))";
 /** Lighter than the WARN mark (yellow-6) so the two map lanes read apart. */
-export const QUICK_MAP_COLOR = "var(--mantine-color-yellow-3)";
+export const QUICK_MAP_COLOR =
+  "var(--quick-highlight-map, var(--mantine-color-yellow-3))";
 export const SELECTION_MAP_COLOR = "var(--mantine-color-blue-3)";
 const severity = { warn: 1, error: 2, fatal: 3 };
 const severityColors = { warn: "yellow", error: "red", fatal: "pink" };

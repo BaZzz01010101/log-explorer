@@ -12,6 +12,7 @@ import {
   throwIfAborted,
   type LogAdapter,
 } from "./aws-adapter";
+import { runMergedLive } from "./live-merge";
 import { createMultiSourceEvents, scopedQueries } from "./multi-source-events";
 import { createOfflineAdapter } from "./offline-adapter";
 import { scopedEventId } from "../shared/event-id";
@@ -41,6 +42,8 @@ interface Job {
   terminal: boolean;
   cancelled: boolean;
   cancellation?: Promise<void>;
+  /** Publishes events a merged Live view still holds back. */
+  flush?: () => void;
 }
 interface MetadataCache {
   expires: number;
@@ -98,10 +101,6 @@ function validateQuery(request: QueryRequest, live: boolean): void {
   const scoped = scopedQueries(request);
   if (scoped.some((query) => query.sources.some((source) => (query.connection.mode === "gcp") !== !!source.gcp)))
     throw new Error("A source does not match its cloud connection.");
-  if (scoped.length > 1 && live)
-    throw new Error(
-      "Live Tail requires sources from one connection and region. Use Events for a combined cross-region view.",
-    );
   if (live && request.cursor)
     throw new Error("Live monitoring cannot use a historical continuation");
 }
@@ -235,6 +234,7 @@ export function createLogService(
     if (!job) return;
     if (job.cancellation) return job.cancellation;
     if (!job.terminal && !job.cancelled) {
+      job.flush?.();
       job.cancelled = true;
       job.controller.abort();
       job.terminal = true;
@@ -293,23 +293,46 @@ export function createLogService(
         const queries = scopedQueries(input);
         // Every multi-source history query uses the k-way merge, so pages from
         // different groups interleave chronologically instead of per batch.
-        if (queries.length > 1 || (!live && input.sources.length > 1)) {
+        if (!live && input.sources.length > 1) {
           update(await multiSourceEvents.events(input, job.controller.signal, update));
         } else {
+          const scoped = (query: QueryRequest, value: QueryUpdate) => ({
+            ...value,
+            events: value.events?.map((event) => ({
+              ...event,
+              connectionId: query.connection.id,
+              id: scopedEventId(query.connection.id, event.id),
+            })),
+          });
           const query = queries[0];
           const adapter = adapterFor(query.connection);
-          const scopedUpdate = (value: QueryUpdate) =>
-            update({
-              ...value,
-              events: value.events?.map((event) => ({
-                ...event,
-                connectionId: query.connection.id,
-                id: scopedEventId(query.connection.id, event.id),
+          if (!live)
+            update(
+              scoped(query, await adapter.events(query, job.controller.signal)),
+            );
+          else if (queries.length === 1)
+            await adapter.live(query, job.controller.signal, (value) =>
+              update(scoped(query, value)),
+            );
+          else
+            await runMergedLive(
+              input.requestId,
+              queries.map((item) => ({
+                connectionId: item.connection.id,
+                name: item.connection.name,
+                run: async (signal, publish) =>
+                  adapterFor(item.connection).live(item, signal, (value) =>
+                    publish(scoped(item, value)),
+                  ),
+                errorMessage: (error) =>
+                  errorMessage(error, item.connection.mode),
               })),
-            });
-          if (live)
-            await adapter.live(query, job.controller.signal, scopedUpdate);
-          else scopedUpdate(await adapter.events(query, job.controller.signal));
+              job.controller.signal,
+              update,
+              (flush) => {
+                job.flush = flush;
+              },
+            );
         }
         if (!job.terminal)
           update({ requestId: input.requestId, state: "complete" });

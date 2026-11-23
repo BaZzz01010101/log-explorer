@@ -1274,7 +1274,9 @@ for (const theme of ["light", "dark"] as const)
     await expect(
       page.getByRole("menuitem", { name: "Open", exact: true }),
     ).toHaveCount(1);
-    await page.getByRole("menuitem", { name: "Open", exact: true }).click();
+    await page
+      .getByRole("menuitem", { name: "Open in new tab", exact: true })
+      .click();
     const activeTab = page
       .locator(".workspace-tab")
       .getByRole("tab", { selected: true });

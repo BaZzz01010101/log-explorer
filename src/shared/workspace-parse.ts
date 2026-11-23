@@ -16,6 +16,7 @@ import type {
 } from "./contracts";
 import { tabTitle } from "./source-labels";
 import { historyRetentionDays, recentClosedTabs } from "./closed-tab-history";
+import { HIGHLIGHT_TEXT_COLORS } from "./quick-highlight";
 import { LOG_LEVELS, DEFAULT_TIMESTAMP_COLUMN_WIDTH } from "./log-data";
 import { parseHighlightProfiles } from "./highlights";
 import {
@@ -388,6 +389,9 @@ export function parseTab(
       ? { closedAt: raw.closedAt }
       : {}),
     ...(typeof raw.preview === "boolean" ? { preview: raw.preview } : {}),
+    ...(typeof raw.favoriteId === "string" && raw.favoriteId
+      ? { favoriteId: string(raw.favoriteId, "", 160) }
+      : {}),
     ...(typeof raw.pinned === "boolean"
       ? { pinned: raw.pinned, ...(raw.pinned ? { preview: false } : {}) }
       : {}),
@@ -510,6 +514,14 @@ export function parsePreferences(value: unknown): Preferences {
     sourceDetailsHeight: number(raw.sourceDetailsHeight, 220, 80, 1000),
     timezone: raw.timezone === "utc" ? "utc" : "local",
     highlightText: string(raw.highlightText, "", 1000),
+    highlightTextColors: Object.fromEntries(
+      (["light", "dark"] as const).flatMap((theme) => {
+        const color = HIGHLIGHT_TEXT_COLORS.find(
+          (item) => item === record(raw.highlightTextColors)[theme],
+        );
+        return color ? [[theme, color]] : [];
+      }),
+    ),
     autoExpandFilterMatches: raw.autoExpandFilterMatches !== false,
     sourceNameFormats: {
       aws: string(
@@ -987,6 +999,9 @@ export function normalizeWorkspaceEntries(
     splits.push({
       id,
       ...(typeof item.pinned === "boolean" ? { pinned: item.pinned } : {}),
+      ...(typeof item.favoriteId === "string" && item.favoriteId
+        ? { favoriteId: string(item.favoriteId, "", 160) }
+        : {}),
       panes,
       layout,
       activePaneId: ids.includes(String(item.activePaneId))

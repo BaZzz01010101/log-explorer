@@ -347,7 +347,7 @@ it("disables saving an empty Events filter even when a legacy query remains", as
 it.each([
   {
     sources: [],
-    reason: "Live Tail requires sources from one connection and region.",
+    reason: "Live requires at least one source.",
   },
   {
     sources: Array.from({ length: 11 }, (_, index) => ({
@@ -377,6 +377,65 @@ it.each([
     expect(props.onRun).not.toHaveBeenCalled();
   },
 );
+
+it("applies Live limits to each connection and names a stopped source", async () => {
+  const props = setup();
+  const first = props.workspace.connections[0]!;
+  props.workspace.connections.push({ ...first, id: "second", name: "Second" });
+  props.tab.sources = [
+    ...Array.from({ length: 10 }, (_, index) => ({
+      logGroup: `/group-${index}`,
+    })),
+    { connectionId: "second", logGroup: "/other", logStreams: ["stream"] },
+  ];
+  await act(async () => {
+    renderer = create(<QueryPane {...props} />);
+  });
+  expect(control("Button", "Live").props.disabled).toBe(false);
+  const limited = {
+    ...props.tab,
+    sources: [
+      ...props.tab.sources,
+      { connectionId: "second", logGroup: "/third" },
+    ],
+  };
+  await act(async () => renderer!.update(<QueryPane {...props} tab={limited} />));
+  expect(control("Button", "Live").props["aria-description"]).toBe(
+    "Live Tail supports selected streams only with one log group per connection.",
+  );
+  const alerts = () =>
+    renderer!.root.findAll(
+      (node) =>
+        node.type === "div" && node.props["data-testid"] === "live-failure",
+    );
+  const runtime = {
+    events: [],
+    state: "running" as const,
+    live: true,
+    liveState: "streaming" as const,
+    evicted: 0,
+    liveFailures: [
+      { connectionId: "second", name: "Second", error: "Live stream ended." },
+    ],
+  };
+  await act(async () =>
+    renderer!.update(<QueryPane {...props} runtime={runtime} />),
+  );
+  expect(alerts().map((node) => node.children.slice(0, 3).join(""))).toEqual([
+    "Second: Live stream ended.",
+  ]);
+  await act(async () => control("Button", "Retry").props.onClick());
+  expect(props.onRun).toHaveBeenLastCalledWith(true);
+  await act(async () =>
+    renderer!.update(
+      <QueryPane
+        {...props}
+        runtime={{ ...runtime, live: false, liveState: "stopped" as const }}
+      />,
+    ),
+  );
+  expect(alerts()).toEqual([]);
+});
 
 const searchSectionCases: {
   name: string;

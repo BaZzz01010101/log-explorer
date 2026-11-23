@@ -220,5 +220,6 @@ it("describes Live and interpreter scope using selected sources rather than an u
     (node) =>
       String(node.type) === "mock-Button" && node.props.children === "Live",
   )[0];
-  expect(live.props.disabled).toBe(true);
+  expect(live.props.disabled).toBe(false);
+  expect(live.props["aria-description"]).toContain("AWS charges apply");
 });

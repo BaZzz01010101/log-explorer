@@ -56,6 +56,7 @@ import {
   MAX_SPLIT_PANES,
 } from "../shared/pane-layout";
 import { ResourceSidebar } from "./components/ResourceSidebar";
+import type { FavoriteOpenMode } from "./components/ViewFavorites";
 import { GcpExplorer } from "./components/GcpExplorer";
 import { gcpResourceToLogSource } from "./gcp-open";
 import {
@@ -261,6 +262,16 @@ export default function App() {
       setFocusMessageRule(id);
       showSettingsPageRef.current("display");
     },
+    setHighlightTextColor: (theme, color) =>
+      dispatch({
+        type: "preferences/update",
+        patch: {
+          highlightTextColors: {
+            ...workspaceRef.current.preferences.highlightTextColors,
+            [theme]: color,
+          },
+        },
+      }),
   }).current;
   const toggleExplorer = () => {
     const visible = workspace.sidebarVisible && sidePanel === "explorer";
@@ -411,6 +422,35 @@ export default function App() {
     } catch {
       return undefined;
     }
+  };
+  // The tab a click opened, so the double-click it starts keeps that tab.
+  const clickedFavorite = useRef<{ id: string; tabId: string } | null>(null);
+  const openFavorite = (
+    favoriteId: string,
+    mode: FavoriteOpenMode = "reuse",
+  ) => {
+    const state = workspaceRef.current;
+    const clicked = clickedFavorite.current;
+    clickedFavorite.current = null;
+    if (mode === "double-click" && clicked?.id === favoriteId) {
+      dispatch({ type: "tab/promote", tabId: clicked.tabId });
+      return;
+    }
+    const reuse = mode === "reuse";
+    const result = projectFavoriteOpen(state, favoriteId, reuse);
+    if (result.error) {
+      notifications.show({ title: "Saved view", message: result.error, color: "red" });
+      return;
+    }
+    if (result.workspace === state) return;
+    const tabId = activeEntryId(result.workspace);
+    if (
+      reuse &&
+      tabId &&
+      !workspaceEntries(state).some((entry) => entry.id === tabId)
+    )
+      clickedFavorite.current = { id: favoriteId, tabId };
+    dispatch({ type: "favorites/open", favoriteId, reuse });
   };
   const moveFavorite = (favoriteId: string, beforeFavoriteId: string | null) =>
     dispatch({ type: "favorites/move", favoriteId, beforeFavoriteId });
@@ -835,17 +875,7 @@ export default function App() {
                     else dispatch({ type: "resources/apply", payload, mode });
                   }}
                   refreshKey={environment?.awsEnabled ? 1 : 0}
-                  onOpenFavorite={(favoriteId) => {
-                    const result = projectFavoriteOpen(workspace, favoriteId);
-                    if (result.error)
-                      notifications.show({
-                        title: "Saved view",
-                        message: result.error,
-                        color: "red",
-                      });
-                    else if (result.workspace !== workspace)
-                      dispatch({ type: "favorites/open", favoriteId });
-                  }}
+                  onOpenFavorite={openFavorite}
                   onRenameFavorite={(favoriteId, title) =>
                     dispatch({ type: "favorites/rename", favoriteId, title })
                   }
@@ -865,11 +895,7 @@ export default function App() {
                     dispatch({ type: "preferences/update", patch: { sourceDetailsHeight } })
                   }
                   favorites={workspace.favorites}
-                  onOpenFavorite={(favoriteId) => {
-                    const result = projectFavoriteOpen(workspace, favoriteId);
-                    if (result.error) notifications.show({ title: "Saved view", message: result.error, color: "red" });
-                    else if (result.workspace !== workspace) dispatch({ type: "favorites/open", favoriteId });
-                  }}
+                  onOpenFavorite={openFavorite}
                   onRenameFavorite={(favoriteId, title) => dispatch({ type: "favorites/rename", favoriteId, title })}
                   onMoveFavorite={moveFavorite}
                   onRemoveFavorite={(favoriteId) => dispatch({ type: "favorites/remove", favoriteId })}

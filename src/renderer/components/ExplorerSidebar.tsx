@@ -46,7 +46,7 @@ import {
   type ScrollPageTarget,
 } from "../useScrollPagination";
 import { ResourceDragLabel } from "./ResourceDragLabel";
-import { ViewFavorites } from "./ViewFavorites";
+import { ViewFavorites, type FavoriteOpenMode } from "./ViewFavorites";
 import { SourceDetails, type SourceDetailsResource } from "./SourceDetails";
 import type { ResourceActionMode, ResourcePayload } from "../resource-drag";
 import {
@@ -72,7 +72,7 @@ interface Props {
     sources: LogSource[],
     mode?: "preview" | "permanent",
   ): void;
-  onOpenFavorite?(id: string): void;
+  onOpenFavorite?(id: string, mode?: FavoriteOpenMode): void;
   onRemoveFavorite?(id: string): void;
   onRenameFavorite?(id: string, title: string): void;
   onMoveFavorite?(id: string, beforeId: string | null): void;

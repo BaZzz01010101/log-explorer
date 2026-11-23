@@ -36,7 +36,7 @@ import { shortcutMatches } from "../../shared/shortcuts";
 import { Tooltip } from "./AppTooltip";
 import { Menu } from "./AppMenu";
 import { Field, SourceDetailsFrame, SourceDetailsName } from "./SourceDetails";
-import { ViewFavorites } from "./ViewFavorites";
+import { ViewFavorites, type FavoriteOpenMode } from "./ViewFavorites";
 import { ResourceDragLabel } from "./ResourceDragLabel";
 import type { ResourcePayload } from "../resource-drag";
 import { FilterMatchButtons } from "./FilterMatchButtons";
@@ -89,7 +89,7 @@ export function GcpExplorer({
     mode: "add-sources" | "add-splits" | "new-split" | "new-multisource",
   ): void;
   favorites?: ViewFavorite[];
-  onOpenFavorite?(id: string): void;
+  onOpenFavorite?(id: string, mode?: FavoriteOpenMode): void;
   onRenameFavorite?(id: string, title: string): void;
   onMoveFavorite?(id: string, beforeId: string | null): void;
   onRemoveFavorite?(id: string): void;

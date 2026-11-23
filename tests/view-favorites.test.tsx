@@ -113,15 +113,27 @@ it("offers concise favorite actions, preserves whole-row opening and keeps renam
   );
   expect(items.map((node) => node.children)).toEqual([
     ["Open"],
+    ["Open in new tab"],
     ["Rename"],
     ["Delete"],
     ["Open"],
+    ["Open in new tab"],
     ["Rename"],
     ["Delete"],
   ]);
   await click(button("Orders view"));
   await click(menuItem("Open"));
   expect(props.onOpen.mock.calls).toEqual([["favorite-0"], ["favorite-0"]]);
+  props.onOpen.mockClear();
+  // The second click of a double-click does nothing itself.
+  await act(async () => button("Orders view").props.onClick({ detail: 2 }));
+  expect(props.onOpen).not.toHaveBeenCalled();
+  await act(async () => button("Orders view").props.onDoubleClick());
+  await click(menuItem("Open in new tab"));
+  expect(props.onOpen.mock.calls).toEqual([
+    ["favorite-0", "double-click"],
+    ["favorite-0", "new"],
+  ]);
   await click(menuItem("Rename"));
   const modal = renderer!.root.findAllByProps({ "data-control": "Modal" })[0];
   expect(modal.props.opened).toBe(true);

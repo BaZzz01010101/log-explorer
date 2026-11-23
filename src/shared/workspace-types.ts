@@ -115,7 +115,9 @@ export type WorkspaceAction =
   | { type: "favorites/rename"; favoriteId: string; title: string }
   /** Moves a favorite before `beforeFavoriteId`, or to the end when it is null. */
   | { type: "favorites/move"; favoriteId: string; beforeFavoriteId: string | null }
-  | { type: "favorites/open" | "favorites/remove"; favoriteId: string }
+  /** `reuse` shows the favorite's open tab, or opens it in the preview tab. */
+  | { type: "favorites/open"; favoriteId: string; reuse?: boolean }
+  | { type: "favorites/remove"; favoriteId: string }
   | { type: "recents/add"; favorite: Favorite }
   | { type: "query/save"; query: SavedQuery }
   | { type: "query/remove"; queryId: string }

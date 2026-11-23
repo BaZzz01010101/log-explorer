@@ -326,3 +326,104 @@ for (const theme of behaviorThemes) {
     );
   });
 }
+
+test("light highlight color applies to matches and is saved separately for each theme", async () => {
+  await quick().fill("Alpha");
+  const picker = page.getByRole("button", {
+    name: "Highlight color",
+    exact: true,
+  });
+  const swatch = (name: string) =>
+    page.getByRole("button", { name, exact: true });
+  const colors = () =>
+    page.evaluate(() => {
+      const mark = document.querySelector(
+        '.virtual-event mark[data-highlight-origins~="manual"]',
+      )!;
+      const icon = document.querySelector(
+        '[aria-label="Highlight color"] svg',
+      )!;
+      const map = document.querySelector(
+        '.overview-quick .event-overview-mark[data-kind="quick"]',
+      )!;
+      return {
+        match: getComputedStyle(mark).backgroundImage,
+        icon: getComputedStyle(icon).stroke,
+        map: getComputedStyle(map).backgroundColor,
+      };
+    });
+  const choose = async (name: string, file: string) => {
+    await picker.click();
+    const grid = page.locator('[aria-label="Highlight colors"]');
+    await expect(grid.locator("button")).toHaveCount(10);
+    await expect(grid).toHaveCSS("opacity", "1");
+    const color = await swatch(name).evaluate(
+      (element) =>
+        getComputedStyle(
+          element.querySelector(".mantine-ColorSwatch-colorOverlay")!,
+        ).backgroundColor,
+    );
+    const png = await app.evaluate(async ({ BrowserWindow }) =>
+      (
+        await BrowserWindow.getAllWindows()[0].webContents.capturePage(
+          undefined,
+          { stayHidden: true, stayAwake: true },
+        )
+      )
+        .toPNG()
+        .toString("base64"),
+    );
+    await mkdir(test.info().outputDir, { recursive: true });
+    await writeFile(test.info().outputPath(file), Buffer.from(png, "base64"));
+    await swatch(name).click();
+    await expect(swatch(name)).toHaveCount(0);
+    // The icon takes exactly the color that was clicked.
+    await expect.poll(async () => (await colors()).icon).toBe(color);
+  };
+  await expect(manualMarks().first()).toBeVisible();
+  await expect(
+    page.locator('.overview-quick .event-overview-mark[data-kind="quick"]'),
+  ).toHaveCount(1);
+  const initial = await colors();
+  expect(initial.match).toContain("rgb(255, 230, 154)");
+  await choose("Pink", "highlight-color-light.png");
+  await expect
+    .poll(async () => (await colors()).match)
+    .toContain("rgb(252, 194, 215)");
+  await expect.poll(async () => (await colors()).map).not.toBe(initial.map);
+  const toggleTheme = async (theme: string) => {
+    await page
+      .getByRole("button", { name: "Application menu", exact: true })
+      .click();
+    await page
+      .getByRole("menuitem", { name: new RegExp(`Switch to ${theme} theme`) })
+      .click();
+    await expect(page.locator("html")).toHaveAttribute(
+      "data-mantine-color-scheme",
+      theme,
+    );
+  };
+  await toggleTheme("dark");
+  await expect(picker).toHaveAttribute("data-color", "yellow");
+  await expect
+    .poll(async () => (await colors()).match)
+    .toContain("rgb(128, 96, 25)");
+  await choose("Cyan", "highlight-color-dark.png");
+  await expect
+    .poll(async () => (await colors()).match)
+    .toContain("rgb(23, 101, 111)");
+  await toggleTheme("light");
+  await expect(picker).toHaveAttribute("data-color", "pink");
+  await expect
+    .poll(async () => (await colors()).match)
+    .toContain("rgb(252, 194, 215)");
+  await expect
+    .poll(async () => (await stored()).preferences.highlightTextColors)
+    .toEqual({ light: "pink", dark: "cyan" });
+  // Escape closes the grid without changing the color.
+  await picker.click();
+  await expect(swatch("Lime")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(swatch("Lime")).toHaveCount(0);
+  await expect(picker).toHaveAttribute("data-color", "pink");
+});

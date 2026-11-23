@@ -16,6 +16,9 @@ import { SOURCE_DROP_EVENT } from "./ResourceDragLabel";
 import type { ResourcePayload } from "../resource-drag";
 import "./view-favorites.css";
 
+/** Reuse the favorite's open tab or the preview tab, or open another tab. */
+export type FavoriteOpenMode = "reuse" | "new" | "double-click";
+
 function FavoriteItem({
   favorite,
   onOpen,
@@ -40,7 +43,7 @@ function FavoriteItem({
   dropBefore?: boolean;
   dragging?: boolean;
   favorite: ViewFavorite;
-  onOpen?(id: string): void;
+  onOpen?(id: string, mode?: FavoriteOpenMode): void;
   onRemove?(id: string): void;
   onRename?(id: string, title: string): void;
 }) {
@@ -70,8 +73,13 @@ function FavoriteItem({
             <button
               type="button"
               className="quick-resource saved-view-favorite"
-              onClick={() => {
-                if (!consumeClick?.()) onOpen?.(favorite.id);
+              onClick={(event) => {
+                // The second click of a double-click only opens the new tab.
+                if (!consumeClick?.() && !(event?.detail > 1))
+                  onOpen?.(favorite.id);
+              }}
+              onDoubleClick={() => {
+                if (!consumeClick?.()) onOpen?.(favorite.id, "double-click");
               }}
               onPointerDown={onReorderStart}
               onKeyDown={(event) => {
@@ -138,6 +146,9 @@ function FavoriteItem({
         </Menu.ContextMenu>
         <Menu.Dropdown>
           <Menu.Item onClick={() => onOpen?.(favorite.id)}>Open</Menu.Item>
+          <Menu.Item onClick={() => onOpen?.(favorite.id, "new")}>
+            Open in new tab
+          </Menu.Item>
           <Menu.Item
             onClick={() => {
               setName(favorite.title);
@@ -210,7 +221,7 @@ export function ViewFavorites({
   dropId = "view-favorites",
 }: {
   favorites: ViewFavorite[];
-  onOpen?(id: string): void;
+  onOpen?(id: string, mode?: FavoriteOpenMode): void;
   onRemove?(id: string): void;
   onRename?(id: string, title: string): void;
   /** Moves a favorite before another one, or to the end when `beforeId` is null. */

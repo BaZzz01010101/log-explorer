@@ -202,6 +202,20 @@ for (const theme of ["dark", "light"] as const)
           await expect(row).toHaveAttribute("data-selected", String(selected));
           await page.mouse.move(1, 1);
           const baseline = await colors();
+          if (mode === "Hybrid") {
+            // Details differ from log rows and are tinted while selected.
+            expect(baseline.background).not.toBe(
+              await page
+                .locator(".log-table-row > .log-cell")
+                .first()
+                .evaluate((node) => getComputedStyle(node).backgroundColor),
+            );
+            const tint = await detail.evaluate(
+              (node) => getComputedStyle(node).backgroundImage,
+            );
+            if (selected) expect(tint).toContain("linear-gradient");
+            else expect(tint).toBe("none");
+          }
           const primaryBackground = await colored.evaluate(
             (node) => getComputedStyle(node).backgroundColor,
           );
@@ -214,7 +228,8 @@ for (const theme of ["dark", "light"] as const)
           ).not.toBe(primaryBackground);
           await detail.hover({ position: { x: 80, y: 12 } });
           expect(await colors()).toEqual(baseline);
-          if (highlighted) expect(baseline.background).toBe("rgb(37, 65, 90)");
+          if (highlighted && mode === "JSON")
+            expect(baseline.background).toBe("rgb(37, 65, 90)");
         }
       }
       const screenshot = await app!.evaluate(async ({ BrowserWindow }) => {

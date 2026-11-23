@@ -208,6 +208,12 @@ it("keeps every reducer state consistent across random sequences of all layout a
           type: "favorites/open",
           favoriteId:
             pick(state.favorites.map((favorite) => favorite.id)) ?? "missing",
+          reuse: pick([true, false]),
+        },
+        {
+          type: "favorites/remove",
+          favoriteId:
+            pick(state.favorites.map((favorite) => favorite.id)) ?? "missing",
         },
         // Serialized below only when picked; it is the costliest action.
         { type: "workspace/restore", workspace: null },

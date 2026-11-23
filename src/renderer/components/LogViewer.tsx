@@ -43,7 +43,6 @@ import {
   IconEye,
   IconFold,
   IconGripVertical,
-  IconHighlight,
   IconLayoutSidebarRight,
   IconPin,
   IconSearch,
@@ -126,6 +125,8 @@ import { InspectorMessage } from "./InspectorMessage";
 import { ExpandedEventDetails } from "./ExpandedEventDetails";
 import { ResizableFilterField } from "./ResizableFilterField";
 import { FilterMatchButtons } from "./FilterMatchButtons";
+import { HighlightColorPicker } from "./HighlightColorPicker";
+import { highlightTextStyle } from "../highlight-text-colors";
 import { useLocalFilter } from "../useLocalFilter";
 import { shortcutMatches } from "../../shared/shortcuts";
 import { clearEditControl } from "../scoped-edit-history";
@@ -306,6 +307,8 @@ export function LogViewer({
 }: LogViewerProps) {
   const commands = useAppCommands();
   const highlightText = view.highlightText ?? preferences.highlightText;
+  const highlightColor =
+    preferences.highlightTextColors?.[preferences.theme] ?? "yellow";
   const quick = useMemo(
     () => ({
       regex: view.highlightRegex ?? false,
@@ -1103,6 +1106,18 @@ export function LogViewer({
     apply();
   }, [rows, filtering, localSearch]);
   const inspectedIndex = selection.index;
+  /**
+   * Keyboard navigation that reaches the last row follows Live. Only while the
+   * newest event is last: in another sort order following would jump away.
+   */
+  const followAtLastRow = (index: number) => {
+    if (liveState !== "streaming" || index < 0 || index !== rows.length - 1)
+      return false;
+    const last = rows[index]!.original.event.timestamp;
+    if (rows.some((row) => row.original.event.timestamp > last)) return false;
+    onResumeLiveFollow?.();
+    return Boolean(onResumeLiveFollow);
+  };
   useEffect(() => {
     if (!revealEvent) return;
     const index = contextEventIndex(
@@ -1361,7 +1376,10 @@ export function LogViewer({
       <div
         className={`log-viewer density-${preferences.density}`}
         style={
-          { "--log-font-size": `${preferences.fontSize}px` } as CSSProperties
+          {
+            "--log-font-size": `${preferences.fontSize}px`,
+            ...highlightTextStyle(preferences.theme, highlightColor),
+          } as CSSProperties
         }
       >
         <div className="viewer-toolbar">
@@ -1458,11 +1476,15 @@ export function LogViewer({
               placeholder="Highlight text…"
               size="xs"
               leftSection={
-                <IconHighlight
-                  size={14}
-                  color="var(--mantine-color-yellow-6)"
+                <HighlightColorPicker
+                  theme={preferences.theme}
+                  value={highlightColor}
+                  onChange={(color) =>
+                    commands.setHighlightTextColor(preferences.theme, color)
+                  }
                 />
               }
+              leftSectionPointerEvents="all"
               value={highlightText}
               maxLength={200}
               spellCheck={false}
@@ -1872,7 +1894,9 @@ export function LogViewer({
                     onPauseLiveFollow?.();
                     scroll.scrollTop = Math.max(0, destination.scrollTop + offset);
                     selection.select(rows[destination.index]!.original.event.id, { range: event.shiftKey });
-                    settlePage(destination.index, event.key === "PageUp" ? "up" : "down");
+                    // Following keeps its own position at the newest row.
+                    if (event.key === "PageUp" || event.shiftKey || !followAtLastRow(destination.index))
+                      settlePage(destination.index, event.key === "PageUp" ? "up" : "down");
                   }
                   // Fewer rows above than a page: the page reaches the first row.
                   if (event.key === "PageUp" && (destination?.index ?? selection.index) === 0) {
@@ -1949,6 +1973,8 @@ export function LogViewer({
                       event.shiftKey && (event.ctrlKey || event.metaKey),
                   });
                   if (index >= 0) revealIndex(index);
+                  if ((direction === "last" || direction === "next") && !event.shiftKey)
+                    followAtLastRow(index);
                   // Home, or Up on the first row, asks for older Recent events.
                   if (direction === "first" || (direction === "previous" && fromFirst && !event.shiftKey))
                     requestOlderFromKeyboard();

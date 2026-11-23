@@ -38,6 +38,17 @@ test.beforeEach(async ({}, testInfo) => {
     { path: "@timestamp", width: 210, pinned: true },
     { path: "@message", width: 700 },
   ];
+  if (testInfo.title.includes("two connections")) {
+    state.connections.push({
+      ...state.connections[0],
+      id: "second",
+      name: "Second",
+    });
+    state.tabs[0].sources.push({
+      connectionId: "second",
+      logGroup: state.tabs[0].sources[0].logGroup,
+    });
+  }
   if (
     testInfo.title.includes("light") &&
     testInfo.title.includes("native text selection")
@@ -293,6 +304,19 @@ test("Live preserves matching history, appends events automatically, and Stop re
   ).toBeGreaterThan(before);
 });
 
+test("two connections stream into one Live view and Stop shows held events", async () => {
+  await page.getByRole("button", { name: "Live", exact: true }).click();
+  await expect(status()).toHaveAttribute("data-live-state", "streaming");
+  await expect.poll(received, { timeout: 15000 }).toBeGreaterThanOrEqual(4);
+  const before = await received();
+  await page.getByRole("button", { name: "Stop Live", exact: true }).click();
+  await expect(status()).toHaveAttribute("data-live-state", "stopped");
+  // Events are held for three seconds, so Stop releases several at once.
+  expect(await received()).toBeGreaterThanOrEqual(before + 4);
+  await expect(page.getByTestId("live-failure")).toHaveCount(0);
+  await capture("live-two-connections.png");
+});
+
 test("inactive Live tabs cancel reception, resume history on activation and stay stopped after Stop", async () => {
   await page.evaluate(() => {
     (window as any).__liveVisibilityUpdates = [];
@@ -529,7 +553,7 @@ test("native keyboard scrolling pauses Live following without stopping reception
   await expect.poll(received).toBeGreaterThanOrEqual(1);
   const follow = page.getByRole("button", { name: "Follow Live", exact: true });
   const viewer = page.locator(".viewer-scroll");
-  for (const key of ["PageUp", "PageDown", "Space", "Shift+Space"]) {
+  for (const key of ["PageUp", "Space", "Shift+Space"]) {
     await viewer.focus();
     await page.keyboard.press(key);
     await expect(follow).toHaveAttribute("aria-pressed", "false");
@@ -538,6 +562,64 @@ test("native keyboard scrolling pauses Live following without stopping reception
     await follow.click();
     await expect(follow).toHaveAttribute("aria-pressed", "true");
   }
+});
+
+test("End, Page Down and Arrow Down at the last row follow Live", async () => {
+  await page.getByRole("button", { name: "Live", exact: true }).click();
+  await expect.poll(received).toBeGreaterThanOrEqual(1);
+  const follow = page.getByRole("button", { name: "Follow Live", exact: true });
+  const viewer = page.locator(".viewer-scroll");
+  const pressed = (value: boolean) =>
+    expect(follow).toHaveAttribute("aria-pressed", String(value));
+  await viewer.focus();
+  for (const key of ["End", "PageDown", "ArrowDown"]) {
+    await page.keyboard.press("Home");
+    await pressed(false);
+    if (key === "End") await page.keyboard.press("End");
+    else if (key === "PageDown") {
+      // Pages that do not reach the last row keep following paused.
+      await page.keyboard.press("PageDown");
+      await pressed(false);
+      await viewer.evaluate((element) => {
+        element.scrollTop = element.scrollHeight;
+      });
+      // An event can arrive first; another page then reaches the last row.
+      await expect(async () => {
+        await page.keyboard.press("PageDown");
+        await expect(follow).toHaveAttribute("aria-pressed", "true", {
+          timeout: 100,
+        });
+      }).toPass({ intervals: [50] });
+    } else {
+      await page.keyboard.press("End");
+      await page.keyboard.press("ArrowUp");
+      await pressed(false);
+      // An event can arrive between the keys; Down then needs one more step.
+      await expect(async () => {
+        await page.keyboard.press("ArrowDown");
+        await expect(follow).toHaveAttribute("aria-pressed", "true", {
+          timeout: 100,
+        });
+      }).toPass({ intervals: [50] });
+    }
+    await pressed(true);
+    const count = await received();
+    await expect.poll(received).toBeGreaterThan(count + 1);
+    await pressed(true);
+    await expect
+      .poll(() =>
+        viewer.evaluate(
+          (element) =>
+            element.scrollHeight - element.scrollTop - element.clientHeight,
+        ),
+      )
+      .toBeLessThan(80);
+  }
+  // Extending a selection to the last row does not follow.
+  await page.keyboard.press("ArrowUp");
+  await pressed(false);
+  await page.keyboard.press("Shift+End");
+  await pressed(false);
 });
 
 for (const mode of ["Table", "Hybrid"])

@@ -188,3 +188,87 @@ for (const theme of behaviorThemes)
       })
       .toEqual(["Beta", "Gamma", "Alpha"]);
   });
+
+test("a click reuses a favorite's tab; double-click and the menu open another", async () => {
+  const favorites = page
+    .getByRole("complementary", { name: "AWS resources" })
+    .getByLabel("Favorite views");
+  const item = (name: string) =>
+    favorites.getByRole("button", { name, exact: true });
+  const tabs = page.locator(".workspace-tab-list [data-tab-id]");
+  const previews = page.locator(".workspace-tab.is-preview");
+  const selected = page.getByRole("tab", { selected: true });
+  await expect(tabs).toHaveCount(1);
+  for (const name of ["Alpha", "Beta", "Alpha", "Alpha"]) {
+    await item(name).click();
+    await expect(selected).toContainText(name);
+    await expect(tabs).toHaveCount(2);
+    await expect(previews).toHaveCount(1);
+    // Separate clicks, not a double-click.
+    await page.waitForTimeout(700);
+  }
+  // A double-click that opens the favorite keeps that one tab.
+  await item("Gamma").dblclick();
+  await expect(selected).toContainText("Gamma");
+  await expect(tabs).toHaveCount(2);
+  await expect(previews).toHaveCount(0);
+  await page.waitForTimeout(700);
+  // An open favorite gets another tab.
+  await item("Gamma").dblclick();
+  await expect(tabs).toHaveCount(3);
+  await page.waitForTimeout(700);
+  await item("Beta").click();
+  await expect(tabs).toHaveCount(4);
+  await item("Beta").click({ button: "right" });
+  await page
+    .getByRole("menuitem", { name: "Open in new tab", exact: true })
+    .click();
+  await expect(tabs).toHaveCount(5);
+  await expect(selected).toContainText("Beta");
+  await expect(previews).toHaveCount(1);
+  await item("Gamma").click({ button: "right" });
+  await page.getByRole("menuitem", { name: "Open", exact: true }).click();
+  await expect(selected).toContainText("Gamma");
+  await expect(tabs).toHaveCount(5);
+});
+
+test("clicking a favorite shows the tab it was saved from", async () => {
+  const favorites = page
+    .getByRole("complementary", { name: "AWS resources" })
+    .getByLabel("Favorite views");
+  const tabs = page.locator(".workspace-tab-list [data-tab-id]");
+  const original = page.getByRole("tab", { selected: true });
+  const id = await original.getAttribute("id");
+  await original.click({ button: "right" });
+  await page
+    .getByRole("menuitem", { name: "Save view to Favorites", exact: true })
+    .click();
+  const items = favorites.locator(".saved-view-favorite");
+  await expect(items).toHaveCount(4);
+  await items.last().click();
+  await expect(tabs).toHaveCount(1);
+  await items.first().click();
+  await expect(tabs).toHaveCount(2);
+  await expect(original).not.toHaveAttribute("id", id!);
+  await items.last().click();
+  await expect(original).toHaveAttribute("id", id!);
+  await expect(tabs).toHaveCount(2);
+
+  // A pinned tab is shown where it is; a forced new tab is unpinned.
+  const pinned = page.locator(`.workspace-tab-list [data-pinned="true"]`);
+  await original.click({ button: "right" });
+  await page.getByRole("menuitem", { name: "Pin tab", exact: true }).click();
+  await expect(pinned).toHaveCount(1);
+  await items.first().click();
+  await expect(original).not.toHaveAttribute("id", id!);
+  await page.waitForTimeout(700);
+  await items.last().click();
+  await expect(original).toHaveAttribute("id", id!);
+  await expect(pinned).toHaveCount(1);
+  await expect(tabs).toHaveCount(2);
+  await page.waitForTimeout(700);
+  await items.last().dblclick();
+  await expect(tabs).toHaveCount(3);
+  await expect(original).not.toHaveAttribute("id", id!);
+  await expect(pinned).toHaveCount(1);
+});

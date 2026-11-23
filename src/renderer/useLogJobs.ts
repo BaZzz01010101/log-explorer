@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type {
   LogEvent,
+  LiveFailure,
   LiveState,
   LogTab,
   QueryRequest,
@@ -25,6 +26,7 @@ export interface TabRuntime {
   livePaused?: boolean;
   liveState?: LiveState;
   liveReceived?: number;
+  liveFailures?: LiveFailure[];
   cursor?: string;
   error?: string;
   stats?: QueryStats;
@@ -176,6 +178,10 @@ export function useLogJobs(
                     (update.replace ? 0 : prior.events.length),
                 )
               : undefined,
+            liveFailures:
+              job.live && !terminal
+                ? (update.liveFailures ?? prior.liveFailures)
+                : undefined,
             cursor: update.cursor,
             error: update.error,
             stats: update.stats ?? prior.stats,

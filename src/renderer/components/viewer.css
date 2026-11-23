@@ -439,7 +439,7 @@ body.resizing-columns * {
   padding: 10px 14px 12px 35px;
   border-left: 2px solid var(--mantine-color-cyan-6);
   border-bottom: 1px solid var(--mantine-color-default-border);
-  background: var(--mantine-color-default);
+  background: var(--event-detail-bg, var(--mantine-color-default));
   max-width: 100%;
   box-sizing: border-box;
 }
@@ -543,7 +543,10 @@ body.resizing-columns * {
 .json-tree {
   --filter-match-server: light-dark(#b7d9ff, #24588b);
   --filter-match-local: light-dark(#b9edca, #24613e);
-  --filter-match-manual: light-dark(#ffe69a, #806019);
+  --filter-match-manual: var(
+    --quick-highlight-match,
+    light-dark(#ffe69a, #806019)
+  );
   font-family: var(--mantine-font-family-monospace);
   line-height: 1.7;
   overflow: auto;
@@ -587,7 +590,10 @@ body.resizing-columns * {
 .log-viewer {
   --filter-match-server: light-dark(#b7d9ff, #24588b);
   --filter-match-local: light-dark(#b9edca, #24613e);
-  --filter-match-manual: light-dark(#ffe69a, #806019);
+  --filter-match-manual: var(
+    --quick-highlight-match,
+    light-dark(#ffe69a, #806019)
+  );
 }
 .json-match-indicator {
   display: inline-flex;
@@ -611,7 +617,7 @@ body.resizing-columns * {
   background: var(--mantine-color-green-5);
 }
 .json-match-indicator [data-match-origin="manual"] {
-  background: var(--mantine-color-yellow-5);
+  background: var(--quick-highlight-marker, var(--mantine-color-yellow-5));
 }
 .json-punctuation {
   color: var(--mantine-color-dimmed);
@@ -839,10 +845,19 @@ body.resizing-columns * {
   --event-row-bg: var(--mantine-color-body);
   --event-row-fg: var(--mantine-color-text);
   --event-row-hover-bg: color-mix(in srgb, var(--event-row-bg) 88%, #808080);
+  --event-detail-bg: light-dark(
+    color-mix(in srgb, var(--mantine-color-body), #7890b0 9%),
+    color-mix(in srgb, var(--mantine-color-body), #7890b0 12%)
+  );
   background-color: var(--event-row-bg);
   color: var(--event-row-fg);
 }
 .virtual-event[data-highlighted="true"] {
+  --event-detail-bg: color-mix(
+    in srgb,
+    var(--event-highlight-bg, var(--mantine-color-body)) 92%,
+    #808080
+  );
   --event-row-bg: var(--event-highlight-bg, var(--mantine-color-body));
   --event-row-fg: var(--event-highlight-fg, var(--mantine-color-text));
 }
@@ -853,6 +868,10 @@ body.resizing-columns * {
     in srgb,
     var(--mantine-color-blue-3) 50%,
     transparent
+  );
+  --event-detail-tint: light-dark(
+    color-mix(in srgb, var(--mantine-color-blue-5) 7%, transparent),
+    color-mix(in srgb, var(--mantine-color-blue-4) 9%, transparent)
   );
   --event-selection-fill: linear-gradient(
     to bottom,
@@ -892,6 +911,16 @@ body.resizing-columns * {
 .virtual-event[data-highlighted="true"] .event-message-details {
   background-color: var(--event-highlight-bg, var(--mantine-color-body));
   color: var(--event-highlight-fg, var(--mantine-color-text));
+}
+/* Hybrid details differ a little from log rows; selected ones are tinted. */
+.virtual-event > .hybrid-detail.event-message-details {
+  background-color: var(--event-detail-bg);
+}
+.virtual-event.event-selected > .hybrid-detail {
+  background-image: linear-gradient(
+    var(--event-detail-tint),
+    var(--event-detail-tint)
+  );
 }
 .virtual-event[data-highlighted="true"] .json-key,
 .virtual-event[data-highlighted="true"] .json-value {
