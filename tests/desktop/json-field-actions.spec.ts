@@ -249,12 +249,13 @@ test("field menus deserialize nested values temporarily, preserve raw records an
   ]);
   await actions("/payload/a~1b/value");
   await menuAction("Add /payload/a~1b/value column").click();
-  await expect(event.getByRole("cell").last()).toHaveText("7");
+  // A new column goes before Message, which is last here.
+  await expect(event.getByRole("cell").nth(-2)).toHaveText("7");
   await expect(
     page
       .locator('.virtual-event[data-event-id="encoded-2"]')
       .getByRole("cell")
-      .last(),
+      .nth(-2),
   ).toHaveText("—");
   const colors = await inspector.evaluate((element) => ({
     decoded: getComputedStyle(
@@ -329,10 +330,10 @@ test("field menus deserialize nested values temporarily, preserve raw records an
   expect(exported.extension).toBe("csv");
   const csvRows = exported.content.split(/\r?\n/).slice(1);
   expect(csvRows.find((record: string) => record.includes("event-1"))).toMatch(
-    /,"7"$/,
+    /,"7","[{]/,
   );
   expect(csvRows.find((record: string) => record.includes("event-2"))).toMatch(
-    /,""$/,
+    /,"","[^"]/,
   );
   for (const theme of ["light", "dark"] as const) {
     await openSettingsWindow(page);

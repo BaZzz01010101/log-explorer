@@ -159,7 +159,12 @@ export interface ColumnConfig {
   format?: "auto" | "json" | "bytes" | "milliseconds" | "datetime";
   pinned?: boolean;
   hidden?: boolean;
+  /** Neighbors of a pinned column before it was pinned, to unpin it there. */
+  home?: { left?: string; right?: string };
 }
+/** Where an added column goes among the unpinned columns. */
+export type NewColumnPosition =
+  "first" | "before-message" | "after-message" | "last";
 export interface ViewConfig {
   inspectorWrap?: boolean;
   inspectorExpanded?: boolean;
@@ -289,6 +294,7 @@ export interface Preferences {
   /** Highlight text color of each theme. */
   highlightTextColors?: import("./quick-highlight").HighlightTextColors;
   autoExpandFilterMatches?: boolean;
+  newColumnPosition?: NewColumnPosition;
   /** Source name formats for badges and the Source column. */
   sourceNameFormats?: import("./display-rules").SourceNameFormats;
   /** Paths checked first for the Message column. */
@@ -386,6 +392,11 @@ export interface ExplorerApi {
   live(request: QueryRequest): Promise<void>;
   cancel(requestId: string): Promise<void>;
   onUpdate(listener: (update: QueryUpdate) => void): () => void;
+  /** The version of a local build that waits for the app to close. */
+  pendingUpdate(): Promise<string | null>;
+  onPendingUpdate(listener: (version: string | null) => void): () => void;
+  /** Closes the app so that the waiting build replaces and restarts it. */
+  installUpdate(): Promise<void>;
   /** The user used the window's caption buttons or border. */
   onWindowPress(listener: () => void): () => void;
   onBeforeClose(listener: () => Promise<void>): () => void;

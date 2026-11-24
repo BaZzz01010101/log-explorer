@@ -33,6 +33,7 @@ import { AwsAccessPreference } from "./aws-access-preference";
 import { setAwsAccess } from "./aws-access-toggle";
 import { WorkspaceStore } from "./persistence";
 import { createCloseCoordinator } from "./close-coordinator";
+import { LocalUpdates, localUpdateDirectory } from "./local-update";
 import { parseWorkspaceInput } from "./workspace-input";
 import {
   consistentProjection,
@@ -55,6 +56,7 @@ setFixturesAvailable(verificationSwitches);
 if (!verificationSwitches) {
   delete process.env.EXPLORER_TEST_USER_DATA;
   delete process.env.EXPLORER_TEST_QUERY_DELAY_MS;
+  delete process.env.EXPLORER_TEST_UPDATE_DIRECTORY;
 }
 // Isolate verification storage before reading local application preferences.
 if (process.env.EXPLORER_TEST_USER_DATA)
@@ -106,6 +108,19 @@ const service = createLogService(
       window.webContents.send("explorer:update", update);
   },
   { allowAws: () => gate.enabled, allowGcp: () => canUseGcp, allowOffline: () => verificationSwitches },
+);
+const updates = new LocalUpdates(
+  localUpdateDirectory({
+    packaged: app.isPackaged,
+    platform: process.platform,
+    executable: process.execPath,
+    testDirectory: process.env.EXPLORER_TEST_UPDATE_DIRECTORY,
+  }),
+  app.getVersion(),
+  (version) => {
+    if (window && !window.isDestroyed())
+      window.webContents.send("explorer:pending-update", version);
+  },
 );
 const environment = () => ({
   version: app.getVersion(),
@@ -337,6 +352,16 @@ handle("gcp:workloads", (identity, project, context) => {
   );
 });
 handle("explorer:environment", environment);
+handle("explorer:get-pending-update", () => updates.version);
+handle("explorer:install-update", async () => {
+  if (!(await updates.requestRestart(process.argv.slice(1)))) return;
+  try {
+    await finishClose(true);
+  } finally {
+    // The user kept working after a failed save or cleanup.
+    if (!quitting) await updates.cancelRestart();
+  }
+});
 handle("explorer:window-theme", (theme) => {
   const mode = z.enum(["light", "dark"]).parse(theme);
   windowTheme = mode;
@@ -641,6 +666,7 @@ void app.whenReady().then(async () => {
     (startupWorkspace.workspace as Workspace | null)?.preferences.theme ??
     "dark";
   createWindow();
+  void updates.start();
   app.on("activate", () => {
     if (!window) createWindow();
   });

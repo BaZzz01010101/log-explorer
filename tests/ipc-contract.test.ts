@@ -70,8 +70,10 @@ describe("preload and main IPC contract", () => {
     api.onUpdate!(() => {});
     api.onBeforeClose!(async () => {});
     api.onWindowPress!(() => {});
+    api.onPendingUpdate!(() => {});
     const listened = calls.filter((call) => call.kind === "on");
     expect(listened.map((call) => call.channel).sort()).toEqual([
+      "explorer:pending-update",
       "explorer:prepare-close",
       "explorer:update",
       "explorer:window-press",

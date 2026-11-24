@@ -18,9 +18,9 @@ const actions: [ColumnAction, string][] = [
   ["move-left", "Move left"],
   ["move-right", "Move right"],
   ["pin", "Pin"],
-  ["pin-left", "Pin left"],
+  ["pin-left", "Pin to the left"],
   ["unpin", "Unpin"],
-  ["unpin-right", "Unpin right"],
+  ["unpin-right", "Unpin to the right"],
 ];
 
 export function ColumnHeaderMenu({

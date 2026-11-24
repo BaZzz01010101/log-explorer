@@ -397,7 +397,7 @@ body.resizing-columns * {
   .inspect-cell {
   white-space: nowrap;
 }
-.pinned {
+.pinned-edge {
   box-shadow: 2px 0 5px -3px #0008;
 }
 .cell-missing {
@@ -437,7 +437,7 @@ body.resizing-columns * {
   left: 0;
   width: 100cqw;
   padding: 10px 14px 12px 35px;
-  border-left: 2px solid var(--mantine-color-cyan-6);
+  border-left: 2px solid var(--event-level-color, var(--mantine-color-cyan-6));
   border-bottom: 1px solid var(--mantine-color-default-border);
   background: var(--event-detail-bg, var(--mantine-color-default));
   max-width: 100%;
@@ -483,14 +483,26 @@ body.resizing-columns * {
 .json-event-card {
   padding: 10px 14px 12px;
   border-bottom: 1px solid var(--mantine-color-default-border);
-  border-left: 2px solid transparent;
+  border-left: 2px solid var(--event-level-color, transparent);
 }
-.json-event-card.level-error,
-.json-event-card.level-fatal {
-  border-left-color: var(--mantine-color-red-6);
+.virtual-event.level-error,
+.virtual-event.level-fatal {
+  --event-level-color: var(--mantine-color-red-6);
 }
-.json-event-card.level-warn {
-  border-left-color: var(--mantine-color-yellow-6);
+.virtual-event.level-warn {
+  --event-level-color: var(--mantine-color-yellow-6);
+}
+/* Stays at the left edge, above pinned cells, while columns scroll. */
+.virtual-event:is(.level-error, .level-fatal, .level-warn)
+  > .log-table-row::before {
+  content: "";
+  position: sticky;
+  left: 0;
+  z-index: 3;
+  flex: 0 0 2px;
+  margin-right: -2px;
+  background: var(--event-level-color);
+  pointer-events: none;
 }
 .json-card-meta {
   display: flex;
@@ -845,15 +857,16 @@ body.resizing-columns * {
   --event-row-bg: var(--mantine-color-body);
   --event-row-fg: var(--mantine-color-text);
   --event-row-hover-bg: color-mix(in srgb, var(--event-row-bg) 88%, #808080);
-  --event-detail-bg: light-dark(
+  --event-detail-base: light-dark(
     color-mix(in srgb, var(--mantine-color-body), #7890b0 9%),
     color-mix(in srgb, var(--mantine-color-body), #7890b0 12%)
   );
+  --event-detail-bg: var(--event-detail-base);
   background-color: var(--event-row-bg);
   color: var(--event-row-fg);
 }
 .virtual-event[data-highlighted="true"] {
-  --event-detail-bg: color-mix(
+  --event-detail-base: color-mix(
     in srgb,
     var(--event-highlight-bg, var(--mantine-color-body)) 92%,
     #808080
@@ -861,29 +874,28 @@ body.resizing-columns * {
   --event-row-bg: var(--event-highlight-bg, var(--mantine-color-body));
   --event-row-fg: var(--event-highlight-fg, var(--mantine-color-text));
 }
-/* Selection fades a blue band in from the top and bottom row edges and keeps
-   the row's own color in the middle, so a highlighted row stays recognizable. */
+/* Selection tints the row and its details lightly, so a highlighted row stays
+   recognizable; the text keeps its highlight color. */
 .virtual-event.event-selected {
-  --event-selection-edge: color-mix(
+  --event-row-bg: color-mix(
     in srgb,
-    var(--mantine-color-blue-3) 50%,
-    transparent
+    var(--event-highlight-bg, var(--mantine-color-body)),
+    var(--mantine-color-blue-5) 24%
   );
-  --event-detail-tint: light-dark(
-    color-mix(in srgb, var(--mantine-color-blue-5) 7%, transparent),
-    color-mix(in srgb, var(--mantine-color-blue-4) 9%, transparent)
-  );
-  --event-selection-fill: linear-gradient(
-    to bottom,
-    var(--event-selection-edge),
-    transparent 40%,
-    transparent 60%,
-    var(--event-selection-edge)
+  --event-detail-bg: color-mix(
+    in srgb,
+    var(--event-detail-base),
+    var(--mantine-color-blue-5) 24%
   );
 }
-.virtual-event.event-selected:not([data-highlighted="true"]) {
-  --event-row-bg: var(--mantine-primary-color-light);
-  --event-row-fg: var(--mantine-color-text);
+/* Like pinned cells, below the current row's shadow. */
+.virtual-event > .log-table-row > .hybrid-gutter {
+  z-index: 2;
+}
+/* Below the resizable details of the row above. */
+.virtual-event[data-current="true"] {
+  z-index: 3;
+  box-shadow: 0 1px 5px light-dark(#0006, #000c);
 }
 .virtual-event > .log-table-row,
 .virtual-event > .log-table-row > .log-cell,
@@ -891,36 +903,18 @@ body.resizing-columns * {
   background-color: var(--event-row-bg);
   color: var(--event-row-fg);
 }
-/* Cells stretch to the row height, so their bands line up across pinned and
-   scrolled columns; JSON cards paint the band on the card itself. */
-.virtual-event.event-selected > .log-table-row,
-.virtual-event.event-selected > .log-table-row > .log-cell,
-.virtual-event.event-selected > .log-table-row > .hybrid-gutter,
-.virtual-event.event-selected.json-event-card,
-.virtual-event.event-selected .has-highlight-marker::before,
-.virtual-event.event-selected.has-highlight-marker::before {
-  /* The row itself paints the band past the last column; the highlight marker
-     keeps its color under the band. */
-  background-image: var(--event-selection-fill);
-}
 .virtual-event > .log-table-row:hover,
 .virtual-event > .log-table-row:hover > .log-cell,
 .virtual-event > .log-table-row:hover > .hybrid-gutter {
   background-color: var(--event-row-hover-bg);
 }
 .virtual-event[data-highlighted="true"] .event-message-details {
-  background-color: var(--event-highlight-bg, var(--mantine-color-body));
+  background-color: var(--event-row-bg);
   color: var(--event-highlight-fg, var(--mantine-color-text));
 }
-/* Hybrid details differ a little from log rows; selected ones are tinted. */
+/* Hybrid details differ a little from log rows. */
 .virtual-event > .hybrid-detail.event-message-details {
   background-color: var(--event-detail-bg);
-}
-.virtual-event.event-selected > .hybrid-detail {
-  background-image: linear-gradient(
-    var(--event-detail-tint),
-    var(--event-detail-tint)
-  );
 }
 .virtual-event[data-highlighted="true"] .json-key,
 .virtual-event[data-highlighted="true"] .json-value {

@@ -210,6 +210,22 @@ export function PreferencesEditor({
           />
         </PreferenceOption>
         <PreferenceOption>
+          <Select
+            label="New column position"
+            allowDeselect={false}
+            value={value.newColumnPosition ?? "before-message"}
+            data={[
+              { value: "first", label: "First, after pinned columns" },
+              { value: "before-message", label: "Before Message" },
+              { value: "after-message", label: "After Message" },
+              { value: "last", label: "Last" },
+            ]}
+            onChange={(newColumnPosition) => {
+              if (newColumnPosition) onChange({ newColumnPosition });
+            }}
+          />
+        </PreferenceOption>
+        <PreferenceOption>
           <Switch
             aria-label="Automatically expand inspector paths to highlighted matches"
             label={

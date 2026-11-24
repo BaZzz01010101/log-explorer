@@ -104,6 +104,12 @@ const viewSchema = z.object({
         width: z.number().min(40).max(2000),
         pinned: z.boolean().optional(),
         hidden: z.boolean().optional(),
+        home: z
+          .object({
+            left: z.string().max(2048).optional(),
+            right: z.string().max(2048).optional(),
+          })
+          .optional(),
         format: z
           .enum(["auto", "json", "bytes", "milliseconds", "datetime"])
           .optional(),
@@ -347,6 +353,9 @@ export const workspaceSchema = z
         })
         .optional(),
       autoExpandFilterMatches: z.boolean().optional(),
+      newColumnPosition: z
+        .enum(["first", "before-message", "after-message", "last"])
+        .optional(),
       sourceNameFormats: z
         .object({
           aws: z.string().max(200).optional(),

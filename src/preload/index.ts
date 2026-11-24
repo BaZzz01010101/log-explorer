@@ -45,6 +45,16 @@ const api: ExplorerApi = {
     ipcRenderer.on("explorer:update", handler);
     return () => ipcRenderer.removeListener("explorer:update", handler);
   },
+  pendingUpdate: () => ipcRenderer.invoke("explorer:get-pending-update"),
+  installUpdate: () => ipcRenderer.invoke("explorer:install-update"),
+  onPendingUpdate: (listener) => {
+    const handler = (
+      _event: Electron.IpcRendererEvent,
+      version: string | null,
+    ) => listener(version);
+    ipcRenderer.on("explorer:pending-update", handler);
+    return () => ipcRenderer.removeListener("explorer:pending-update", handler);
+  },
   onWindowPress: (listener) => {
     const handler = () => listener();
     ipcRenderer.on("explorer:window-press", handler);

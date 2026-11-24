@@ -1,7 +1,4 @@
-import {
-  createWorkspace,
-  restoreWorkspace,
-} from "../../src/shared/workspace";
+import { createWorkspace, restoreWorkspace } from "../../src/shared/workspace";
 import { closeAppNaturally, desktopExecutablePath } from "./desktop-app";
 import {
   _electron as electron,
@@ -175,7 +172,7 @@ test("keyboard column menu returns focus to its header after Escape", async () =
   ).toBeVisible();
   await page.keyboard.press("Shift+F10");
   await expect(
-    page.getByRole("menuitem", { name: "Pin left", exact: true }),
+    page.getByRole("menuitem", { name: "Pin to the left", exact: true }),
   ).toBeVisible();
   const search = page.getByRole("textbox", {
     name: "Local filter loaded events",
@@ -200,7 +197,7 @@ async function menu(path: string) {
   });
   await expect(page.getByRole("menu")).toHaveCount(1);
   await expect(
-    page.getByRole("menuitem", { name: "Pin left", exact: true }),
+    page.getByRole("menuitem", { name: "Pin to the left", exact: true }),
   ).toBeVisible();
 }
 async function action(path: string, name: string) {
@@ -290,7 +287,7 @@ for (const mode of ["Table", "Hybrid"])
       ["@message", false],
       ["/request/id", false],
     ]);
-    await action("@message", "Pin left");
+    await action("@message", "Pin to the left");
     await expect.poll(sequence).toEqual([
       ["/service/name", true],
       ["@timestamp", true],
@@ -298,7 +295,7 @@ for (const mode of ["Table", "Hybrid"])
       ["@message", true],
       ["/request/id", false],
     ]);
-    await action("@level", "Unpin right");
+    await action("@level", "Unpin to the right");
     await expect.poll(sequence).toEqual([
       ["/service/name", true],
       ["@timestamp", true],
@@ -325,8 +322,8 @@ for (const mode of ["Table", "Hybrid"])
     await action("/service/name", "Unpin");
     await expect.poll(sequence).toEqual([
       ["@timestamp", true],
-      ["/service/name", false],
       ["@level", false],
+      ["/service/name", false],
       ["@message", false],
       ["/request/id", false],
     ]);
@@ -349,9 +346,9 @@ for (const mode of ["Table", "Hybrid"])
       )
       .toEqual([
         ["@timestamp", true],
-        ["/service/name", false],
-        ["@logGroup", false],
         ["@level", false],
+        ["@logGroup", false],
+        ["/service/name", false],
         ["@message", false],
         ["/request/id", false],
       ]);
@@ -371,3 +368,52 @@ for (const mode of ["Table", "Hybrid"])
       210,
     );
   });
+
+for (const mode of ["Table", "Hybrid"])
+  test(`${mode} only the rightmost pinned column has a shadow, in the header and the rows`, async () => {
+    await page
+      .locator("label")
+      .filter({ hasText: new RegExp(`^${mode}$`) })
+      .click();
+    const shadows = () =>
+      page.evaluate(() =>
+        [
+          [...document.querySelectorAll(".log-header-cell")],
+          [
+            ...document
+              .querySelector(".virtual-event")!
+              .querySelectorAll(".log-cell"),
+          ],
+        ].map((cells) =>
+          cells.flatMap((cell, index) =>
+            getComputedStyle(cell).boxShadow === "none" ? [] : [index],
+          ),
+        ),
+      );
+    await expect.poll(shadows).toEqual([[0], [0]]);
+    await action("@message", "Pin to the left");
+    const last = (await sequence()).filter(([, pinned]) => pinned).length - 1;
+    expect(last).toBeGreaterThan(1);
+    await expect.poll(shadows).toEqual([[last], [last]]);
+    await action("@message", "Unpin to the right");
+    await expect.poll(shadows).toEqual([[last - 1], [last - 1]]);
+  });
+
+test("a new column goes before Message unless Settings place it elsewhere", async () => {
+  const add = async (path: string) => {
+    await page
+      .getByRole("button", { name: "Configure columns", exact: true })
+      .click();
+    await page.getByLabel("JSON Pointer").fill(path);
+    await page.getByRole("button", { name: "Add column", exact: true }).click();
+    await page.keyboard.press("Escape");
+    await expect(header(path)).toBeVisible();
+  };
+  const order = async () => (await sequence()).map(([path]) => path);
+  const before = await order();
+  const at = before.indexOf("@message");
+  await add("/new/one");
+  await expect
+    .poll(order)
+    .toEqual([...before.slice(0, at), "/new/one", ...before.slice(at)]);
+});

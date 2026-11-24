@@ -87,6 +87,12 @@ async function launch(workspace: Workspace) {
   ).toBeAttached();
 }
 
+/** Red, green and blue from 0 to 255 in either computed notation. */
+const channels = (color: string) =>
+  (color.match(/-?[\d.]+(?:e-?\d+)?/g) ?? [])
+    .slice(0, 3)
+    .map((value) => Number(value) * (color.startsWith("color(") ? 255 : 1));
+
 test.afterEach(async () => {
   try {
     if (app && child && child.exitCode === null) {
@@ -192,6 +198,7 @@ for (const theme of ["dark", "light"] as const)
             }
             return { background, foreground: style.color };
           });
+        let unselected = { row: "", detail: "" };
         for (const selected of [false, true]) {
           // Ctrl-click toggles the first row without collapsing the detail.
           if ((await row.getAttribute("data-selected")) !== String(selected))
@@ -202,19 +209,31 @@ for (const theme of ["dark", "light"] as const)
           await expect(row).toHaveAttribute("data-selected", String(selected));
           await page.mouse.move(1, 1);
           const baseline = await colors();
-          if (mode === "Hybrid") {
-            // Details differ from log rows and are tinted while selected.
-            expect(baseline.background).not.toBe(
-              await page
-                .locator(".log-table-row > .log-cell")
-                .first()
-                .evaluate((node) => getComputedStyle(node).backgroundColor),
-            );
-            const tint = await detail.evaluate(
-              (node) => getComputedStyle(node).backgroundImage,
-            );
-            if (selected) expect(tint).toContain("linear-gradient");
-            else expect(tint).toBe("none");
+          const rowColor = await colored.evaluate((node) => {
+            let current: Element | null = node;
+            let background = "";
+            do {
+              background = getComputedStyle(current!).backgroundColor;
+              current = current!.parentElement;
+            } while (background === "rgba(0, 0, 0, 0)" && current);
+            return background;
+          });
+          if (mode === "Hybrid") expect(baseline.background).not.toBe(rowColor);
+          else expect(baseline.background).toBe(rowColor);
+          // Selection tints details as much as the row.
+          const shift = (from: string, to: string) =>
+            channels(to).map((value, index) => value - channels(from)[index]);
+          if (!selected)
+            unselected = { row: rowColor, detail: baseline.background };
+          else {
+            const rowShift = shift(unselected.row, rowColor);
+            const detailShift = shift(unselected.detail, baseline.background);
+            expect(Math.hypot(...rowShift)).toBeGreaterThan(15);
+            expect(
+              Math.hypot(
+                ...rowShift.map((value, index) => value - detailShift[index]),
+              ),
+            ).toBeLessThan(8);
           }
           const primaryBackground = await colored.evaluate(
             (node) => getComputedStyle(node).backgroundColor,
@@ -228,7 +247,7 @@ for (const theme of ["dark", "light"] as const)
           ).not.toBe(primaryBackground);
           await detail.hover({ position: { x: 80, y: 12 } });
           expect(await colors()).toEqual(baseline);
-          if (highlighted && mode === "JSON")
+          if (highlighted && mode === "JSON" && !selected)
             expect(baseline.background).toBe("rgb(37, 65, 90)");
         }
       }

@@ -1,6 +1,7 @@
 import { DEFAULT_SHORTCUTS } from "./shortcut-definitions";
 import { MESSAGE_RULE_LIMIT, SOURCE_NAME_FORMAT_LIMIT } from "./display-rules";
 import type {
+  ColumnConfig,
   Connection,
   Favorite,
   ViewFavorite,
@@ -93,6 +94,7 @@ const DEFAULT_PREFERENCES: Preferences = {
   timezone: "local",
   highlightText: "",
   autoExpandFilterMatches: true,
+  newColumnPosition: "before-message",
   shortcuts: { ...DEFAULT_SHORTCUTS },
 };
 
@@ -165,6 +167,15 @@ function defaultView(): ViewConfig {
   };
 }
 
+function parseHome(value: unknown): Pick<ColumnConfig, "home"> {
+  const { left, right } = record(value);
+  const home = {
+    ...(typeof left === "string" ? { left: string(left, "", 2048) } : {}),
+    ...(typeof right === "string" ? { right: string(right, "", 2048) } : {}),
+  };
+  return Object.keys(home).length ? { home } : {};
+}
+
 function parseView(value: unknown): ViewConfig {
   const raw = record(value);
   const defaults = defaultView();
@@ -189,6 +200,7 @@ function parseView(value: unknown): ViewConfig {
             ...(typeof column.hidden === "boolean"
               ? { hidden: column.hidden }
               : {}),
+            ...(column.pinned === true ? parseHome(column.home) : {}),
           };
         })
         .filter((column) => column.path)
@@ -542,6 +554,12 @@ export function parsePreferences(value: unknown): Preferences {
       }),
     ),
     autoExpandFilterMatches: raw.autoExpandFilterMatches !== false,
+    newColumnPosition:
+      raw.newColumnPosition === "first" ||
+      raw.newColumnPosition === "after-message" ||
+      raw.newColumnPosition === "last"
+        ? raw.newColumnPosition
+        : "before-message",
     sourceNameFormats: {
       aws: string(
         record(raw.sourceNameFormats).aws,

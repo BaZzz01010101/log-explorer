@@ -128,11 +128,32 @@ const paint = (row: ReturnType<Page["locator"]>, mode: string) =>
     }
     return { background, foreground: style.color };
   });
-/** The selection band drawn from the top and bottom row edges. */
-const band = (row: ReturnType<Page["locator"]>, mode: string) =>
-  (mode === "JSON" ? row : row.locator(".log-cell").first()).evaluate(
-    (node) => getComputedStyle(node).backgroundImage,
+const shadow = (row: ReturnType<Page["locator"]>) =>
+  row.evaluate((node) => getComputedStyle(node).boxShadow);
+/** The error or warning strip at the left edge of a row. */
+const strip = (row: ReturnType<Page["locator"]>, mode: string) =>
+  row.evaluate((node, json) => {
+    if (json) {
+      const style = getComputedStyle(node);
+      return { color: style.borderLeftColor, width: style.borderLeftWidth };
+    }
+    const style = getComputedStyle(
+      node.querySelector(".log-table-row")!,
+      "::before",
+    );
+    return style.content === "none"
+      ? null
+      : { color: style.backgroundColor, width: style.flexBasis };
+  }, mode === "JSON");
+/** Red, green and blue from 0 to 255 in either computed notation. */
+const channels = (color: string) => {
+  const values = (color.match(/-?[\d.]+(?:e-?\d+)?/g) ?? []).slice(0, 3);
+  return values.map(
+    (value) => Number(value) * (color.startsWith("color(") ? 255 : 1),
   );
+};
+const distance = (a: string, b: string) =>
+  Math.hypot(...channels(a).map((value, index) => value - channels(b)[index]));
 async function select(row: ReturnType<Page["locator"]>, mode: string) {
   await primary(row, mode).click({ position: { x: 140, y: 10 } });
   await expect(row).toHaveAttribute("data-selected", "true");
@@ -167,7 +188,7 @@ async function capture(filename: string) {
 
 for (const theme of ["light", "dark"] as const)
   for (const rowBackground of [true, false])
-    test(`selection keeps ${rowBackground ? "background and foreground" : "foreground-only"} highlights under an edge band and every row hovers in ${theme}`, async () => {
+    test(`selection keeps ${rowBackground ? "background and foreground" : "foreground-only"} highlights under a tint and every row hovers in ${theme}`, async () => {
       const workspace = createWorkspace();
       workspace.preferences.theme = theme;
       // Recent pins the newest row; these checks select rows from the start.
@@ -222,39 +243,67 @@ for (const theme of ["light", "dark"] as const)
           .first();
         const plainId = await plain.getAttribute("data-event-id");
         const highlightId = await highlighted.getAttribute("data-event-id");
+        // The row color needs no marker, which would stay untinted.
+        expect
+          .soft(
+            await highlighted.evaluate(
+              (node) =>
+                node.classList.contains("has-highlight-marker") ||
+                Boolean(node.querySelector(".has-highlight-marker")),
+            ),
+            `${mode}: no marker on a colored row`,
+          )
+          .toBe(false);
+        // Every mode marks errors with the same strip at the left edge.
+        await expect(highlighted).toHaveClass(/level-error/);
+        for (const [row, color] of [
+          [highlighted, "rgb(250, 82, 82)"],
+          [plain, "rgba(0, 0, 0, 0)"],
+        ] as const)
+          expect
+            .soft(await strip(row, mode), `${mode}: level strip`)
+            .toEqual(
+              mode === "JSON" || row === highlighted
+                ? { color, width: "2px" }
+                : null,
+            );
         await select(plain, mode);
         const selectedPlain = await paint(plain, mode);
         const unselectedHighlight = await paint(highlighted, mode);
-        expect
-          .soft(await band(highlighted, mode), `${mode}: no band unselected`)
-          .toBe("none");
         await select(highlighted, mode);
         const selectedHighlight = await paint(highlighted, mode);
+        const tint = distance(
+          selectedHighlight.background,
+          unselectedHighlight.background,
+        );
         expect
-          .soft(
-            selectedHighlight.background,
-            `${mode}: selected profile keeps its row color in the middle`,
-          )
-          .toBe(unselectedHighlight.background);
+          .soft(tint, `${mode}: selection tints the profile row`)
+          .toBeGreaterThan(15);
+        if (rowBackground)
+          expect
+            .soft(
+              tint,
+              `${mode}: the tinted row stays closer to its own color than to a selected plain row`,
+            )
+            .toBeLessThan(
+              distance(selectedHighlight.background, selectedPlain.background),
+            );
         expect
           .soft(
             selectedHighlight.foreground,
             `${mode}: selected profile keeps its text color`,
           )
           .toBe(unselectedHighlight.foreground);
-        for (const row of [highlighted, plain])
-          expect
-            .soft(
-              await band(row, mode),
-              `${mode}: selection band only on the selected row`,
-            )
-            [row === highlighted ? "toContain" : "toBe"](
-              row === highlighted ? "linear-gradient" : "none",
-            );
+        expect
+          .soft(await shadow(highlighted), `${mode}: current row shadow`)
+          .toContain("5px");
+        expect
+          .soft(await shadow(plain), `${mode}: no shadow on other rows`)
+          .toBe("none");
         expect
           .soft(
             (await paint(plain, mode)).background,
-            `${mode}: a selected plain row keeps its tinted middle`,
+            `${mode}: a plain row is tinted only while selected`,
           )
           .not.toBe(selectedPlain.background);
         expect
@@ -265,14 +314,27 @@ for (const theme of ["light", "dark"] as const)
             `${mode}: no selected profile outline`,
           )
           .toBe("none");
+        await primary(plain, mode).click({
+          modifiers: ["Control"],
+          position: { x: 140, y: 10 },
+        });
+        await page.mouse.move(1, 1);
         expect
           .soft(
-            await highlighted.evaluate(
-              (node) => getComputedStyle(node).boxShadow,
-            ),
-            `${mode}: no partial selection border`,
+            (await paint(highlighted, mode)).background,
+            `${mode}: the whole selection is tinted`,
           )
-          .toBe("none");
+          .toBe(selectedHighlight.background);
+        expect
+          .soft(
+            [await shadow(highlighted), await shadow(plain)].map(
+              (value) => value !== "none",
+            ),
+            `${mode}: only the current row of a selection has a shadow`,
+          )
+          .toEqual([false, true]);
+        await capture(`selection-${theme}-${rowBackground}-${mode}.png`);
+        await select(highlighted, mode);
         await primary(highlighted, mode).hover({ position: { x: 140, y: 10 } });
         expect
           .soft(
@@ -309,6 +371,20 @@ for (const theme of ["light", "dark"] as const)
           await expect(
             page.locator(`.virtual-event[data-event-id='${highlightId}']`),
           ).toBeVisible();
+          // The strip is sticky, so it is still at the visible left edge.
+          expect
+            .soft(
+              await highlighted
+                .locator(".log-table-row")
+                .evaluate((node) =>
+                  [
+                    getComputedStyle(node, "::before").position,
+                    getComputedStyle(node, "::before").left,
+                    getComputedStyle(node, "::before").zIndex,
+                  ].join(),
+                ),
+            )
+            .toBe("sticky,0px,3");
           const cells = highlighted.locator(".log-cell");
           const backgrounds = await cells.evaluateAll((nodes) =>
             nodes.map((node) => getComputedStyle(node).backgroundColor),
@@ -320,34 +396,14 @@ for (const theme of ["light", "dark"] as const)
             )
             .toBe(1);
           expect.soft(backgrounds[0]).toBe(selectedHighlight.background);
-          const bands = await cells.evaluateAll((nodes) =>
-            nodes.map((node) => getComputedStyle(node).backgroundImage),
-          );
-          expect
-            .soft(
-              new Set(bands).size,
-              `${mode}: pinned and unpinned cells share the selection band`,
-            )
-            .toBe(1);
-          expect.soft(bands[0]).toContain("linear-gradient");
           expect
             .soft(
               await highlighted
                 .locator(".log-table-row")
-                .evaluate((node) => getComputedStyle(node).backgroundImage),
-              `${mode}: the band continues past the last column`,
+                .evaluate((node) => getComputedStyle(node).backgroundColor),
+              `${mode}: the tint continues past the last column`,
             )
-            .toContain("linear-gradient");
-          expect
-            .soft(
-              await highlighted
-                .locator(".has-highlight-marker")
-                .evaluate(
-                  (node) => getComputedStyle(node, "::before").backgroundImage,
-                ),
-              `${mode}: the highlight marker carries the band`,
-            )
-            .toContain("linear-gradient");
+            .toBe(backgrounds[0]);
           if (mode === "Hybrid")
             expect
               .soft(

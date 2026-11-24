@@ -95,7 +95,11 @@ import {
   type SelectedEventCopyFormat,
 } from "../../shared/event-copy";
 import { sourceColumnConfig } from "../source-column";
-import { applyColumnAction, isProtectedColumn } from "../column-actions";
+import {
+  applyColumnAction,
+  insertColumn,
+  isProtectedColumn,
+} from "../column-actions";
 import {
   ColumnHeaderMenu,
   type ColumnHeaderMenuTarget,
@@ -108,6 +112,7 @@ import {
 import { useColumnHeaderDrag } from "../useColumnHeaderDrag";
 import { useScrollPagination } from "../useScrollPagination";
 import { lockCorrection, newestIndex, RECENT_HOLD_MS, RECENT_START_MS, releasedByInput, type RecentScrollLock } from "../recent-scroll";
+import { useLayoutAnchor } from "../useLayoutAnchor";
 import { useMeasuredVirtualRows } from "../useMeasuredVirtualRows";
 import {
   useMessageExpansion,
@@ -263,6 +268,11 @@ function timeLabel(
   return formatTimestamp(timestamp, timezone);
 }
 
+/** Only the rightmost pinned column casts a shadow over the scrolled ones. */
+function pinClass(column: Column<EventRow>): string {
+  if (!column.getIsPinned()) return "";
+  return column.getIsLastColumn("left") ? "pinned pinned-edge" : "pinned";
+}
 function pinStyle(column: Column<EventRow>): CSSProperties {
   return {
     width: column.getSize(),
@@ -713,7 +723,13 @@ export function LogViewer({
         ),
       );
     else if (config.length < 80)
-      applyColumns([...config, { path, width: 180 }]);
+      applyColumns(
+        insertColumn(
+          config,
+          { path, width: 180 },
+          preferences.newColumnPosition ?? "before-message",
+        ),
+      );
     else {
       setNotice(
         "The view is limited to 80 configured columns. Remove a column before adding another.",
@@ -905,10 +921,8 @@ export function LogViewer({
     getItemKey: (index) => rows[index]!.id,
     overscan: 7,
   });
-  const measureRow = useMeasuredVirtualRows(
-    virtualizer,
-    [view.mode, view.wrap, preferences.density, preferences.fontSize, expansion.all].join(":"),
-  );
+  const layoutKey = [view.mode, view.wrap, preferences.density, preferences.fontSize, expansion.all].join(":");
+  const measureRow = useMeasuredVirtualRows(virtualizer, layoutKey);
   useLayoutEffect(() => {
     if (pagination?.direction !== "older" || !pagination.scope) return;
     if (rows.length && positionedScope !== pagination.scope) setPositionedScope(pagination.scope);
@@ -1011,6 +1025,27 @@ export function LogViewer({
     };
     requestAnimationFrame(check);
   };
+  useLayoutAnchor({
+    layoutKey: `${layoutKey}:${expansion.revision}`,
+    scrollRef,
+    virtualizer,
+    ids: eventIds,
+    selectedId: selection.selectedId,
+    owned: () =>
+      (followLive && liveState === "streaming") ||
+      scrollLock.current?.kind === "bottom" ||
+      scrollLock.current?.phase === "tracking",
+    takeOver: () => {
+      scrollLock.current = null;
+      const token = ++revealToken.current;
+      const started = performance.now();
+      return () =>
+        token === revealToken.current &&
+        !scrollLock.current &&
+        !userScroll.current.pointer &&
+        userScroll.current.inputAt <= started;
+    },
+  });
   // Clearing the local filter keeps the rows that were on screen: a snapshot
   // of them (and of the selected row) is taken while the filtered rows are
   // still rendered, and the unfiltered list scrolls back to them.
@@ -1141,7 +1176,7 @@ export function LogViewer({
         latest = index;
     virtualizer.scrollToIndex(latest, { align: "end" });
     return () => virtualizer.cancelScroll();
-  }, [events, rows, followLive, liveState, virtualizer]);
+  }, [events, rows, followLive, liveState, virtualizer, layoutKey, expansion.revision]);
   useLayoutEffect(() => {
     const scroll = scrollRef.current;
     if (!loading || pagination?.direction === "older" || rows.length === 0 || !scroll) return;
@@ -2058,7 +2093,7 @@ export function LogViewer({
                         .getHeaderGroups()[0]
                         ?.headers.map((header, index, headers) => (
                           <div
-                            className={`log-header-cell ${header.column.getIsPinned() ? "pinned" : ""}${headerDrag.visual?.sourcePath === columnPath(header.id) ? " is-reordering" : ""}${headerDrag.visual?.targetPath === columnPath(header.id) ? ` column-drop-${headerDrag.visual.edge}` : ""}`}
+                            className={`log-header-cell ${pinClass(header.column)}${headerDrag.visual?.sourcePath === columnPath(header.id) ? " is-reordering" : ""}${headerDrag.visual?.targetPath === columnPath(header.id) ? ` column-drop-${headerDrag.visual.edge}` : ""}`}
                             key={header.id}
                             data-column-path={columnPath(header.id)}
                             style={{
@@ -2289,8 +2324,14 @@ export function LogViewer({
                       const expanded = expansion.isExpanded(row.event.id);
                       const highlight = highlighting.results.get(row.event.id);
                       const overviewResult = overview.results.get(row.event.id);
+                      // A row highlight already colors the whole row.
+                      const rowColor =
+                        overviewResult?.row.background ||
+                        overviewResult?.row.foreground;
                       const marker =
-                        overviewResult?.overview?.[0] ??
+                        overviewResult?.overview?.find(
+                          (color) => color !== rowColor,
+                        ) ??
                         (overviewResult?.quickMatch ? QUICK_HIGHLIGHT_COLOR : undefined);
                       const highlightPending =
                         highlighting.active &&
@@ -2489,7 +2530,7 @@ export function LogViewer({
                                   )}
                                   {tableRow.getVisibleCells().map((cell) => (
                                     <div
-                                      className={`log-cell ${cell.column.getIsPinned() ? "pinned" : ""}${columnPath(cell.column.id) === "@message" && marker ? " has-highlight-marker" : ""}`}
+                                      className={`log-cell ${pinClass(cell.column)}${columnPath(cell.column.id) === "@message" && marker ? " has-highlight-marker" : ""}`}
                                       role="cell"
                                       key={cell.id}
                                       style={{
@@ -3100,7 +3141,7 @@ export function LogViewer({
                     )
                   }
                 />
-                <Tooltip label={column.pinned ? "Unpin" : "Pin to left"}>
+                <Tooltip label={column.pinned ? "Unpin" : "Pin"}>
                   <ActionIcon
                     aria-label={`${column.pinned ? "Unpin" : "Pin"} ${titleFor(column.path)}`}
                     aria-pressed={column.pinned ?? false}

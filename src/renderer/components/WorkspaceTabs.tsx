@@ -44,6 +44,7 @@ import {
   TextInput,
 } from "@mantine/core";
 import { Tooltip } from "./AppTooltip";
+import { UpdateButton } from "./UpdateButton";
 import { Menu } from "./AppMenu";
 import {
   IconChevronDown,
@@ -1559,6 +1560,7 @@ export function WorkspaceTabs({ workspace, dispatch, runtimes }: Props) {
         </SortableContext>
         <div className="window-drag-handle" aria-hidden="true" />
         <div className="workspace-tab-tools">
+          <UpdateButton />
           <Tooltip label="New view">
             <ActionIcon
               variant="subtle"

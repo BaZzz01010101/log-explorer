@@ -40,6 +40,9 @@ vi.mock("@mantine/core", () => {
     Tooltip: component,
   };
 });
+vi.mock("../src/renderer/components/UpdateButton", () => ({
+  UpdateButton: () => null,
+}));
 vi.mock("react-dom", () => ({
   createPortal: (children: ReactNode) => children,
 }));

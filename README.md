@@ -41,7 +41,7 @@ The fold/unfold-all control beside line wrapping applies to JSON, Table and Hybr
 
 Use the **â€¦** before a structured field name for **Add as column**, **Add to filter** and **Deserialize**. Deserialize is available for valid JSON strings and turns them into foldable values marked in violet. This temporary projection applies only to that event in the current view; closing the view or replacing the event clears it. Decoded paths work in columns and local filters, and their displayed values are used in record copies and CSV. Original messages and full-event JSON/JSONL exports remain unchanged.
 
-The level filter supports multiple selections with checkboxes. Clicking a level name selects only that level; Ctrl/Cmd-click toggles it while keeping the other choices. Clearing every checkbox shows no events. Right-click a Table or Hybrid column header for Move left/right, Pin, Pin left, Unpin and Unpin right. Pin moves a column beside the last pinned column; Pin left pins the displayed prefix in place; Unpin right releases the displayed suffix. Hidden column settings and widths remain intact.
+The level filter supports multiple selections with checkboxes. Clicking a level name selects only that level; Ctrl/Cmd-click toggles it while keeping the other choices. Clearing every checkbox shows no events. Right-click a Table or Hybrid column header for Move left/right, Pin, Pin to the left, Unpin and Unpin to the right. Pin moves a column beside the last pinned column; Pin to the left pins the displayed prefix in place; Unpin to the right releases the displayed suffix. An unpinned column returns to where it was, beside its former neighbors, when they are still there. Settings choose where an added column goes (before Message by default). Hidden column settings and widths remain intact.
 
 The event scrollbar has a compact overview: warning/error/fatal colors on the left, quick and profile highlight colors on the right. Each band scales with its events' occupied area; consecutive events with the same colors join without artificial gaps. Click anywhere in a band to select the event at that position. The map covers the current filtered/sorted loaded rows, including offscreen events; dense pixels combine colors and prioritize higher severity. Background colors identify profile matches, with foreground colors used when no background is set. Decoded JSON and formatted quick-highlight values are included. The native thumb remains draggable.
 
@@ -117,7 +117,10 @@ Right-click a normal or combined tab and choose **Save view to Favorites**, or d
 | `npm run build`        | Typecheck and build main, preload and renderer into `out/` |
 | `npm run test:desktop` | Run the fixture-based Electron smoke test after building   |
 | `npm run package`      | Build an unpacked application in `release/`                |
+| `npm run update:local` | Build the next version for the app in `release/`           |
 | `npm run dist`         | Build distribution artifacts for the host platform         |
+
+`npm run update:local` (Windows, Python with psutil) builds the next patch version and waits for the app running from `release/win-unpacked` to close, then installs it there. Meanwhile that app shows an **Update** button beside **New view**, which closes it, installs the new version and starts it again.
 
 Unit tests deny network connections and redirect AWS configuration paths to nonexistent locations. Desktop tests use temporary application storage, an allowlisted environment and trusted Chromium mouse/keyboard input. `--background-verification` keeps their windows hidden and permanently disables AWS for the process, so the tests do not steal desktop focus. Packaged verification also uses `--offline-verification`. **Never enable AWS access or run real AWS CLI/SDK requests during development, tests or verification.** Tool auto-approval does not authorize AWS access.
 

@@ -758,7 +758,7 @@ for (const theme of behaviorThemes)
       const sections = panel.locator(".settings-preference-section");
       await expect(sections).toHaveCount(5);
       await expect(panel.locator(".settings-preference-option")).toHaveCount(
-        12,
+        13,
       );
       for (const width of presentation === "pane" ? [280, 560] : [560, 1000]) {
         await resizeSettings(presentation, width, width === 280 ? 650 : 950);
