@@ -44,6 +44,19 @@ Line numbers in this section and in AUD-020 refer to the 0.1.106 working tree.
 | Playwright desktop suite | Run in full | 470/470 with both themes (0.1.105); 377/377 in the default light-only mode (0.1.106, 3.6 min). |
 | Installer | Not run | The NSIS installer is per-user and assisted. Running it adds Start-menu, desktop-shortcut and uninstall entries, and its running-app check can close an open copy of the app, so it waits for the owner's approval. |
 
+### Follow-up coverage (version 0.1.137, 2026-11-24)
+
+Scope: the code changed since 0.1.106.
+
+| Area | Depth | Result |
+|---|---|---|
+| Live merge and catch-up, log service, AWS Recent bounds, Google sign-in, IPC trust, schemas | Full read of the changes | No finding |
+| `useLogJobs.ts`, `useInactivitySleep.ts` | Full read | No race found; deferred-tab IDs of closed tabs were kept (fixed) |
+| Source labels, source management, favorites, message rules | Full read | **AUD-021**, **AUD-022** |
+| `SourceEditor.tsx`, `SourceBadges.tsx`, `ViewFavorites.tsx`, `QueryPane.tsx`, `App.tsx` | Read of the changes | **AUD-023** |
+| `GcpExplorer.tsx`, `DisplaySettingsEditor.tsx`, `HighlightColorPicker.tsx` | Skimmed | No finding |
+| Unused code (compiler, knip, CSS classes) | Measured | **AUD-024** |
+
 ---
 
 ## Findings
@@ -761,6 +774,78 @@ Non-ASCII log content (names, accented text, CJK, emoji, `→`) appears garbled 
 - Export a CSV containing non-ASCII text: the file starts with `EF BB BF`, and Excel shows the text correctly.
 
 **Status:** fixed in 0.1.107. The main process adds the mark when writing CSV, so the renderer's CSV text and its tests are unchanged.
+
+---
+
+### AUD-021: Google Cloud sources are compared by JSON key order
+
+**Metadata**
+- Severity: Medium
+- Category: Correctness
+- Confidence: Confirmed (failing test before the fix)
+- Effort: S
+- Files: `src/shared/source-labels.ts`, `source-management.ts`, `source-identity.ts`, `workspace-parse.ts`, `workspace-reducer.ts`
+
+**Problem**
+
+Six places compared a source's `gcp` object as JSON text. Copies that passed the IPC schema list their fields in schema order (`kind` first); sources just opened from the Explorer list `project` first.
+
+**Impact**
+
+Until the app was restarted: hiding a Google Cloud source badge did not hide its events, formatted source names fell back to the log group, adding the same source again created a duplicate, and opening it again opened a second tab.
+
+**Status:** fixed in 0.1.138. `comparableGcp` gives every comparison one field order; covered by `tests/gcp-source-identity.test.ts`. Saved hidden-badge keys keep their format.
+
+---
+
+### AUD-022: A message rule's regular expression runs on the renderer thread
+
+**Metadata**
+- Severity: Low
+- Category: Reliability
+- Confidence: High confidence
+- Effort: M
+- Files: `src/shared/display-rules.ts`
+
+**Problem**
+
+Source filters of message rules run on the UI thread, once per event and rule. Unlike the filters and highlights, they have no time limit.
+
+**Status:** partly fixed in 0.1.138: each rule tests a source name once. A pattern with catastrophic backtracking can still freeze the window; names are at most 512 characters, and the pattern is the user's own. A worker would be needed to bound it.
+
+---
+
+### AUD-023: Edit source checks only the first page of matches
+
+**Metadata**
+- Severity: Low
+- Category: Correctness
+- Confidence: High confidence
+- Effort: S
+- Files: `src/renderer/components/SourceEditor.tsx`
+
+**Problem**
+
+Saving an edited source looked for the exact name in the first 50 results. Group searches match any part of a name, and stream searches list names in descending order, where the exact name comes last. An existing source could be reported as not found.
+
+**Status:** fixed in 0.1.138: up to 20 pages are searched.
+
+---
+
+### AUD-024: Unreachable code
+
+**Metadata**
+- Severity: Low
+- Category: Maintainability
+- Confidence: Confirmed (code trace, 6,000 random actions with identical results)
+- Effort: M
+- Files: `src/shared/workspace-reducer.ts`, `src/main/aws-adapter.ts`, renderer CSS
+
+**Problem**
+
+About 330 lines of an earlier reducer were shadowed by its replacement, the AWS adapter kept a multi-source history path the service never uses, and about 110 CSS rules, 15 exports, 6 source declarations and 80 test declarations had no users. `google-proto-files` was not imported.
+
+**Status:** removed in 0.1.138. `tsconfig.json` now reports unused declarations.
 
 ---
 

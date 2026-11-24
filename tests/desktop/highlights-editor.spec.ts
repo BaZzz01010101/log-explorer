@@ -1,4 +1,3 @@
-import { openSettingsWindow } from "./settings-panel";
 import { createWorkspace } from "../../src/shared/workspace";
 import {
   closeAppNaturally,

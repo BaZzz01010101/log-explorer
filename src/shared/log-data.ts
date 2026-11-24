@@ -20,8 +20,8 @@ export const LOG_LEVELS: readonly LogLevel[] = [
   "unknown",
 ];
 export const MESSAGE_LIMIT = 524_288;
-export const INSPECTION_LIMIT = 800;
-export const EXPORT_LIMIT = 20_000_000;
+const INSPECTION_LIMIT = 800;
+const EXPORT_LIMIT = 20_000_000;
 export const DEFAULT_TIMESTAMP_COLUMN_WIDTH = 260;
 export const META_COLUMNS = [
   "@timestamp",

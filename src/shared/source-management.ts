@@ -1,5 +1,6 @@
 import type { LogSource } from "./contracts";
 import { z } from "zod";
+import { comparableGcp } from "./source-identity";
 
 export const RESOURCE_MIME = "application/x-aws-log-explorer-resource";
 const source = z.object({
@@ -35,7 +36,11 @@ export function mergeSources(
     if (item.connectionId === defaultConnectionId) delete item.connectionId;
     if (!source.safeParse(item).success)
       throw new Error("Enter a valid group and stream name.");
-    const key = JSON.stringify([item.connectionId ?? "", item.logGroup, item.gcp ?? null]);
+    const key = JSON.stringify([
+      item.connectionId ?? "",
+      item.logGroup,
+      comparableGcp(item.gcp),
+    ]);
     const existing = groups.get(key);
     if (!existing)
       groups.set(key, {

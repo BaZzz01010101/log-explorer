@@ -1,4 +1,4 @@
-import { delay, throwIfAborted } from "./aws-adapter";
+import { delay, throwIfAborted } from "./async";
 
 export function createGcpRequestGate(limit = 48, windowMs = 60000) {
   const projects = new Map<string, number[]>();

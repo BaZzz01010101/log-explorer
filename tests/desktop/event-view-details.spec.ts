@@ -148,7 +148,6 @@ test.afterEach(async ({}, testInfo) => {
 const inspector = () =>
   page.getByRole("region", { name: "Event inspector", exact: true });
 const rows = () => page.locator(".virtual-event");
-const viewer = () => page.locator(".viewer-scroll");
 
 async function paintHiddenWindow() {
   await app!.evaluate(async ({ BrowserWindow }) => {

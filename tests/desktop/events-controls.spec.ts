@@ -117,7 +117,6 @@ test.beforeEach(async ({}, info) => {
 });
 test.afterEach(async () => {
   if (app?.process().exitCode === null) {
-    const child = app.process();
     await closeAppNaturally(app);
   }
   expect(errors).toEqual([]);
@@ -133,10 +132,6 @@ test.afterEach(async () => {
     retryDelay: 100,
   });
 });
-const row = (name: string) => page.getByRole("treeitem", { name, exact: true });
-const action = (name: string) =>
-  page.getByRole("menuitem", { name, exact: true });
-const selected = () => page.locator('.resource-row[aria-selected="true"]');
 const stored = async () =>
   restoreWorkspace(
     (await page.evaluate(() => window.explorer.loadWorkspace())).workspace,
@@ -209,8 +204,6 @@ const quick = () =>
     name: "Highlight text in loaded events",
     exact: true,
   });
-const inspector = () =>
-  page.getByRole("region", { name: "Event inspector", exact: true });
 const manualMarks = () =>
   page.locator('.virtual-event mark[data-highlight-origins~="manual"]');
 

@@ -10,7 +10,6 @@ import {
   expect,
   test,
   type ElectronApplication,
-  type Locator,
   type Page,
 } from "@playwright/test";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";

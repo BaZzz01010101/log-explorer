@@ -5,7 +5,8 @@ import type {
   Page,
   QueryRequest,
 } from "../shared/contracts";
-import { delay, throwIfAborted, type LogAdapter } from "./aws-adapter";
+import { delay, throwIfAborted } from "./async";
+import type { LogAdapter } from "./log-adapter";
 
 const GROUP_NAMES = [
   "/aws/lambda/orders-api",

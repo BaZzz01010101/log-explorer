@@ -33,8 +33,7 @@
 }
 .explorer-group > .tree-toggle,
 .explorer-group > input,
-.explorer-stream > input,
-.explorer-group > .favorite-button {
+.explorer-stream > input {
   position: relative;
   z-index: 1;
 }

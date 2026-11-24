@@ -1,4 +1,3 @@
-import { openSettingsWindow } from "./settings-panel";
 import {
   _electron as electron,
   expect,
@@ -113,7 +112,6 @@ test.beforeEach(async ({}, info) => {
 });
 test.afterEach(async () => {
   if (app?.process().exitCode === null) {
-    const child = app.process();
     await closeAppNaturally(app);
   }
   expect(errors).toEqual([]);
@@ -129,10 +127,6 @@ test.afterEach(async () => {
     retryDelay: 100,
   });
 });
-const row = (name: string) => page.getByRole("treeitem", { name, exact: true });
-const action = (name: string) =>
-  page.getByRole("menuitem", { name, exact: true });
-const selected = () => page.locator('.resource-row[aria-selected="true"]');
 const stored = async () =>
   restoreWorkspace(
     (await page.evaluate(() => window.explorer.loadWorkspace())).workspace,

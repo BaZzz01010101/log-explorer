@@ -1,8 +1,6 @@
 import { expect, it } from "vitest";
-import {
-  createAwsAdapter,
-  type CloudWatchCommand,
-} from "../src/main/aws-adapter";
+import { createAwsAdapter } from "../src/main/aws-adapter";
+import type { CloudWatchCommand } from "../src/main/aws-common";
 import type { Connection, QueryRequest } from "../src/shared/contracts";
 
 const connection: Connection = {

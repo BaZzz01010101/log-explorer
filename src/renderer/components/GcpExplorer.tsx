@@ -9,7 +9,6 @@ import {
   TextInput,
 } from "@mantine/core";
 import {
-  IconCopy,
   IconCloudCode,
   IconHexagonLetterK,
   IconPlus,

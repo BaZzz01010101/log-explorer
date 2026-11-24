@@ -19,7 +19,7 @@ export const RELATIVE_TIME_UNITS = [
   ["d", "Days"],
   ["w", "Weeks"],
 ] as const;
-export const DEFAULT_RELATIVE_TIME_TEMPLATES: RelativeTimeTemplates = {
+const DEFAULT_RELATIVE_TIME_TEMPLATES: RelativeTimeTemplates = {
   quick: [
     [1, "m"],
     [5, "m"],

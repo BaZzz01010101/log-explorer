@@ -136,7 +136,6 @@ test.afterEach(async () => {
 });
 
 const viewer = () => page.locator(".viewer-scroll");
-const status = () => page.locator(".query-status");
 async function requests() {
   return app!.evaluate(() => (globalThis as MainProbe).feedbackRequests);
 }
@@ -190,27 +189,6 @@ async function capture(filename: string) {
     throw new Error("Feedback evidence must remain under .tmp");
   await mkdir(test.info().outputDir, { recursive: true });
   await writeFile(output, Buffer.from(png, "base64"));
-}
-async function assertBottomStatus() {
-  await expect(status()).toHaveCount(1);
-  const positions = await page.locator(".log-viewer").evaluate((element) => {
-    const scroll = element
-      .querySelector(".viewer-scroll")!
-      .getBoundingClientRect();
-    const status = element
-      .querySelector(".query-status")!
-      .getBoundingClientRect();
-    return {
-      viewerBottom: scroll.bottom,
-      statusTop: status.top,
-      statusBottom: status.bottom,
-      panelBottom: element.getBoundingClientRect().bottom,
-    };
-  });
-  expect(positions.statusTop).toBeGreaterThanOrEqual(
-    positions.viewerBottom - 1,
-  );
-  expect(positions.statusBottom).toBeLessThanOrEqual(positions.panelBottom + 1);
 }
 
 test("new tabs open the inspector at 30 percent and the toolbar toggle preserves selection and resizing", async () => {

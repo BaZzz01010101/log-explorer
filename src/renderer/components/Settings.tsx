@@ -40,7 +40,6 @@ export function Settings({
   workspace,
   dispatch,
   environment,
-  onEnvironment,
   presentation = "modal",
   onOpenModal,
   onReturnToPane,
@@ -54,7 +53,6 @@ export function Settings({
   workspace: Workspace;
   dispatch: React.Dispatch<WorkspaceAction>;
   environment: EnvironmentInfo | null;
-  onEnvironment(info: EnvironmentInfo): void;
   presentation?: "modal" | "pane";
   onOpenModal?(): void;
   onReturnToPane?(): void;

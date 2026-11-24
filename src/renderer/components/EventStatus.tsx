@@ -1,4 +1,4 @@
-import type { TabRuntime } from "../useLogJobs";
+import type { TabRuntime } from "../log-runtime";
 import { IconArrowDown, IconRadio } from "@tabler/icons-react";
 import "./event-feedback.css";
 

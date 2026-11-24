@@ -1,4 +1,4 @@
-import { sourceIdentity } from "./source-identity";
+import { requestSource, sourceIdentity } from "./source-identity";
 import { compareLogTime } from "./log-order";
 import { compileAwsViewFilter } from "./server-filter";
 import { compileGcpViewFilter } from "./gcp-server-filter";
@@ -145,10 +145,7 @@ export function requestMatchesTab(
 ): boolean {
   if (
     request.kind !== "events" ||
-    sourceIdentity(request.connection.id, request.sources, [
-      request.connection,
-      ...(request.connections ?? []),
-    ]) !== sourceIdentity(tab.connectionId, tab.sources, connections)
+    requestSource(request) !== sourceIdentity(tab.connectionId, tab.sources, connections)
   )
     return false;
   try {

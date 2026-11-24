@@ -66,7 +66,6 @@ const props = {
   workspace,
   dispatch: vi.fn(),
   environment: null,
-  onEnvironment: vi.fn(),
   onOpenModal: vi.fn(),
 };
 const node = (attribute: string) =>

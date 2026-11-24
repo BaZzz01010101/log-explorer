@@ -5,7 +5,7 @@ import { QueryPane } from "../src/renderer/components/QueryPane";
 import { LogViewer } from "../src/renderer/components/LogViewer";
 import { createWorkspace } from "../src/shared/workspace";
 import { resolveTimeRange } from "../src/shared/query-state";
-import type { TabRuntime } from "../src/renderer/useLogJobs";
+import type { TabRuntime } from "../src/renderer/log-runtime";
 
 vi.mock("../src/renderer/components/LogViewer", () => ({
   LogViewer: () => null,

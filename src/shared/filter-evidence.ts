@@ -5,6 +5,7 @@ import {
   localFilterStream,
   MESSAGE_LIMIT,
   parseLocalFilter,
+  pointerToken,
   summarizeValue,
   type JsonValue,
   type ParsedMessage,
@@ -32,8 +33,6 @@ const empty = (supported = true, matched = false): FilterEvidence => ({
   matches: [],
   paths: [],
 });
-const pointerToken = (key: string) =>
-  key.replace(/~/g, "~0").replace(/\//g, "~1");
 
 interface SourceValue {
   path: string;

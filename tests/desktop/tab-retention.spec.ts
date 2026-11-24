@@ -5,7 +5,7 @@ import {
   type ElectronApplication,
   type Page,
 } from "@playwright/test";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { join, resolve, sep } from "node:path";
 import {
   createTab,
@@ -179,9 +179,6 @@ test.afterEach(async () => {
 
 const activity = (name: string) =>
   page.getByRole("button", { name, exact: true });
-const stored = async () =>
-  (await page.evaluate(() => window.explorer.loadWorkspace()))
-    .workspace as ReturnType<typeof createWorkspace>;
 const tabNode = (id: string) => page.locator(`[data-tab-id="${id}"]`);
 async function fixtures() {
   await app.evaluate(({ ipcMain }) => {

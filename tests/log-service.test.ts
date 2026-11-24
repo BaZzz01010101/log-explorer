@@ -5,11 +5,8 @@ import type {
   QueryUpdate,
 } from "../src/shared/contracts";
 import { createLogService } from "../src/main/log-service";
-import {
-  createAwsAdapter,
-  type AwsTransport,
-  type CloudWatchCommand,
-} from "../src/main/aws-adapter";
+import { createAwsAdapter, type AwsTransport } from "../src/main/aws-adapter";
+import type { CloudWatchCommand } from "../src/main/aws-common";
 import { createOfflineAdapter } from "../src/main/offline-adapter";
 import { setAwsAccess } from "../src/main/aws-access-toggle";
 
@@ -368,47 +365,43 @@ describe("AWS adapter with isolated command transport", () => {
     );
   });
 
-  it("keeps a continuation independently for each group and enforces page bounds", async () => {
-    const visited: string[] = [];
+  it("continues one group with its own token and takes one group per request", async () => {
+    const visited: (string | undefined)[] = [];
     const adapter = createAwsAdapter(aws, {
       allowAws: () => true,
       transportFactory: async () =>
         transport(async (command) => {
-          const input = command.input as {
-            logGroupName: string;
-            nextToken?: string;
-            limit: number;
-          };
-          visited.push(`${input.logGroupName}:${input.nextToken ?? "first"}`);
+          const input = command.input as { nextToken?: string };
+          visited.push(input.nextToken);
           return {
             events: [
               {
-                eventId: visited.join(","),
+                eventId: String(visited.length),
                 timestamp: 1,
                 logStreamName: "stream",
-                message: input.logGroupName,
+                message: "message",
               },
             ],
-            nextToken: input.nextToken
-              ? undefined
-              : `next-${input.logGroupName}`,
+            nextToken: input.nextToken ? undefined : "next",
           };
         }),
     });
-    const input = request({
-      connection: aws,
-      sources: [{ logGroup: "a" }, { logGroup: "b" }],
-      limit: 2,
-    });
-    const first = await adapter.events(input, new AbortController().signal);
+    const input = request({ connection: aws, sources: [{ logGroup: "a" }] });
+    const signal = new AbortController().signal;
+    const first = await adapter.events(input, signal);
     const second = await adapter.events(
       { ...input, cursor: first.cursor },
-      new AbortController().signal,
+      signal,
     );
-    expect(first.events).toHaveLength(2);
-    expect(second.events).toHaveLength(2);
-    expect(visited).toEqual(["a:first", "b:first", "a:next-a", "b:next-b"]);
+    expect(visited).toEqual([undefined, "next"]);
+    expect([...first.events!, ...second.events!]).toHaveLength(2);
     expect(second.cursor).toBeUndefined();
+    await expect(
+      adapter.events(
+        { ...input, sources: [{ logGroup: "a" }, { logGroup: "b" }] },
+        signal,
+      ),
+    ).rejects.toThrow(/exactly one source/);
   });
 
   it("uses the actual Live Tail event stream and reports sampling", async () => {

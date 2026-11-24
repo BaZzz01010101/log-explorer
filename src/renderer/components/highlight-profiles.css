@@ -127,147 +127,6 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.highlight-items-scroll {
-  flex: 1;
-  overflow: auto;
-  min-height: 0;
-  min-width: 0;
-  scrollbar-gutter: stable;
-}
-.highlight-items-table {
-  width: 100%;
-  table-layout: fixed;
-  border-collapse: separate;
-  border-spacing: 0;
-  font-size: var(--mantine-font-size-xs);
-}
-.highlight-items-table th {
-  position: sticky;
-  top: 0;
-  z-index: 4;
-  height: 30px;
-  text-align: left;
-  font-weight: 500;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  background: var(--mantine-color-default-hover);
-}
-.highlight-items-table th,
-.highlight-items-table td {
-  padding: 7px 4px;
-  border-bottom: 1px solid var(--mantine-color-default-border);
-}
-.highlight-sortable-item > tr:first-child {
-  height: 42px;
-  cursor: default;
-}
-.highlight-sortable-item > tr:first-child > td {
-  background: var(--mantine-color-body);
-}
-.highlight-sortable-item > tr:first-child:hover > td {
-  background: var(--mantine-color-default-hover);
-}
-.highlight-sortable-item > tr[aria-selected="true"] > td,
-.highlight-sortable-item[data-dragging="true"] > tr:first-child > td {
-  background: var(--mantine-color-indigo-light);
-}
-.highlight-sortable-item > tr[aria-selected="true"] > td:first-child {
-  box-shadow: inset 2px 0 var(--mantine-color-indigo-6);
-}
-.highlight-sortable-item[data-dragging="true"] {
-  box-shadow: var(--app-floating-shadow);
-}
-.highlight-col-grip,
-.highlight-col-expand {
-  width: 26px;
-}
-.highlight-col-priority {
-  width: 22px;
-}
-.highlight-col-enabled {
-  width: 42px;
-}
-.highlight-col-count {
-  width: 38px;
-}
-.highlight-col-actions {
-  width: 54px;
-}
-.highlight-col-scope {
-  width: 105px;
-}
-.highlight-col-colors {
-  width: 62px;
-}
-.highlight-items-table .highlight-grip-cell,
-.highlight-items-table .highlight-expand-cell,
-.highlight-items-table .highlight-delete-cell {
-  padding-inline: 1px;
-}
-.highlight-items-table .mantine-Switch-root {
-  display: flex;
-  align-items: center;
-}
-.highlight-items-table .mantine-Switch-track {
-  margin: 0;
-}
-.highlight-rule-handle {
-  width: 24px;
-  height: 28px;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: var(--mantine-color-dimmed);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: grab;
-  touch-action: none;
-}
-.highlight-rule-handle:active {
-  cursor: grabbing;
-}
-.highlight-rule-ellipsis {
-  display: block;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.highlight-rule-ellipsis + small {
-  color: var(--mantine-color-dimmed);
-  font-size: 10px;
-}
-.highlight-draft-dot {
-  color: var(--mantine-color-indigo-6);
-  font-weight: 700;
-}
-.highlight-rule-colors {
-  display: grid;
-  gap: 3px;
-}
-.highlight-rule-color-pair {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-.highlight-rule-color-pair small {
-  width: 8px;
-  color: var(--mantine-color-dimmed);
-  font-size: 9px;
-}
-.highlight-rule-color-pair i {
-  width: 13px;
-  height: 13px;
-  display: block;
-  border: 1px solid var(--mantine-color-default-border);
-  border-radius: 50%;
-}
-.highlight-items-table .highlight-item-detail {
-  padding: 10px;
-  background: var(--mantine-color-body);
-  cursor: auto;
-}
 .highlight-detail-fields {
   display: flex;
   flex-direction: column;
@@ -306,10 +165,6 @@
   flex: 1;
   min-height: 0;
   min-width: 0;
-}
-.highlight-editor-note {
-  margin: 0;
-  padding-top: 10px;
 }
 @container settings (max-width: 900px) {
   .highlight-table-lists {
@@ -369,58 +224,8 @@
   .highlight-color-inputs {
     grid-template-columns: minmax(0, 1fr);
   }
-  .highlight-detail-view {
-    grid-template-columns: minmax(0, 1fr);
-    gap: 4px;
-  }
-  .highlight-detail-view dd {
-    margin-bottom: 6px;
-  }
-  .highlight-col-scope {
-    width: 82px;
-  }
-  .highlight-col-colors {
-    width: 50px;
-  }
-  .highlight-col-priority {
-    width: 18px;
-  }
-  .highlight-col-enabled {
-    width: 36px;
-  }
 }
 @container settings (max-width: 360px) {
-  .highlight-items-table .highlight-item-detail {
-    padding: 7px;
-  }
-  .highlight-col-grip {
-    width: 18px;
-  }
-  .highlight-col-expand {
-    width: 20px;
-  }
-  .highlight-col-count {
-    width: 30px;
-  }
-  .highlight-col-scope {
-    width: 44px;
-  }
-  .highlight-col-colors {
-    width: 34px;
-  }
-  .highlight-col-enabled {
-    width: 30px;
-  }
-  .highlight-col-actions {
-    width: 50px;
-  }
-  .highlight-rule-color-pair {
-    gap: 2px;
-  }
-  .highlight-rule-color-pair i {
-    width: 10px;
-    height: 10px;
-  }
   .highlight-panel-heading {
     padding-inline: 7px;
   }
@@ -436,80 +241,11 @@
   --highlight-new-bg: #233b5b;
   --highlight-delete-bg: #45272e;
 }
-.highlight-sortable-item[data-row-state="editing"] {
-  --highlight-item-bg: var(--highlight-edit-bg);
-}
-.highlight-sortable-item[data-row-state="new"] {
-  --highlight-item-bg: var(--highlight-new-bg);
-}
-.highlight-sortable-item[data-row-state="deleting"] {
-  --highlight-item-bg: var(--highlight-delete-bg);
-}
-.highlight-sortable-item[data-row-state] > .highlight-summary-row > td {
-  background: var(--highlight-item-bg);
-}
-.highlight-sortable-item[data-row-state] > .highlight-summary-row:hover > td {
-  background: color-mix(
-    in srgb,
-    var(--highlight-item-bg),
-    var(--mantine-color-text) 3%
-  );
-}
-.highlight-sortable-item:is([data-row-state="editing"], [data-row-state="new"])
-  > .highlight-detail-row
-  > td {
-  background: var(--highlight-item-bg);
-}
-.highlight-sortable-item[data-row-state="new"]
-  > .highlight-summary-row[aria-selected="true"]
-  > td {
-  background: color-mix(
-    in srgb,
-    var(--highlight-new-bg) 88%,
-    var(--mantine-color-indigo-light)
-  );
-}
-.highlight-summary-row {
-  position: relative;
-}
-.highlight-row-icons {
-  display: flex;
-  justify-content: flex-end;
-  gap: 2px;
-}
-.highlight-action-strip {
-  display: flex;
-  position: absolute;
-  right: 0;
-  top: 0;
-  bottom: 0;
-  width: max-content;
-  max-width: 100%;
-  z-index: 2;
-  background: var(--highlight-item-bg);
-  box-shadow: -3px 0 6px #0001;
-  animation: highlight-row-actions-reveal 160ms ease-out both;
-}
-.highlight-action-strip > .mantine-Button-root {
-  align-self: stretch;
-  height: 100%;
-  min-height: 100%;
-  min-width: 64px;
-  padding: 0 12px;
-  border: 0;
-  border-radius: 0;
-  font-size: var(--mantine-font-size-xs);
-}
 @keyframes highlight-row-actions-reveal {
   from {
     clip-path: inset(0 0 0 100%);
   }
   to {
     clip-path: inset(0 0 0 0);
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .highlight-action-strip {
-    animation-duration: 0ms;
   }
 }

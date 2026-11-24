@@ -145,16 +145,6 @@ test.afterEach(async ({}, info) => {
 
 const settings = () =>
   page.getByRole("dialog", { name: "Settings", exact: true });
-const table = (kind: "profile" | "rule", owner = settings()) =>
-  owner.getByRole("table", { name: `Highlight ${kind}s`, exact: true });
-const item = (kind: "profile" | "rule", id: string, owner = settings()) =>
-  table(kind, owner)
-    .locator("tbody")
-    .filter({ has: page.locator(`tr[data-${kind}-id="${id}"]`) });
-const detail = (kind: "profile" | "rule", id: string, owner = settings()) =>
-  item(kind, id, owner).locator(".highlight-item-detail");
-const summary = (kind: "profile" | "rule", id: string) =>
-  item(kind, id).locator(".highlight-summary-row");
 const action = (label: string, owner = settings()) =>
   owner.getByRole("button", { name: label, exact: true });
 async function savedProfiles() {
@@ -191,93 +181,6 @@ async function capture(filename: string) {
   );
   await mkdir(test.info().outputDir, { recursive: true });
   await writeFile(test.info().outputPath(filename), Buffer.from(png, "base64"));
-}
-async function geometry(owner: Locator) {
-  return owner
-    .locator("input,textarea,.mantine-Switch-root")
-    .evaluateAll((elements) =>
-      elements.map((element) => {
-        const rect = element.getBoundingClientRect();
-        return {
-          label: element.getAttribute("aria-label") || element.id,
-          x: rect.x,
-          y: rect.y,
-          width: rect.width,
-          height: rect.height,
-        };
-      }),
-    );
-}
-async function assertTint(
-  kind: "profile" | "rule",
-  id: string,
-  channel: "red" | "green" | "blue",
-  hasDetail = true,
-) {
-  const row = summary(kind, id).locator("td").first();
-  for (const surface of hasDetail ? [row, detail(kind, id)] : [row]) {
-    const { components, baseline } = await surface.evaluate((element) => {
-      const canvas = document.createElement("canvas"),
-        context = canvas.getContext("2d")!,
-        probe = document.createElement("span");
-      probe.style.backgroundColor = "var(--mantine-color-body)";
-      probe.style.position = "fixed";
-      element.appendChild(probe);
-      const baselineColor = getComputedStyle(probe).backgroundColor;
-      probe.remove();
-      const normalize = (color: string) => {
-        context.clearRect(0, 0, 1, 1);
-        context.fillStyle = color;
-        context.fillRect(0, 0, 1, 1);
-        return [...context.getImageData(0, 0, 1, 1).data];
-      };
-      return {
-        components: normalize(getComputedStyle(element).backgroundColor),
-        baseline: normalize(baselineColor),
-      };
-    });
-    const dominant = { red: 0, green: 1, blue: 2 }[channel];
-    expect(components).not.toEqual(baseline);
-    expect(components[dominant]).toBeGreaterThan(
-      components[(dominant + 1) % 3],
-    );
-    expect(components[dominant]).toBeGreaterThan(
-      components[(dominant + 2) % 3],
-    );
-    expect(components[3]).toBeGreaterThan(0);
-  }
-}
-async function assertStrip(
-  kind: "profile" | "rule",
-  id: string,
-  mode: "edit" | "delete",
-  iconPoint: { x: number; y: number },
-) {
-  const row = summary(kind, id),
-    strip = item(kind, id).locator(
-      `.highlight-action-strip[data-action="${mode}"]`,
-    );
-  await expect(strip).toBeVisible();
-  await expect(strip).toHaveAttribute(
-    "role",
-    mode === "delete" ? "alertdialog" : "group",
-  );
-  await expect(strip.getByRole("button")).toHaveText(
-    mode === "delete" ? ["Delete", "Cancel"] : ["Save", "Cancel"],
-  );
-  const rowBox = (await row.boundingBox())!,
-    box = (await strip.boundingBox())!,
-    cancel = (await strip.getByRole("button").last().boundingBox())!;
-  expect(Math.abs(box.y - rowBox.y)).toBeLessThanOrEqual(1);
-  expect(Math.abs(box.height - rowBox.height)).toBeLessThanOrEqual(1);
-  expect(
-    Math.abs(box.x + box.width - rowBox.x - rowBox.width),
-  ).toBeLessThanOrEqual(1);
-  expect(box.width).toBeLessThan(rowBox.width);
-  expect(iconPoint.x).toBeGreaterThanOrEqual(cancel.x);
-  expect(iconPoint.x).toBeLessThanOrEqual(cancel.x + cancel.width);
-  expect(iconPoint.y).toBeGreaterThanOrEqual(cancel.y);
-  expect(iconPoint.y).toBeLessThanOrEqual(cancel.y + cancel.height);
 }
 async function point(locator: Locator) {
   const box = (await locator.boundingBox())!;

@@ -1,5 +1,5 @@
 import type { GcpIdentity } from "../shared/contracts";
-import { delay, throwIfAborted } from "./aws-adapter";
+import { delay, throwIfAborted } from "./async";
 
 export interface GoogleAuth {
   token(identity: GcpIdentity): Promise<string>;

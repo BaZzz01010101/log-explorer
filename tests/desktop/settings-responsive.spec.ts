@@ -1,4 +1,3 @@
-import { openSettingsWindow } from "./settings-panel";
 import {
   _electron as electron,
   expect,
@@ -6,7 +5,7 @@ import {
   type ElectronApplication,
   type Page,
 } from "@playwright/test";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { join, resolve, sep } from "node:path";
 import {
   createTab,

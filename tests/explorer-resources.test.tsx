@@ -206,7 +206,7 @@ it("sorts stream pages by newest event after merging, leaving streams without ev
 });
 it("fetches only expanded regions, caches them independently and suppresses repeated opaque cursors", async () => {
   groups.mockImplementation(
-    async (connection: Connection, _search: string, cursor?: string) => ({
+    async (connection: Connection) => ({
       items: [{ name: connection.id }],
       cursor: connection.id === "east" ? "same-token" : undefined,
     }),

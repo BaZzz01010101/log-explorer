@@ -5,7 +5,7 @@ import type {
   ViewConfig,
   Workspace,
 } from "../shared/contracts";
-import type { TabRuntime } from "./useLogJobs";
+import type { TabRuntime } from "./log-runtime";
 import { logTabLabel } from "../shared/workspace-entries";
 import { ownValue } from "../shared/records";
 

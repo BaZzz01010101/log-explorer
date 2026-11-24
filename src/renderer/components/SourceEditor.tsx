@@ -8,7 +8,12 @@ import {
   Text,
   TextInput,
 } from "@mantine/core";
-import type { Connection, GcpSource, LogSource } from "../../shared/contracts";
+import type {
+  Connection,
+  GcpSource,
+  LogSource,
+  Page,
+} from "../../shared/contracts";
 import { discoverGcpSources } from "../gcp-source-scan";
 import { gcpResourceToLogSource } from "../gcp-open";
 import { gcpErrorMessage } from "../gcp-errors";
@@ -76,6 +81,21 @@ export function SourceEditor({
   );
 }
 
+/** Searches match parts of names, so the exact name can be on a later page. */
+async function listed(
+  name: string,
+  load: (cursor?: string) => Promise<Page<{ name: string }>>,
+): Promise<boolean> {
+  let cursor: string | undefined;
+  for (let page = 0; page < 20; page++) {
+    const result = await load(cursor);
+    if (result.items.some((item) => item.name === name)) return true;
+    cursor = result.cursor;
+    if (!cursor) return false;
+  }
+  return false;
+}
+
 function Actions({
   busy,
   disabled,
@@ -133,12 +153,12 @@ function AwsSourceForm({
       .map((item) => ({ value: item.id, label: item.region }));
   }, [connections, connection]);
   const live = useRef(true);
-  useEffect(
-    () => () => {
+  useEffect(() => {
+    live.current = true;
+    return () => {
       live.current = false;
-    },
-    [],
-  );
+    };
+  }, []);
   const submit = async () => {
     const name = group.trim();
     const streamValue = streamName.trim();
@@ -147,25 +167,26 @@ function AwsSourceForm({
     setBusy(true);
     setError("");
     try {
-      const groups = await window.explorer.listGroups(
-        region,
-        name,
-        undefined,
-        true,
-      );
-      if (!groups.items.some((item) => item.name === name))
+      if (
+        !(await listed(name, (cursor) =>
+          window.explorer.listGroups(region, name, cursor, true),
+        ))
+      )
         throw new Error(
           `Log group "${name}" was not found in ${region.region}.`,
         );
       if (stream !== undefined) {
-        const streams = await window.explorer.listStreams(
-          region,
-          name,
-          streamValue,
-          undefined,
-          true,
-        );
-        if (!streams.items.some((item) => item.name === streamValue))
+        if (
+          !(await listed(streamValue, (cursor) =>
+            window.explorer.listStreams(
+              region,
+              name,
+              streamValue,
+              cursor,
+              true,
+            ),
+          ))
+        )
           throw new Error(
             `Log stream "${streamValue}" was not found in ${name}.`,
           );

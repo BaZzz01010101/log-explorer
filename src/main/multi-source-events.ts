@@ -7,7 +7,8 @@ import type {
   QueryRequest,
   QueryUpdate,
 } from "../shared/contracts";
-import { throwIfAborted, type LogAdapter } from "./aws-adapter";
+import { throwIfAborted } from "./async";
+import type { LogAdapter } from "./log-adapter";
 
 export function scopedQueries(request: QueryRequest): QueryRequest[] {
   const connections = [request.connection, ...(request.connections ?? [])];

@@ -38,7 +38,7 @@ export const connectionSchema = z
         : /^[a-z]{2}(?:-[a-z]+)+-\d+$/.test(connection.region),
     "Invalid provider connection",
   );
-export const sourceSchema = z.object({
+const sourceSchema = z.object({
   connectionId: id.optional(),
   logGroup: z.string().min(1).max(512),
   logStreams: z.array(z.string().min(1).max(512)).max(100).optional(),

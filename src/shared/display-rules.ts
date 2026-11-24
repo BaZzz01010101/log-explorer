@@ -192,15 +192,21 @@ export function compileMessageRules(
     if (!rule.source.trim()) return [{ pointer, matches: () => true }];
     const pattern = sourcePattern(rule);
     if (!pattern) return [];
+    // Views have few sources and many events.
+    const tested = new Map<string, boolean>();
+    const test = (name: string | undefined) => {
+      if (name === undefined) return false;
+      let result = tested.get(name);
+      if (result === undefined) tested.set(name, (result = pattern.test(name)));
+      return result;
+    };
     return [
       {
         pointer,
         matches: (event) =>
-          [
-            event.logGroup,
-            event.gcpSource?.container,
-            event.gcpSource?.functionName,
-          ].some((name) => name !== undefined && pattern.test(name)),
+          test(event.logGroup) ||
+          test(event.gcpSource?.container) ||
+          test(event.gcpSource?.functionName),
       },
     ];
   });

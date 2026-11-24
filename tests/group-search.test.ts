@@ -1,9 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Connection } from "../src/shared/contracts";
-import {
-  createAwsAdapter,
-  type CloudWatchCommand,
-} from "../src/main/aws-adapter";
+import { createAwsAdapter } from "../src/main/aws-adapter";
+import type { CloudWatchCommand } from "../src/main/aws-common";
 import { createOfflineAdapter } from "../src/main/offline-adapter";
 
 const connection: Connection = {

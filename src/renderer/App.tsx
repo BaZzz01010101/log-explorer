@@ -3,7 +3,6 @@ import { AppCommandsContext, type AppCommands } from "./app-commands";
 import { flushSync } from "react-dom";
 import {
   ActionIcon,
-  Alert,
   Badge,
   Button,
   Group,
@@ -984,7 +983,6 @@ export default function App() {
                 workspace={workspace}
                 dispatch={dispatch}
                 environment={environment}
-                onEnvironment={setEnvironment}
                 previewSnapshot={settingsPreview}
               />
               <div

@@ -352,29 +352,3 @@ export function RuleFields({
     </div>
   );
 }
-
-export function ColorSwatches({ rule }: { rule: HighlightRule }) {
-  const colors = rule.separateThemeColors
-    ? ([
-        ["Light", rule.lightColors ?? rule.colors],
-        ["Dark", rule.darkColors ?? rule.colors],
-      ] as const)
-    : ([["Shared", rule.colors]] as const);
-  return (
-    <div className="highlight-rule-colors">
-      {colors.map(([label, value]) => (
-        <span
-          key={label}
-          className="highlight-rule-color-pair"
-          role="img"
-          aria-label={`${label} foreground ${value.foreground || "inherited"}, background ${value.background || "inherited"}`}
-          data-tooltip={`${label}: ${value.foreground || "inherit"} / ${value.background || "inherit"}`}
-        >
-          {rule.separateThemeColors && <small>{label[0]}</small>}
-          <i style={{ backgroundColor: value.foreground }} />
-          <i style={{ backgroundColor: value.background }} />
-        </span>
-      ))}
-    </div>
-  );
-}

@@ -12,7 +12,7 @@ let activeLogin: ChildProcess | undefined;
 let cancelledLogin: ChildProcess | undefined;
 
 /** The error of a sign-in that the user cancelled; not shown as a failure. */
-export const GCP_SIGN_IN_CANCELLED = "Google sign-in was cancelled.";
+const GCP_SIGN_IN_CANCELLED = "Google sign-in was cancelled.";
 
 /** Stops the running browser sign-in; resolves once its process has exited. */
 export function cancelGoogleLogin(): Promise<void> {

@@ -14,8 +14,6 @@ import {
 import { execFileSync } from "node:child_process";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { join, resolve, sep } from "node:path";
-import type { QueryUpdate } from "../../src/shared/contracts";
-
 test.setTimeout(90000);
 let app: ElectronApplication | undefined;
 let child: ReturnType<ElectronApplication["process"]> | undefined;
@@ -23,7 +21,6 @@ let page: Page;
 let directory: string;
 let errors: string[];
 const temporaryRoot = resolve(".tmp", "desktop-expanded-wrap");
-type ProbeWindow = Window & { inspectorUpdates: QueryUpdate[] };
 
 test.beforeEach(async ({}, info) => {
   await mkdir(temporaryRoot, { recursive: true });

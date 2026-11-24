@@ -1,7 +1,7 @@
 import { resolveFilterSyntax, type ServerFilterMode } from "./server-filter";
 import { compileUnifiedFilter } from "./unified-filter";
 
-export function gcpServerFilterMode(
+function gcpServerFilterMode(
   value: string,
   mode: ServerFilterMode = "auto",
 ): "plain" | "pattern" {

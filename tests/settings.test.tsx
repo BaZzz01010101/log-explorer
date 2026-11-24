@@ -90,7 +90,6 @@ const props = {
   workspace,
   dispatch,
   environment: null,
-  onEnvironment: vi.fn(),
   onOpenModal,
 };
 const control = (label: string) =>

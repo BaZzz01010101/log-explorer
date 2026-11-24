@@ -7,18 +7,6 @@ import {
 } from "../shared/query-state";
 export { parseRelativePreset, type RelativeUnit } from "../shared/query-state";
 
-export const RELATIVE_RANGES = [
-  ["5m", "Last 5 minutes"],
-  ["15m", "Last 15 minutes"],
-  ["30m", "Last 30 minutes"],
-  ["1h", "Last hour"],
-  ["3h", "Last 3 hours"],
-  ["6h", "Last 6 hours"],
-  ["12h", "Last 12 hours"],
-  ["24h", "Last 24 hours"],
-  ["7d", "Last 7 days"],
-] as const;
-
 export function rangeInputValue(
   value: string | undefined,
   timezone: Preferences["timezone"],

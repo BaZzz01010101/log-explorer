@@ -1,4 +1,3 @@
-import { openSettingsWindow } from "./settings-panel";
 import {
   _electron as electron,
   expect,
@@ -10,7 +9,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { join, resolve, sep } from "node:path";
 import {
   createWorkspace,
-  restoreWorkspace,
+  
 } from "../../src/shared/workspace";
 import {
   closeAppNaturally,
@@ -118,7 +117,6 @@ test.beforeEach(async ({}, info) => {
 });
 test.afterEach(async () => {
   if (app?.process().exitCode === null) {
-    const child = app.process();
     await closeAppNaturally(app);
   }
   expect(errors).toEqual([]);
@@ -134,14 +132,6 @@ test.afterEach(async () => {
     retryDelay: 100,
   });
 });
-const row = (name: string) => page.getByRole("treeitem", { name, exact: true });
-const action = (name: string) =>
-  page.getByRole("menuitem", { name, exact: true });
-const selected = () => page.locator('.resource-row[aria-selected="true"]');
-const stored = async () =>
-  restoreWorkspace(
-    (await page.evaluate(() => window.explorer.loadWorkspace())).workspace,
-  );
 
 test.beforeEach(async ({}, info) => {
   await app.evaluate(({ ipcMain, BrowserWindow, clipboard }, longList) => {
@@ -205,10 +195,6 @@ const quick = () =>
     name: "Highlight text in loaded events",
     exact: true,
   });
-const inspector = () =>
-  page.getByRole("region", { name: "Event inspector", exact: true });
-const manualMarks = () =>
-  page.locator('.virtual-event mark[data-highlight-origins~="manual"]');
 
 for (const theme of behaviorThemes) {
   test(`${theme} Events undo survives tab switches and clear buttons independently of other fields`, async () => {

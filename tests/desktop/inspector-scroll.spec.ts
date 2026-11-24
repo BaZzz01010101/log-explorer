@@ -10,7 +10,6 @@ import { join, resolve, sep } from "node:path";
 import type {
   LogEvent,
   QueryRequest,
-  QueryUpdate,
 } from "../../src/shared/contracts";
 import {
   createTab,

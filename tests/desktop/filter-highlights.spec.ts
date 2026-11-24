@@ -139,8 +139,6 @@ test.afterEach(async () => {
   });
 });
 
-const viewer = () => page.locator(".viewer-scroll");
-const status = () => page.locator(".query-status");
 async function requests() {
   return app!.evaluate(() => (globalThis as MainProbe).feedbackRequests);
 }

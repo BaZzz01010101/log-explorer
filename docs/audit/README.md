@@ -12,7 +12,7 @@ The main risks are elsewhere:
 - **Accumulated design debt:** two cloud providers with duplicated infrastructure, leftovers from the removed Insights feature, and 1,000–3,000-line central modules.
 - **Release process:** it lives outside version control, and the daily-use app runs from inside the build folder.
 
-**Findings by severity:** Critical 0 · High 2 · Medium 11 · Low 7 (20 total). AUD-020 comes from the 2026-11-17 follow-up that covered the remaining areas.
+**Findings by severity:** Critical 0 · High 2 · Medium 12 · Low 10 (24 total). AUD-020 comes from the 2026-11-17 follow-up that covered the remaining areas, AUD-021 to AUD-024 from the 2026-11-24 follow-up over the code changed since.
 
 **Most significant risks**
 1. Loss of the user's entire workspace when the file fails strict validation (AUD-001).
@@ -58,3 +58,7 @@ See the coverage table in [FINDINGS.md](FINDINGS.md#audit-coverage).
 | AUD-018 | Low | Reliability | No renderer crash or hang handling | Blank window; jobs keep running; 5-second close error | S | Needs verification | [→](FINDINGS.md#aud-018-no-handling-of-renderer-crashes-or-hangs) |
 | AUD-015 | Low | Performance | O(n) buffer rebuild per update; empty Live updates every second | CPU and GC pressure with large buffers and live views | M | Needs verification | [→](FINDINGS.md#aud-015-event-buffer-updates-do-on-work-per-batch-aws-live-emits-an-update-every-second-even-when-empty) |
 | AUD-020 | Low | Correctness | CSV exports have no byte-order mark | Excel garbles non-ASCII text in exported CSV files | S | High confidence | [→](FINDINGS.md#aud-020-csv-exports-have-no-byte-order-mark-so-excel-garbles-non-ascii-text) |
+| AUD-021 | Medium | Correctness | Google Cloud sources compared by JSON key order | Hidden badges, source names and duplicate checks fail until a restart | S | Confirmed | [→](FINDINGS.md#aud-021-google-cloud-sources-are-compared-by-json-key-order) |
+| AUD-022 | Low | Reliability | A message rule's regular expression runs on the renderer thread | A pathological pattern freezes the window | M | High confidence | [→](FINDINGS.md#aud-022-a-message-rules-regular-expression-runs-on-the-renderer-thread) |
+| AUD-023 | Low | Correctness | Edit source checks only the first page of matches | An existing source is reported as not found | S | High confidence | [→](FINDINGS.md#aud-023-edit-source-checks-only-the-first-page-of-matches) |
+| AUD-024 | Low | Maintainability | Unreachable code | Larger files to read and change | M | Confirmed | [→](FINDINGS.md#aud-024-unreachable-code) |

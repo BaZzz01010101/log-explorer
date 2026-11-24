@@ -339,12 +339,6 @@
 .settings-tabs .mantine-ActionIcon-root {
   flex-shrink: 0;
 }
-.settings-tabs .settings-shortcuts-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 12px;
-  align-items: start;
-}
 .settings-tabs .settings-preferences-form {
   display: flex;
   flex-direction: column;
@@ -395,47 +389,8 @@
   max-width: 680px;
   margin-inline: auto;
 }
-.settings-tabs .settings-preference-row {
-  display: contents;
-}
-.settings-preference-row > * {
-  width: 100%;
-  max-width: none;
-}
 .settings-preferences-form > .mantine-Checkbox-root {
   grid-column: 1 / -1;
-}
-.settings-workspace-form {
-  height: 100%;
-  min-height: 100%;
-  max-width: none;
-}
-.settings-workspace-form > * {
-  flex-shrink: 0;
-}
-.settings-workspace-form > .settings-workspace-json {
-  display: flex;
-  flex-direction: column;
-  flex: 1 1 auto;
-  min-height: 200px;
-}
-.settings-workspace-json > .mantine-Input-wrapper {
-  flex: 1;
-  min-height: 0;
-}
-.settings-workspace-json .mantine-Textarea-input {
-  height: 100%;
-  min-height: 0;
-  resize: none;
-  font-family: var(--mantine-font-family-monospace);
-}
-.settings-workspace-form > .mantine-Button-root {
-  align-self: flex-start;
-}
-.settings-saved-item > .mantine-Text-root {
-  flex: 1;
-  min-width: 0;
-  overflow-wrap: anywhere;
 }
 .settings-profile-cards {
   display: grid;
@@ -452,11 +407,6 @@
 }
 .settings-profile-heading {
   align-items: flex-start;
-}
-.settings-connection-add {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: end;
 }
 .configured-region > div {
   min-width: 0;
@@ -503,10 +453,6 @@
   }
 }
 @container settings (max-width: 360px) {
-  .settings-connection-add {
-    grid-template-columns: minmax(0, 1fr);
-    gap: 6px;
-  }
   .settings-profile-heading .settings-profile-title {
     flex-direction: column;
     align-items: flex-start;

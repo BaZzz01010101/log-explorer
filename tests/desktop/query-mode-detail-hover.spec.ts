@@ -120,12 +120,6 @@ test.afterEach(async () => {
   });
 });
 
-const loaded = async () =>
-  Number(
-    (await page.locator(".query-status").innerText())
-      .match(/([\d,]+) loaded/)?.[1]
-      .replaceAll(",", ""),
-  );
 
 for (const theme of ["dark", "light"] as const)
   for (const highlighted of [false, true])

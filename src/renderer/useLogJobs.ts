@@ -1,69 +1,22 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type {
-  LogEvent,
-  LiveCatchUp,
-  LiveFailure,
-  LiveState,
-  LogTab,
-  QueryRequest,
-  QueryStats,
-  QueryUpdate,
-  Workspace,
-} from "../shared/contracts";
-import { sourceIdentity } from "../shared/source-identity";
-import { LIVE_OVERLAP_MS, withoutShownEvents } from "../shared/live-catch-up";
-import { compileAwsViewFilter } from "../shared/server-filter";
-import { compileGcpViewFilter } from "../shared/gcp-server-filter";
-import { queryPageLimit } from "../shared/log-query-limits";
+import type { LogTab, QueryRequest, Workspace } from "../shared/contracts";
+import { requestSource, sourceIdentity } from "../shared/source-identity";
 import {
   mergeEvents,
   requestMatchesTab,
   resolveTimeRange,
 } from "../shared/query-state";
+import { newRequest, timeIdentity } from "./log-request";
+import {
+  emptyRuntime,
+  missedFrom,
+  updatedRuntime,
+  type TabRuntime,
+} from "./log-runtime";
 
-export interface TabRuntime {
-  events: LogEvent[];
-  state: QueryUpdate["state"] | "idle";
-  live: boolean;
-  livePaused?: boolean;
-  liveState?: LiveState;
-  liveReceived?: number;
-  liveFailures?: LiveFailure[];
-  /** When this Live session first connected. */
-  liveSince?: number;
-  /** Start of the period whose events may be missing. */
-  missedSince?: number;
-  catchUp?: LiveCatchUp;
-  cursor?: string;
-  error?: string;
-  stats?: QueryStats;
-  sampled?: boolean;
-  truncated?: boolean;
-  incomplete?: boolean;
-  evicted: number;
-  request?: QueryRequest;
-  recentHistory?: { request: QueryRequest; cursor: string; evicted: number };
-}
 const BEAT_MS = 10_000;
 /** Hidden windows run timers once a minute; a longer pause is a suspend. */
 const SUSPEND_MS = 150_000;
-
-function missedFrom(
-  runtime: TabRuntime,
-  receiving: number,
-): number | undefined {
-  if (runtime.liveSince === undefined) return runtime.missedSince;
-  return Math.min(
-    runtime.missedSince ?? Infinity,
-    Math.max(runtime.liveSince, receiving - LIVE_OVERLAP_MS),
-  );
-}
-const empty = (): TabRuntime => ({
-  events: [],
-  state: "idle",
-  live: false,
-  evicted: 0,
-});
 
 export function useLogJobs(
   workspace: Workspace,
@@ -168,87 +121,19 @@ export function useLogJobs(
           !ownsRequest(job.tabId, job.generation, update.requestId)
         )
           return previous;
-        const prior = previous[job.tabId] ?? empty();
-        const merged =
-          update.replace || update.events?.length
-            ? mergeEvents(
-                update.replace ? [] : prior.events,
-                update.occurrences
-                  ? withoutShownEvents(
-                      prior.events,
-                      update.events ?? [],
-                      update.occurrences,
-                    )
-                  : (update.events ?? []),
-                workspaceRef.current.preferences.maxEvents,
-                undefined,
-                false,
-                !job.live &&
-                  prior.request?.direction === "older" &&
-                  prior.request.cursor
-                  ? "newest"
-                  : "oldest",
-              )
-            : { events: prior.events, evicted: 0 };
-        const terminal = ["error", "cancelled", "complete"].includes(
-          update.state,
-        );
-        const failures = update.liveFailures ?? prior.liveFailures;
-        const interrupted =
-          terminal ||
-          (failures?.length ?? 0) > (prior.liveFailures?.length ?? 0);
-        const missedSince =
-          !job.live || job.stopping
-            ? undefined
-            : interrupted
-              ? missedFrom(prior, beat)
-              : update.catchUp?.state === "complete" && !failures?.length
-                ? undefined
-                : prior.missedSince;
         return {
           ...previous,
-          [job.tabId]: {
-            ...prior,
-            events: merged.events,
-            state: update.state,
-            live:
-              job.live &&
-              !["error", "cancelled", "complete"].includes(update.state),
-            liveState: job.live
-              ? terminal
-                ? "stopped"
-                : (update.liveState ?? prior.liveState ?? "connecting")
-              : undefined,
-            liveReceived: job.live
-              ? (prior.liveReceived ?? 0) +
-                Math.max(
-                  0,
-                  merged.events.length +
-                    merged.evicted -
-                    (update.replace ? 0 : prior.events.length),
-                )
-              : undefined,
-            liveFailures: job.live && !terminal ? failures : undefined,
-            liveSince: job.live
-              ? (prior.liveSince ??
-                (update.liveState === "streaming" ? now : undefined))
-              : undefined,
-            missedSince,
-            catchUp:
-              job.live && !terminal
-                ? (update.catchUp ?? prior.catchUp)
-                : undefined,
-            cursor: update.cursor,
-            error: update.error,
-            stats: update.stats ?? prior.stats,
-            sampled: update.sampled ?? prior.sampled,
-            truncated: update.truncated ?? prior.truncated,
-            incomplete:
-              update.state === "complete"
-                ? Boolean(update.incomplete)
-                : prior.incomplete,
-            evicted: prior.evicted + merged.evicted,
-          },
+          [job.tabId]: updatedRuntime(
+            previous[job.tabId] ?? emptyRuntime(),
+            update,
+            {
+              live: job.live,
+              stopping: Boolean(job.stopping),
+              now,
+              beat,
+              maxEvents: workspaceRef.current.preferences.maxEvents,
+            },
+          ),
         };
       });
       if (
@@ -454,7 +339,7 @@ export function useLogJobs(
       if (!connection || !tab.sources.length) {
         setRuntimes((previous) =>
           ownsOperation(tab.id, generation)
-            ? { ...previous, [tab.id]: empty() }
+            ? { ...previous, [tab.id]: emptyRuntime() }
             : previous,
         );
         return;
@@ -466,7 +351,7 @@ export function useLogJobs(
             ? {
                 ...previous,
                 [tab.id]: {
-                  ...(previous[tab.id] ?? empty()),
+                  ...(previous[tab.id] ?? emptyRuntime()),
                   state: "idle",
                   live: true,
                   livePaused: true,
@@ -483,44 +368,16 @@ export function useLogJobs(
       try {
         // Waking continues what was streaming, not an edited filter.
         const resumed =
-          resume &&
-          prior?.request &&
-          sourceIdentity(prior.request.connection.id, prior.request.sources, [
-            prior.request.connection,
-            ...(prior.request.connections ?? []),
-          ]) === source
+          resume && prior?.request && requestSource(prior.request) === source
             ? prior.request
             : undefined;
-        const modes = new Set(
-          tab.sources.map(
-            (item) =>
-              state.connections.find(
-                (candidate) =>
-                  candidate.id === (item.connectionId ?? tab.connectionId),
-              )?.mode,
-          ),
-        );
-        const mixed =
-          modes.has("gcp") && (modes.has("aws") || modes.has("offline"));
-        const gcpFilter =
-          modes.has("gcp") && !resumed
-            ? compileGcpViewFilter(
-                tab.filterPattern,
-                tab.filterMode,
-                tab.gcpLogType,
-                mixed,
-              )
-            : { pattern: "", local: undefined };
         const canContinue = Boolean(
           more &&
           !live &&
           prior?.request &&
           prior.cursor &&
           prior.request.kind === "events" &&
-          sourceIdentity(prior.request.connection.id, prior.request.sources, [
-            prior.request.connection,
-            ...(prior.request.connections ?? []),
-          ]) === source,
+          requestSource(prior.request) === source,
         );
         request = canContinue
           ? {
@@ -536,63 +393,10 @@ export function useLogJobs(
                 cursor: undefined,
                 catchUp: undefined,
               }
-            : {
-                requestId: crypto.randomUUID(),
-                connection: { ...connection },
-                connections: [
-                  ...new Set(
-                    tab.sources
-                      .map((source) => source.connectionId)
-                      .filter(
-                        (id): id is string => !!id && id !== connection.id,
-                      ),
-                  ),
-                ].map((id) => {
-                  const selected = state.connections.find(
-                    (item) => item.id === id,
-                  );
-                  if (!selected)
-                    throw new Error("A source connection no longer exists.");
-                  return { ...selected };
-                }),
-                sources: tab.sources.map((item) => ({
-                  ...item,
-                  ...(item.logStreams
-                    ? { logStreams: [...item.logStreams] }
-                    : {}),
-                })),
-                ...resolveTimeRange(
-                  tab.timePreset,
-                  tab.customStart,
-                  tab.customEnd,
-                ),
-                kind: "events",
-                filterPattern:
-                  modes.has("aws") || modes.has("offline")
-                    ? compileAwsViewFilter(tab.filterPattern, tab.filterMode)
-                    : "",
-                gcpFilterPattern: gcpFilter.pattern,
-                ...(gcpFilter.local ? { gcpLocalFilter: gcpFilter.local } : {}),
-                query: "",
-                ...(tab.timePreset === "clear" && !live
-                  ? { direction: "older" as const }
-                  : {}),
-                limit:
-                  tab.timePreset === "clear" && !live
-                    ? Math.min(
-                        1000,
-                        Math.max(
-                          1,
-                          Math.floor(
-                            workspaceRef.current.preferences.maxEvents / 4,
-                          ),
-                        ),
-                      )
-                    : queryPageLimit(
-                        modes,
-                        workspaceRef.current.preferences.maxEvents,
-                      ),
-              };
+            : newRequest(tab, connection, state.connections, {
+                live,
+                maxEvents: workspaceRef.current.preferences.maxEvents,
+              });
         const retainHistory =
           live &&
           prior?.request &&
@@ -628,7 +432,9 @@ export function useLogJobs(
             ? {
                 ...previous,
                 [tab.id]: {
-                  ...(canContinue ? (previous[tab.id] ?? empty()) : empty()),
+                  ...(canContinue
+                    ? (previous[tab.id] ?? emptyRuntime())
+                    : emptyRuntime()),
                   ...(retainHistory
                     ? { events: prior.events, evicted: prior.evicted }
                     : {}),
@@ -696,7 +502,7 @@ export function useLogJobs(
         }
         setRuntimes((previous) => {
           if (!ownsOperation(tab.id, generation)) return previous;
-          const priorRuntime = previous[tab.id] ?? empty();
+          const priorRuntime = previous[tab.id] ?? emptyRuntime();
           if (requestId && priorRuntime.request?.requestId !== requestId)
             return previous;
           return {
@@ -735,6 +541,7 @@ export function useLogJobs(
         latestRequest.current.delete(tabId);
         autoStarted.current.delete(tabId);
         sleepingLive.current.delete(tabId);
+        staleHidden.current.delete(tabId);
         observedTimeRanges.current.delete(tabId);
         const pending = pendingTimeRefresh.current.get(tabId);
         if (pending) clearTimeout(pending);
@@ -792,13 +599,10 @@ export function useLogJobs(
         if (
           prior?.request &&
           prior.request.kind === "events" &&
-          sourceIdentity(prior.request.connection.id, prior.request.sources, [
-            prior.request.connection,
-            ...(prior.request.connections ?? []),
-          ]) === operationSources.current.get(tabId)
+          requestSource(prior.request) === operationSources.current.get(tabId)
         )
           continue;
-        next = { ...next, [tabId]: empty() };
+        next = { ...next, [tabId]: emptyRuntime() };
       }
       return next;
     });
@@ -978,17 +782,4 @@ export function useLogJobs(
     }
   }, [ready, awsEnabled, run]);
   return { runtimes, run, cancel };
-}
-
-function timeIdentity(tab: LogTab): string {
-  return JSON.stringify(
-    tab.timePreset === "custom"
-      ? [
-          tab.timePreset,
-          tab.customStart ?? "",
-          tab.customEnd ?? "",
-          tab.gcpLogType ?? "all",
-        ]
-      : [tab.timePreset, tab.gcpLogType ?? "all"],
-  );
 }

@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import type { Connection, LogEvent, QueryRequest, QueryUpdate } from "../shared/contracts";
-import { delay, throwIfAborted, type LogAdapter } from "./aws-adapter";
+import { delay, throwIfAborted } from "./async";
+import type { LogAdapter } from "./log-adapter";
 import { gcloudAuth } from "./gcloud-auth";
 import { googleFetch } from "./gcp-http";
 import { gcpSourceFilter, normalizeGcpEntry } from "./gcp-log-query";

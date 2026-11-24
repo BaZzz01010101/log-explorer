@@ -90,7 +90,7 @@ export function createGcloudAuth(run: Runner) {
   };
 }
 
-export function runGcloud(args: string[]): Promise<string> {
+function runGcloud(args: string[]): Promise<string> {
   const command = googleLoginCommand(
     process.platform,
     process.env,

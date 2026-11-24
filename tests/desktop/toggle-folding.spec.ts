@@ -14,8 +14,6 @@ import { execFileSync } from "node:child_process";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join, resolve, sep } from "node:path";
 import { createWorkspace } from "../../src/shared/workspace";
-import type { QueryUpdate } from "../../src/shared/contracts";
-
 test.setTimeout(90000);
 let app: ElectronApplication | undefined;
 let child: ReturnType<ElectronApplication["process"]> | undefined;
@@ -23,7 +21,6 @@ let page: Page;
 let directory: string;
 let errors: string[];
 const temporaryRoot = resolve(".tmp", "desktop-toggle-folding");
-type ProbeWindow = Window & { inspectorUpdates: QueryUpdate[] };
 
 test.beforeEach(async ({}, info) => {
   await mkdir(temporaryRoot, { recursive: true });
@@ -98,7 +95,6 @@ test.beforeEach(async ({}, info) => {
 
 const inspector = () =>
   page.getByRole("region", { name: "Event inspector", exact: true });
-const rows = () => page.locator(".virtual-event");
 async function paint() {
   await app!.evaluate(async ({ BrowserWindow }) => {
     const window = BrowserWindow.getAllWindows()[0];

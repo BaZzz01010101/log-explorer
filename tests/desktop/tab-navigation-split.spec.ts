@@ -189,7 +189,6 @@ test("keyboard log paging selects the visible edge before scrolling", async () =
 
 test.afterEach(async () => {
   if (app?.process().exitCode === null) {
-    const child = app.process();
     await closeAppNaturally(app);
   }
   expect(errors).toEqual([]);

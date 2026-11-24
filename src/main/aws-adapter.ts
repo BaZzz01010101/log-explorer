@@ -1,31 +1,15 @@
-import { createHash, randomUUID } from "node:crypto";
+import type { Connection } from "../shared/contracts";
 import type {
-  Connection,
-  LogEvent,
-  LogGroup,
-  LogStream,
-  Page,
-  QueryRequest,
-  QueryUpdate,
-} from "../shared/contracts";
-import type {
-  DescribeLogGroupsCommand,
-  DescribeLogStreamsCommand,
-  FilterLogEventsCommand,
-  StartLiveTailCommand,
   DescribeLogGroupsCommandOutput,
   DescribeLogStreamsCommandOutput,
-  FilterLogEventsCommandOutput,
-  StartLiveTailCommandOutput,
 } from "@aws-sdk/client-cloudwatch-logs";
+import { delay, Semaphore, throwIfAborted, withAbort } from "./async";
+import { awsSdk, identifier, type CloudWatchCommand } from "./aws-common";
+import { createHistoryEvents } from "./aws-history";
+import { liveTail } from "./aws-live";
+import { createRecentEvents } from "./aws-recent";
+import type { LogAdapter } from "./log-adapter";
 
-// Loaded on first use so app startup does not pay for the AWS SDK.
-const awsSdk = () => import("@aws-sdk/client-cloudwatch-logs");
-export type CloudWatchCommand =
-  | DescribeLogGroupsCommand
-  | DescribeLogStreamsCommand
-  | FilterLogEventsCommand
-  | StartLiveTailCommand;
 export interface AwsTransport {
   send(
     command: CloudWatchCommand,
@@ -33,131 +17,9 @@ export interface AwsTransport {
   ): Promise<unknown>;
   destroy(): void;
 }
-export interface LogAdapter {
-  listGroups(
-    prefix: string,
-    cursor: string | undefined,
-    signal: AbortSignal,
-  ): Promise<Page<LogGroup>>;
-  listStreams(
-    group: string,
-    prefix: string,
-    cursor: string | undefined,
-    signal: AbortSignal,
-  ): Promise<Page<LogStream>>;
-  events(request: QueryRequest, signal: AbortSignal): Promise<QueryUpdate>;
-  live(
-    request: QueryRequest,
-    signal: AbortSignal,
-    emit: (update: QueryUpdate) => void,
-  ): Promise<void>;
-  destroy(): void;
-}
 export interface AwsAdapterOptions {
   allowAws: () => boolean;
   transportFactory?: (connection: Connection) => Promise<AwsTransport>;
-}
-
-export function throwIfAborted(signal: AbortSignal): void {
-  if (signal.aborted)
-    throw Object.assign(new Error("Operation cancelled"), {
-      name: "AbortError",
-    });
-}
-
-export function delay(ms: number, signal: AbortSignal): Promise<void> {
-  throwIfAborted(signal);
-  return new Promise((resolve, reject) => {
-    const abort = () => {
-      clearTimeout(timer);
-      signal.removeEventListener("abort", abort);
-      reject(
-        Object.assign(new Error("Operation cancelled"), { name: "AbortError" }),
-      );
-    };
-    const timer = setTimeout(() => {
-      signal.removeEventListener("abort", abort);
-      resolve();
-    }, ms);
-    signal.addEventListener("abort", abort, { once: true });
-  });
-}
-
-function withAbort<T>(operation: Promise<T>, signal: AbortSignal): Promise<T> {
-  return new Promise((resolve, reject) => {
-    const abort = () => {
-      signal.removeEventListener("abort", abort);
-      reject(
-        Object.assign(new Error("Operation cancelled"), { name: "AbortError" }),
-      );
-    };
-    signal.addEventListener("abort", abort, { once: true });
-    operation.then(
-      (value) => {
-        signal.removeEventListener("abort", abort);
-        resolve(value);
-      },
-      (error) => {
-        signal.removeEventListener("abort", abort);
-        reject(error);
-      },
-    );
-    if (signal.aborted) abort();
-  });
-}
-
-export class Semaphore {
-  private active = 0;
-  private waiters: Array<{
-    signal: AbortSignal;
-    resolve: (release: () => void) => void;
-    reject: (error: Error) => void;
-    abort: () => void;
-  }> = [];
-  constructor(private readonly capacity: number) {}
-  async acquire(signal: AbortSignal): Promise<() => void> {
-    throwIfAborted(signal);
-    if (this.active < this.capacity) {
-      this.active++;
-      return this.release;
-    }
-    return new Promise((resolve, reject) => {
-      const waiter = {
-        signal,
-        resolve,
-        reject,
-        abort: () => {
-          const index = this.waiters.indexOf(waiter);
-          if (index >= 0) this.waiters.splice(index, 1);
-          reject(
-            Object.assign(new Error("Operation cancelled"), {
-              name: "AbortError",
-            }),
-          );
-        },
-      };
-      this.waiters.push(waiter);
-      signal.addEventListener("abort", waiter.abort, { once: true });
-    });
-  }
-  private release = () => {
-    const next = this.waiters.shift();
-    if (next) {
-      next.signal.removeEventListener("abort", next.abort);
-      next.resolve(this.release);
-    } else this.active--;
-  };
-}
-
-interface SourceCursor {
-  token?: string;
-  done: boolean;
-  seen: string[];
-}
-interface EventCursor {
-  signature: string;
-  sources: SourceCursor[];
-  expires: number;
 }
 
 class MetadataContinuations {
@@ -195,40 +57,6 @@ class MetadataContinuations {
   }
 }
 
-function querySignature(request: QueryRequest): string {
-  return createHash("sha256")
-    .update(
-      JSON.stringify([
-        request.connection.region,
-        request.connection.profile,
-        request.sources,
-        request.startTime,
-        request.endTime,
-        request.filterPattern,
-        request.direction,
-      ]),
-    )
-    .digest("hex");
-}
-
-function identifier(
-  group: string,
-): { logGroupIdentifier: string } | { logGroupName: string } {
-  return group.startsWith("arn:")
-    ? { logGroupIdentifier: group.replace(/:\*$/, "") }
-    : { logGroupName: group };
-}
-
-function nameFromIdentifier(group: string): string {
-  return group.includes(":log-group:")
-    ? group.split(":log-group:")[1].replace(/:\*$/, "")
-    : group;
-}
-
-function eventId(parts: Array<string | number | undefined>): string {
-  return createHash("sha256").update(JSON.stringify(parts)).digest("hex");
-}
-
 async function defaultTransport(
   connection: Connection,
   allowAws: () => boolean,
@@ -259,9 +87,6 @@ export function createAwsAdapter(
   options: AwsAdapterOptions,
 ): LogAdapter {
   const slots = new Semaphore(4);
-  const cursors = new Map<string, EventCursor>();
-  type RecentCursor = { signature: string; expires: number; phase: "recent" | "old"; token?: string; seen: string[]; floor: number; recentStart: number; end: number; span: number; start?: number; buffer: LogEvent[]; ready: boolean };
-  const recentCursors = new Map<string, RecentCursor>();
   const metadataContinuations = new MetadataContinuations();
   const arnCache = new Map<string, { arn: string; expires: number }>();
   let transport: Promise<AwsTransport> | undefined;
@@ -387,115 +212,8 @@ export function createAwsAdapter(
       "Log group was not found for Live Tail; verify the region and logs:DescribeLogGroups permission",
     );
   }
-  /**
-   * Bounds a Recent search with metadata. CloudWatch accepts events at most 14
-   * days older than ingestion and within retention (expired events are deleted
-   * up to 3 days late), so nothing predates `floor`. `ceiling` is the newest
-   * event the selected streams (or the whole group) can hold; stream metadata may lag by about an
-   * hour, so callers still search the latest hours. Missing permissions or
-   * metadata leave the search unbounded.
-   */
-  async function recentBounds(
-    source: QueryRequest["sources"][number],
-    signal: AbortSignal,
-  ): Promise<{ floor: number; ceiling?: number }> {
-    const day = 86400000;
-    const sdk = await awsSdk();
-    const quiet = <T,>(operation: Promise<T>) =>
-      operation.catch(() => {
-        throwIfAborted(signal);
-        return undefined;
-      });
-    const name = nameFromIdentifier(source.logGroup);
-    const names = source.logStreams ?? [];
-    const [groups, streams] = await Promise.all([
-      quiet(
-        send<DescribeLogGroupsCommandOutput>(
-          new sdk.DescribeLogGroupsCommand({
-            logGroupIdentifiers: [source.logGroup.replace(/:\*$/, "")],
-          }),
-          signal,
-        ),
-      ),
-      names.length && names.length <= 20
-        ? Promise.all(
-            names.map((stream) =>
-              quiet(
-                send<DescribeLogStreamsCommandOutput>(
-                  new sdk.DescribeLogStreamsCommand({
-                    ...identifier(source.logGroup),
-                    logStreamNamePrefix: stream,
-                    limit: 50,
-                  }),
-                  signal,
-                ),
-              ).then((response) =>
-                // null: the listing succeeded and the stream does not exist.
-                Array.isArray(response?.logStreams)
-                  ? (response.logStreams.find(
-                      (item) => item.logStreamName === stream,
-                    ) ?? null)
-                  : undefined,
-              ),
-            ),
-          )
-        : names.length
-          ? undefined
-          : // The newest stream bounds the whole group: one listing replaces
-            // a year-long scan of an idle group's streams.
-            quiet(
-              send<DescribeLogStreamsCommandOutput>(
-                new sdk.DescribeLogStreamsCommand({
-                  ...identifier(source.logGroup),
-                  orderBy: "LastEventTime",
-                  descending: true,
-                  limit: 1,
-                }),
-                signal,
-              ),
-            ).then((response) =>
-              Array.isArray(response?.logStreams)
-                ? response.logStreams
-                : undefined,
-            ),
-    ]);
-    let floor = -Infinity;
-    const group = groups?.logGroups?.find(
-      (item) => item.logGroupName === name,
-    );
-    if (group?.retentionInDays)
-      floor = Math.max(floor, Date.now() - (group.retentionInDays + 3) * day);
-    if (group?.creationTime)
-      floor = Math.max(floor, group.creationTime - 15 * day);
-    if (!streams || streams.some((stream) => stream === undefined))
-      return { floor };
-    const found = streams.filter((stream) => stream !== null) as Array<
-      NonNullable<(typeof streams)[number]>
-    >;
-    // Missing streams (or a group without streams) hold no events outside
-    // the lag window.
-    if (!found.length) return { floor, ceiling: -Infinity };
-    if (!found.every((stream) => stream.creationTime)) return { floor };
-    // Only a full stream selection bounds the oldest possible event.
-    if (names.length)
-      floor = Math.max(
-        floor,
-        Math.min(...found.map((stream) => stream.creationTime!)) - 15 * day,
-      );
-    // Events may be stamped up to 2 hours ahead of ingestion.
-    const ceiling =
-      Math.max(
-        ...found.map((stream) =>
-          Math.max(
-            stream.creationTime!,
-            stream.lastEventTimestamp ?? 0,
-            stream.lastIngestionTime ?? 0,
-          ),
-        ),
-      ) +
-      2 * 3600000;
-    return { floor, ceiling };
-  }
+  const recent = createRecentEvents(send);
+  const history = createHistoryEvents(send);
   return {
     async listGroups(search, cursor, signal) {
       const response = await send<DescribeLogGroupsCommandOutput>(
@@ -595,317 +313,20 @@ export function createAwsAdapter(
     async events(request, signal) {
       gate();
       throwIfAborted(signal);
-      const started = Date.now();
-      const key = querySignature(request);
-      if (request.direction === "older") {
-        if (request.sources.length !== 1) throw new Error("Recent CloudWatch queries require one source per partition.");
-        const boundary = Date.UTC(2024, 0, 1);
-        for (const [id, cursor] of recentCursors) if (cursor.expires <= started) recentCursors.delete(id);
-        const saved = request.cursor ? recentCursors.get(request.cursor) : undefined;
-        if (request.cursor && (!saved || saved.signature !== key)) throw new Error("Continuation expired or belongs to a different query. Run the query again.");
-        const source = request.sources[0];
-        let state: RecentCursor;
-        if (saved) state = structuredClone(saved);
-        else {
-          const bounds = await recentBounds(source, signal);
-          throwIfAborted(signal);
-          const floor = Math.max(request.startTime, bounds.floor);
-          let recentStart = Math.max(boundary, floor);
-          let end = Math.min(request.endTime, boundary - 1);
-          // An idle stream: search only the metadata lag window newest first,
-          // then continue from its last event instead of scanning empty history.
-          const lag = Date.now() - 6 * 3600000;
-          if (bounds.ceiling !== undefined && bounds.ceiling < lag) {
-            recentStart = Math.max(floor, lag);
-            end = Math.min(request.endTime, bounds.ceiling, recentStart - 1);
-          }
-          state = { signature: key, expires: 0, phase: request.endTime >= recentStart ? "recent" : "old", seen: [], floor, recentStart, end, span: 86400000, buffer: [], ready: false };
-        }
-        let events: LogEvent[] = [];
-        let finished = false;
-        for (let calls = 0; calls < 32 && !events.length && !finished; calls++) {
-          throwIfAborted(signal);
-          if (state.phase === "old" && state.ready) {
-            events = state.buffer.splice(0, request.limit);
-            if (!state.buffer.length) { state.ready = false; state.end = state.start! - 1; state.start = undefined; }
-            if (state.end < state.floor && !state.buffer.length) finished = true;
-            continue;
-          }
-          if (state.phase === "old" && state.end < state.floor) { finished = true; break; }
-          if (state.phase === "old" && state.start === undefined) state.start = Math.max(state.floor, state.end - state.span + 1);
-          const response = await send<FilterLogEventsCommandOutput>(new (await awsSdk()).FilterLogEventsCommand({
-            ...identifier(source.logGroup), logStreamNames: source.logStreams?.length ? source.logStreams : undefined,
-            startTime: state.phase === "recent" ? state.recentStart : state.start,
-            endTime: state.phase === "recent" ? request.endTime : state.end,
-            startFromHead: state.phase === "old", filterPattern: request.filterPattern || undefined,
-            nextToken: state.token, limit: Math.min(10000, request.limit),
-          }), signal);
-          throwIfAborted(signal);
-          const token = response.nextToken;
-          if (token && state.seen.includes(token)) throw new Error("CloudWatch returned a repeated continuation token.");
-          if (token) state.seen.push(token);
-          state.token = token;
-          const page = (response.events ?? []).map((event) => ({
-            id: `${source.logGroup}:${event.eventId ?? eventId([event.logStreamName, event.timestamp, event.ingestionTime, event.message])}`,
-            timestamp: event.timestamp ?? request.startTime, ingestionTime: event.ingestionTime,
-            message: event.message ?? "", logGroup: nameFromIdentifier(source.logGroup), logStream: event.logStreamName ?? "",
-          }));
-          if (state.phase === "recent") {
-            events = page;
-            if (!token) { state.phase = "old"; state.seen = []; if (state.end < state.floor) finished = true; }
-          } else {
-            state.buffer.push(...page);
-            const over = state.buffer.length > Math.max(2000, request.limit * 4) || state.buffer.reduce((sum, item) => sum + item.message.length, 0) > 8_000_000;
-            if (state.start === state.end) {
-              // All rows have the same timestamp, so ascending service order is
-              // also a valid descending order and can be streamed page by page.
-              events = state.buffer.splice(0, request.limit);
-              if (!token) { state.end = state.start! - 1; state.start = undefined; state.seen = []; }
-            } else if (over) {
-              state.span = Math.max(1, Math.floor((state.end - state.start! + 1) / 2));
-              state.start = undefined; state.buffer = []; state.token = undefined; state.seen = [];
-            } else if (!token) {
-              // Newest first, but same-millisecond rows keep service (ingestion) order;
-              // a plain reverse would show multi-line output upside-down.
-              if (state.buffer.length) { state.buffer.sort((a, b) => b.timestamp - a.timestamp); state.ready = true; }
-              else { state.end = state.start! - 1; state.start = undefined; state.span = Math.min(Number.MAX_SAFE_INTEGER, state.span * 4); }
-              state.seen = [];
-            }
-          }
-        }
-        let cursor: string | undefined;
-        if (!finished || state.buffer.length) {
-          cursor = request.cursor ?? `recent:${randomUUID()}`;
-          recentCursors.delete(cursor);
-          let retained = [...recentCursors.values()].reduce((sum, entry) => sum + entry.buffer.reduce((n, event) => n + event.message.length, 0), 0);
-          const incoming = state.buffer.reduce((sum, event) => sum + event.message.length, 0);
-          while (recentCursors.size && (recentCursors.size >= 128 || retained + incoming > 32_000_000)) {
-            const oldest = recentCursors.keys().next().value!;
-            retained -= recentCursors.get(oldest)!.buffer.reduce((n, event) => n + event.message.length, 0);
-            recentCursors.delete(oldest);
-          }
-          recentCursors.set(cursor, { ...state, expires: Date.now() + 23 * 3600000 });
-        } else if (request.cursor) recentCursors.delete(request.cursor);
-        return { requestId: request.requestId, state: "complete", events, replace: !request.cursor, cursor, ...(cursor && !events.length ? { incomplete: true } : {}), ...(cursor && state.phase === "old" ? { cursorUpperBound: state.end } : {}), stats: { recordsMatched: events.length, elapsedMs: Date.now() - started } };
-      }
-      for (const [id, value] of cursors)
-        if (value.expires <= started) cursors.delete(id);
-      const saved = request.cursor ? cursors.get(request.cursor) : undefined;
-      if (request.cursor && (!saved || saved.signature !== key))
-        throw new Error(
-          "Continuation expired or belongs to a different query. Run the query again.",
-        );
-      const states: SourceCursor[] = saved
-        ? saved.sources.map((source) => ({ ...source, seen: [...source.seen] }))
-        : request.sources.map(() => ({ done: false, seen: [] }));
-      const active = states
-        .map((state, index) => ({ state, index }))
-        .filter(({ state }) => !state.done);
-      const selected = active.slice(0, request.limit);
-      const quota = Math.floor(request.limit / Math.max(1, selected.length));
-      const remainder = request.limit % Math.max(1, selected.length);
-      let truncated = false;
-      const batches = await Promise.all(
-        selected.map(async ({ state, index }, position) => {
-          const source = request.sources[index];
-          // FilterLogEvents may return empty pages while still searching the range.
-          // Follow those pages automatically, with a bounded per-source scan budget.
-          // A remaining token is kept so the user can continue an exceptionally sparse scan.
-          for (let page = 0; page < 32; page++) {
-            throwIfAborted(signal);
-            const response = await send<FilterLogEventsCommandOutput>(
-              new (await awsSdk()).FilterLogEventsCommand({
-                ...identifier(source.logGroup),
-                logStreamNames: source.logStreams?.length
-                  ? source.logStreams
-                  : undefined,
-                startTime: request.startTime,
-                endTime: request.endTime,
-                filterPattern: request.filterPattern || undefined,
-                nextToken: state.token,
-                limit: Math.min(10000, quota + (position < remainder ? 1 : 0)),
-              }),
-              signal,
-            );
-            throwIfAborted(signal);
-            const token = response.nextToken;
-            if (
-              token &&
-              (state.seen.includes(token) || state.seen.length >= 256)
-            ) {
-              state.done = true;
-              state.token = undefined;
-              truncated = true;
-            } else {
-              state.done = !token;
-              state.token = token;
-              if (token) state.seen.push(token);
-            }
-            const events = (response.events ?? []).map((event) => ({
-              id: `${source.logGroup}:${event.eventId ?? eventId([event.logStreamName, event.timestamp, event.ingestionTime, event.message])}`,
-              timestamp: event.timestamp ?? request.startTime,
-              ingestionTime: event.ingestionTime,
-              message: event.message ?? "",
-              logGroup: nameFromIdentifier(source.logGroup),
-              logStream: event.logStreamName ?? "",
-            }));
-            if (events.length || state.done) return events;
-          }
-          return [];
-        }),
-      );
-      throwIfAborted(signal);
-      const events = batches
-        .flat()
-        .sort((a, b) => a.timestamp - b.timestamp || a.id.localeCompare(b.id));
-      const unique = [
-        ...new Map(events.map((event) => [event.id, event])).values(),
-      ];
-      let cursor: string | undefined;
-      if (states.some((state) => !state.done)) {
-        cursor = request.cursor ?? randomUUID();
-        if (!cursors.has(cursor) && cursors.size >= 128)
-          cursors.delete(cursors.keys().next().value!);
-        cursors.set(cursor, {
-          signature: key,
-          sources: states,
-          expires: Date.now() + 15 * 60000,
-        });
-      } else if (request.cursor) cursors.delete(request.cursor);
-      return {
-        requestId: request.requestId,
-        state: "complete",
-        events: unique.slice(0, request.limit),
-        replace: !request.cursor,
-        cursor,
-        truncated: truncated || unique.length > request.limit,
-        stats: {
-          recordsMatched: unique.length,
-          elapsedMs: Date.now() - started,
-        },
-      };
+      return request.direction === "older"
+        ? recent.events(request, signal)
+        : history.events(request, signal);
     },
     async live(request, signal, emit) {
-      if (request.sources.length > 10)
-        throw new Error("CloudWatch Live Tail supports at most 10 log groups");
-      if (
-        request.sources.length > 1 &&
-        request.sources.some((source) => source.logStreams?.length)
-      )
-        throw new Error(
-          "CloudWatch Live Tail permits stream selection only when one log group is selected",
-        );
       gate();
-      throwIfAborted(signal);
-      const identifiers = await Promise.all(
-        request.sources.map((source) => resolveArn(source.logGroup, signal)),
+      return liveTail(request, signal, emit, send, (group) =>
+        resolveArn(group, signal),
       );
-      const streamController = new AbortController();
-      const streamSignal = AbortSignal.any([signal, streamController.signal]);
-      try {
-        const response = await send<StartLiveTailCommandOutput>(
-          new (await awsSdk()).StartLiveTailCommand({
-            logGroupIdentifiers: identifiers,
-            logStreamNames: request.sources[0]?.logStreams?.length
-              ? request.sources[0].logStreams
-              : undefined,
-            logEventFilterPattern: request.filterPattern || undefined,
-          }),
-          streamSignal,
-        );
-        if (!response.responseStream)
-          throw new Error(
-            "CloudWatch did not return a Live Tail response stream",
-          );
-        const iterator = response.responseStream[Symbol.asyncIterator]();
-        let session = "live";
-        let sequence = 0;
-        let announced = false, lastSampled = false;
-        try {
-          while (true) {
-            throwIfAborted(signal);
-            let idleTimeout = false;
-            const timer = setTimeout(() => {
-              idleTimeout = true;
-              streamController.abort();
-            }, 30000);
-            const next = await withAbort(iterator.next(), streamSignal)
-              .catch((error) => {
-                if (idleTimeout && !signal.aborted)
-                  throw new Error(
-                    "Live Tail connection stopped sending updates. Start Live again to reconnect.",
-                  );
-                throw error;
-              })
-              .finally(() => clearTimeout(timer));
-            throwIfAborted(signal);
-            if (next.done) break;
-            const chunk = next.value;
-            if (chunk.SessionTimeoutException)
-              throw new Error(
-                chunk.SessionTimeoutException.message ??
-                  "Live Tail session reached its service time limit",
-              );
-            if (chunk.SessionStreamingException)
-              throw new Error(
-                chunk.SessionStreamingException.message ??
-                  "Live Tail session failed",
-              );
-            if (chunk.sessionStart) {
-              session = chunk.sessionStart.sessionId ?? session;
-              emit({
-                requestId: request.requestId,
-                state: "running",
-                liveState: "streaming",
-                sampled: false,
-              });
-            }
-            if (chunk.sessionUpdate) {
-              const results = chunk.sessionUpdate.sessionResults ?? [];
-              const events = results.map((event) => ({
-                id: `${session}:${sequence++}`,
-                timestamp: event.timestamp ?? Date.now(),
-                ingestionTime: event.ingestionTime,
-                message: event.message ?? "",
-                logGroup: nameFromIdentifier(event.logGroupIdentifier ?? ""),
-                logStream: event.logStreamName ?? "",
-              }));
-              const sampled = chunk.sessionUpdate.sessionMetadata?.sampled ?? false;
-              // The service sends an update about every second; skip empty ones
-              // that change nothing, so idle live views do not re-render.
-              if (!events.length && announced && sampled === lastSampled) continue;
-              announced = true;
-              lastSampled = sampled;
-              emit({
-                requestId: request.requestId,
-                state: "running",
-                events,
-                replace: false,
-                liveState: "streaming",
-                sampled,
-                truncated: false,
-              });
-            }
-          }
-          emit({ requestId: request.requestId, state: "complete" });
-        } finally {
-          streamController.abort();
-          if (iterator.return) {
-            try {
-              await withAbort(iterator.return(), AbortSignal.timeout(1000));
-            } catch {
-              /* The request abort signal closes the transport even if the iterator cannot finish promptly. */
-            }
-          }
-        }
-      } finally {
-        streamController.abort();
-      }
     },
     destroy() {
       destroyed = true;
-      cursors.clear();
-      recentCursors.clear();
+      history.clear();
+      recent.clear();
       metadataContinuations.clear();
       arnCache.clear();
       if (transport)

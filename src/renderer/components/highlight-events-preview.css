@@ -61,8 +61,6 @@
   min-width: 0;
 }
 .highlight-events-theme .viewer-toolbar,
-.highlight-events-theme .viewer-meta,
-.highlight-events-theme .viewer-footer,
 .highlight-events-theme .event-inspector,
 .highlight-events-theme .json-field-actions,
 .highlight-events-theme .hybrid-detail > .mantine-Group-root {

@@ -29,7 +29,6 @@ test.beforeEach(async () => {
 
 test.afterEach(async () => {
   if (app && app.process().exitCode === null) {
-    const child = app.process();
     expect(
       await app.evaluate(({ BrowserWindow }) =>
         BrowserWindow.getAllWindows().every((window) => !window.isVisible()),

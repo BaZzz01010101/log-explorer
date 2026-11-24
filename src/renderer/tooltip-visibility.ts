@@ -5,7 +5,7 @@ const ignoredTags = new Set(["SVG", "SCRIPT", "STYLE", "TEMPLATE", "NOSCRIPT"]);
 const controls = new Set(["BUTTON", "INPUT", "TEXTAREA", "SELECT"]);
 
 /** Read label children without invoking components or creating temporary DOM. */
-export function tooltipLabelText(label: ReactNode): string | undefined {
+function tooltipLabelText(label: ReactNode): string | undefined {
   if (label === null || label === undefined || typeof label === "boolean")
     return "";
   if (

@@ -6,7 +6,8 @@ import type {
 } from "../src/shared/contracts";
 import { createMultiSourceEvents } from "../src/main/multi-source-events";
 import { createLogService } from "../src/main/log-service";
-import { createAwsAdapter, type LogAdapter } from "../src/main/aws-adapter";
+import { createAwsAdapter } from "../src/main/aws-adapter";
+import type { LogAdapter } from "../src/main/log-adapter";
 
 const west: Connection = {
   id: "west",
@@ -437,7 +438,7 @@ it("expires a merge continuation after a partial regional failure rather than re
 
 it("bounds output message characters and preserves the unconsumed head for the next page", async () => {
   const message = "x".repeat(1_000_000);
-  const merger = createMultiSourceEvents((connection) =>
+  const merger = createMultiSourceEvents(() =>
     adapter(async (input) => {
       const offset = Number(input.cursor ?? 0);
       return {

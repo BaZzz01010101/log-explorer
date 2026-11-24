@@ -2,7 +2,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { expect, it } from "vitest";
 import { EventLoadingIndicator } from "../src/renderer/components/EventLoadingIndicator";
 import { EventStatus } from "../src/renderer/components/EventStatus";
-import type { TabRuntime } from "../src/renderer/useLogJobs";
+import type { TabRuntime } from "../src/renderer/log-runtime";
 
 function status(runtime?: Partial<TabRuntime>, shown = 12, loaded = 12) {
   return renderToStaticMarkup(

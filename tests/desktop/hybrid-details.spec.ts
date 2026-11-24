@@ -9,7 +9,6 @@ import {
 import { execFileSync } from "node:child_process";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { join, resolve, sep } from "node:path";
-import type { QueryUpdate } from "../../src/shared/contracts";
 import { createWorkspace } from "../../src/shared/workspace";
 
 test.setTimeout(90000);
@@ -19,7 +18,6 @@ let page: Page;
 let directory: string;
 let errors: string[];
 const temporaryRoot = resolve(".tmp", "desktop-hybrid-details");
-type ProbeWindow = Window & { inspectorUpdates: QueryUpdate[] };
 
 test.beforeEach(async () => {
   await mkdir(temporaryRoot, { recursive: true });

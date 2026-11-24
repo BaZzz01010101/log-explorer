@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import type { LogEvent, QueryUpdate } from "../shared/contracts";
 import { eventContentKey, LIVE_OVERLAP_MS } from "../shared/live-catch-up";
-import { delay, throwIfAborted } from "./aws-adapter";
+import { delay, throwIfAborted } from "./async";
 
 /** New events become searchable a few seconds after Live delivers them. */
 export const LIVE_SETTLE_MS = 10_000;

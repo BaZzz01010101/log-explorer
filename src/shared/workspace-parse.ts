@@ -15,6 +15,7 @@ import type {
   VisualizationPreset,
   Workspace,
 } from "./contracts";
+import { comparableGcp } from "./source-identity";
 import { tabTitle } from "./source-labels";
 import { historyRetentionDays, recentClosedTabs } from "./closed-tab-history";
 import { HIGHLIGHT_TEXT_COLORS } from "./quick-highlight";
@@ -290,7 +291,9 @@ function parseView(value: unknown): ViewConfig {
             ...new Set(
               raw.hiddenSources.filter(
                 (key): key is string =>
-                  typeof key === "string" && key.length > 0 && key.length <= 4096,
+                  typeof key === "string" &&
+                  key.length > 0 &&
+                  key.length <= 4096,
               ),
             ),
           ].slice(0, 200),
@@ -359,7 +362,8 @@ function parseSources(value: unknown): LogSource[] {
         (other) =>
           other.logGroup === source.logGroup &&
           other.connectionId === source.connectionId &&
-          JSON.stringify(other.gcp) === JSON.stringify(source.gcp) &&
+          JSON.stringify(comparableGcp(other.gcp)) ===
+            JSON.stringify(comparableGcp(source.gcp)) &&
           JSON.stringify(other.logStreams) ===
             JSON.stringify(source.logStreams),
       ) === index,
@@ -582,9 +586,7 @@ export function parsePreferences(value: unknown): Preferences {
                 source: string(rule.source, "", 512),
                 path: string(rule.path, "", 512),
                 ...(rule.regex === true ? { regex: true } : {}),
-                ...(rule.caseSensitive === true
-                  ? { caseSensitive: true }
-                  : {}),
+                ...(rule.caseSensitive === true ? { caseSensitive: true } : {}),
               },
             ]
           : [];

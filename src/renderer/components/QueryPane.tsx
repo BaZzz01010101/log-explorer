@@ -5,7 +5,6 @@ import {
   Button,
   Group,
   Modal,
-  Select,
   Text,
   TextInput,
 } from "@mantine/core";
@@ -25,7 +24,7 @@ import type {
   ViewConfig,
   Workspace,
 } from "../../shared/contracts";
-import type { TabRuntime } from "../useLogJobs";
+import type { TabRuntime } from "../log-runtime";
 import type { ContextRange } from "../../shared/context-range";
 import { LogViewer } from "./LogViewer";
 import { requestMatchesTab } from "../../shared/query-state";

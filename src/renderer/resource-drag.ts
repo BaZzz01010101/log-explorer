@@ -11,8 +11,8 @@ export const SOURCE_MOVE_DROP = "explorer:source-move-drop";
 export const RESOURCE_CONNECTION = "explorer:resource-connection";
 /** Explorer drop targets that accept resource drags, besides tab and pane surfaces. */
 export const RESOURCE_DROP_TARGETS = ".source-badges, [data-view-favorites]";
-export const TAB_SOURCE_DRAG_START = "explorer:tab-source-drag-start";
-export const TAB_SOURCE_DRAG_END = "explorer:tab-source-drag-end";
+const TAB_SOURCE_DRAG_START = "explorer:tab-source-drag-start";
+const TAB_SOURCE_DRAG_END = "explorer:tab-source-drag-end";
 export type ResourcePoint = { x: number; y: number };
 export type ResourceDragMove = {
   payload: ResourcePayload;

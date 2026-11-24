@@ -6,12 +6,9 @@ import type {
   QueryRequest,
   QueryUpdate,
 } from "../shared/contracts";
-import {
-  createAwsAdapter,
-  Semaphore,
-  throwIfAborted,
-  type LogAdapter,
-} from "./aws-adapter";
+import { createAwsAdapter } from "./aws-adapter";
+import { Semaphore, throwIfAborted } from "./async";
+import type { LogAdapter } from "./log-adapter";
 import { createLiveCatchUp } from "./live-catch-up";
 import { runMergedLive } from "./live-merge";
 import { createMultiSourceEvents, scopedQueries } from "./multi-source-events";

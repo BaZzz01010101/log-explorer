@@ -5,7 +5,7 @@ import type {
   QueryRequest,
   QueryUpdate,
 } from "../src/shared/contracts";
-import type { LogAdapter } from "../src/main/aws-adapter";
+import type { LogAdapter } from "../src/main/log-adapter";
 import { LIVE_SETTLE_MS } from "../src/main/live-catch-up";
 import { createLogService } from "../src/main/log-service";
 

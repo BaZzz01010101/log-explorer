@@ -813,9 +813,6 @@ export function WorkspaceDragSurface({
     timer: ReturnType<typeof setTimeout>;
   } | null>(null);
   const entries = workspaceEntries(workspace);
-  const selectedIds = selected.filter((id) =>
-    entries.some((tab) => tab.id === id),
-  );
   const clearHover = () => {
     if (hover.current) clearTimeout(hover.current.timer);
     hover.current = null;

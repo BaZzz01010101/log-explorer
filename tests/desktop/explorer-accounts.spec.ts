@@ -97,8 +97,6 @@ test.afterEach(async () => {
     retryDelay: 100,
   });
 });
-const region = (id: string) =>
-  page.locator(`[data-node-kind="region"][data-connection-id="${id}"]`);
 const groups = (id: string) =>
   page.locator(`[data-node-kind="group"][data-connection-id="${id}"]`);
 const tree = () =>

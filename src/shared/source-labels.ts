@@ -1,5 +1,6 @@
 import type { Connection, LogEvent, LogSource } from "./contracts";
 import { formatSourceName, type SourceNameFormats } from "./display-rules";
+import { comparableGcp } from "./source-identity";
 
 export const sourceCount = (sources: LogSource[]): number =>
   sources.reduce(
@@ -235,13 +236,13 @@ export function sourceBadgeKey(
   return JSON.stringify([
     source.connectionId ?? defaultConnectionId,
     source.logGroup,
-    source.gcp ?? null,
+    comparableGcp(source.gcp),
     stream ?? null,
   ]);
 }
 
 /** True when an event was returned for this source badge. */
-export function eventInSourceBadge(
+function eventInSourceBadge(
   event: LogEvent,
   source: LogSource,
   stream: string | undefined,
@@ -252,7 +253,8 @@ export function eventInSourceBadge(
     (event.connectionId ?? defaultConnectionId) ===
       (source.connectionId ?? defaultConnectionId) &&
     (!event.gcpSource ||
-      JSON.stringify(source.gcp) === JSON.stringify(event.gcpSource)) &&
+      JSON.stringify(comparableGcp(source.gcp)) ===
+        JSON.stringify(comparableGcp(event.gcpSource))) &&
     (!stream || stream === event.logStream)
   );
 }

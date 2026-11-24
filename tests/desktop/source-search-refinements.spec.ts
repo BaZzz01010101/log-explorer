@@ -124,7 +124,6 @@ test.beforeEach(async ({}, info) => {
 });
 test.afterEach(async () => {
   if (app?.process().exitCode === null) {
-    const child = app.process();
     await closeAppNaturally(app);
   }
   expect(errors).toEqual([]);
@@ -140,10 +139,6 @@ test.afterEach(async () => {
     retryDelay: 100,
   });
 });
-const row = (name: string) => page.getByRole("treeitem", { name, exact: true });
-const action = (name: string) =>
-  page.getByRole("menuitem", { name, exact: true });
-const selected = () => page.locator('.resource-row[aria-selected="true"]');
 const stored = async () =>
   restoreWorkspace(
     (await page.evaluate(() => window.explorer.loadWorkspace())).workspace,
@@ -201,20 +196,6 @@ test.beforeEach(async ({}, info) => {
     page.locator('.virtual-event[data-event-id="refinement-0"]'),
   ).toBeVisible();
 });
-const local = () =>
-  page.getByRole("textbox", {
-    name: "Local filter loaded events",
-    exact: true,
-  });
-const quick = () =>
-  page.getByRole("textbox", {
-    name: "Highlight text in loaded events",
-    exact: true,
-  });
-const inspector = () =>
-  page.getByRole("region", { name: "Event inspector", exact: true });
-const manualMarks = () =>
-  page.locator('.virtual-event mark[data-highlight-origins~="manual"]');
 
 for (const theme of ["light", "dark"]) {
   if (runsBehaviorTest(theme))

@@ -8,7 +8,7 @@ const ARROWS: Record<string, string> = {
 };
 
 /** "Control+Shift+ArrowDown" → "Ctrl+Shift+↓"; empty → "unassigned". */
-export function shortcutText(shortcut: string | undefined): string {
+function shortcutText(shortcut: string | undefined): string {
   if (!shortcut) return "unassigned";
   return shortcut
     .split("+")

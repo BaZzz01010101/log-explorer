@@ -11,7 +11,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { join, resolve, sep } from "node:path";
 import {
   createWorkspace,
-  restoreWorkspace,
+  
 } from "../../src/shared/workspace";
 import { closeAppNaturally, desktopExecutablePath } from "./desktop-app";
 
@@ -82,7 +82,6 @@ test.beforeEach(async () => {
 });
 test.afterEach(async () => {
   if (app?.process().exitCode === null) {
-    const child = app.process();
     await closeAppNaturally(app);
   }
   expect(errors).toEqual([]);
@@ -98,14 +97,6 @@ test.afterEach(async () => {
     retryDelay: 100,
   });
 });
-const row = (name: string) => page.getByRole("treeitem", { name, exact: true });
-const action = (name: string) =>
-  page.getByRole("menuitem", { name, exact: true });
-const selected = () => page.locator('.resource-row[aria-selected="true"]');
-const stored = async () =>
-  restoreWorkspace(
-    (await page.evaluate(() => window.explorer.loadWorkspace())).workspace,
-  );
 
 test("field menus deserialize nested values temporarily, preserve raw records and make decoded columns and filters work", async () => {
   test.setTimeout(240000);

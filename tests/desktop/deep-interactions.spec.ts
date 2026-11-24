@@ -158,25 +158,6 @@ async function paneRectangles() {
   );
 }
 
-async function drag(source: Locator, target: Locator) {
-  const start = await source.boundingBox();
-  const end = await target.boundingBox();
-  expect(start).not.toBeNull();
-  expect(end).not.toBeNull();
-  const x = start!.x + start!.width / 2;
-  const y = start!.y + start!.height / 2;
-  await page.mouse.move(x, y);
-  await page.mouse.down();
-  try {
-    await page.mouse.move(x + 10, y + 2, { steps: 3 });
-    await page.mouse.move(end!.x + end!.width / 2, end!.y + end!.height / 2, {
-      steps: 15,
-    });
-    await expect(page.locator(".pane-drop-overlay")).toBeVisible();
-  } finally {
-    await page.mouse.up();
-  }
-}
 
 test.beforeEach(async () => {
   test.skip(

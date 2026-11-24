@@ -114,7 +114,11 @@ export type WorkspaceAction =
   | { type: "favorites/save-resources"; payload: ResourcePayload }
   | { type: "favorites/rename"; favoriteId: string; title: string }
   /** Moves a favorite before `beforeFavoriteId`, or to the end when it is null. */
-  | { type: "favorites/move"; favoriteId: string; beforeFavoriteId: string | null }
+  | {
+      type: "favorites/move";
+      favoriteId: string;
+      beforeFavoriteId: string | null;
+    }
   /** `reuse` shows the favorite's open tab, or opens it in the preview tab. */
   | { type: "favorites/open"; favoriteId: string; reuse?: boolean }
   | { type: "favorites/remove"; favoriteId: string }
