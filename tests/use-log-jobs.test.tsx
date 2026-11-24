@@ -48,15 +48,18 @@ let cleanupErrors: string[];
 function Harness({
   value,
   awsEnabled = false,
+  liveAsleep = false,
 }: {
   value: Workspace;
   awsEnabled?: boolean;
+  liveAsleep?: boolean;
 }) {
   jobs = useLogJobs(
     value,
     true,
     (message) => cleanupErrors.push(message),
     awsEnabled,
+    liveAsleep,
   );
   return null;
 }
@@ -1437,5 +1440,220 @@ describe("automatic date range updates", () => {
       await vi.advanceTimersByTimeAsync(500);
     });
     expect(requests).toHaveLength(3);
+  });
+});
+
+const HOUR = 3600000;
+const streaming = (requestId: string, events: LogEvent[] = []): QueryUpdate => ({
+  requestId,
+  state: "running",
+  liveState: "streaming",
+  events,
+});
+const sleep = (value: boolean) =>
+  act(async () =>
+    renderer!.update(<Harness value={workspace} liveAsleep={value} />),
+  );
+
+const later = (time: number) =>
+  act(async () => {
+    await vi.advanceTimersByTimeAsync(time);
+  });
+
+describe("Live sleep and missed events", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(100 * HOUR);
+  });
+  afterEach(() => vi.useRealTimers());
+
+  it("sleeps a visible Live view and resumes it with the events missed meanwhile", async () => {
+    const tab = workspace.tabs[0];
+    await mount();
+    await act(async () => jobs.run(tab, true));
+    const old = liveRequests[0];
+    expect(old.catchUp).toBeUndefined();
+    await emit(streaming(old.requestId, [logEvent]));
+    await later(HOUR);
+    const slept = Date.now();
+    await sleep(true);
+    expect(cancellations).toContain(old.requestId);
+    expect(jobs.runtimes[tab.id]).toMatchObject({
+      live: true,
+      livePaused: true,
+      events: [logEvent],
+    });
+    // Events held back by a merged stream, and its end.
+    await emit(streaming(old.requestId, [{ ...logEvent, id: "late" }]));
+    await emit({ requestId: old.requestId, state: "cancelled" });
+    expect(jobs.runtimes[tab.id]).toMatchObject({
+      live: true,
+      events: [logEvent],
+    });
+    await later(8 * HOUR);
+    await sleep(false);
+    expect(liveRequests).toHaveLength(2);
+    expect(liveRequests[1].catchUp).toEqual({
+      from: slept - 120_000,
+      limit: workspace.preferences.maxEvents,
+    });
+    expect(jobs.runtimes[tab.id]).toMatchObject({
+      live: true,
+      livePaused: false,
+      catchUp: { state: "loading" },
+      events: [logEvent],
+    });
+    // Sleeping again before the events were loaded keeps the whole period.
+    const second = liveRequests[1].requestId;
+    await emit(streaming(second));
+    await sleep(true);
+    await later(HOUR);
+    await sleep(false);
+    expect(liveRequests[2].catchUp!.from).toBe(slept - 120_000);
+    const third = liveRequests[2].requestId;
+    await emit(streaming(third));
+    await emit({
+      requestId: third,
+      state: "running",
+      replace: false,
+      catchUp: { state: "complete" },
+    });
+    expect(jobs.runtimes[tab.id].missedSince).toBeUndefined();
+    const again = Date.now();
+    await sleep(true);
+    await sleep(false);
+    expect(liveRequests[3].catchUp!.from).toBe(again - 120_000);
+  });
+
+  it("never loads events from before Live started or after Stop Live", async () => {
+    const tab = workspace.tabs[0];
+    await mount();
+    await act(async () => jobs.run(tab, true));
+    await sleep(true);
+    await sleep(false);
+    expect(liveRequests[1].catchUp).toBeUndefined();
+    await emit(streaming(liveRequests[1].requestId));
+    const connected = Date.now();
+    await later(5000);
+    await sleep(true);
+    await sleep(false);
+    expect(liveRequests[2].catchUp!.from).toBe(connected);
+    await act(async () => jobs.cancel(tab.id));
+    await sleep(true);
+    await sleep(false);
+    expect(liveRequests).toHaveLength(3);
+    await act(async () => jobs.run(tab, true));
+    expect(liveRequests[3].catchUp).toBeUndefined();
+  });
+
+  it("stays stopped when Live is stopped while asleep", async () => {
+    const tab = workspace.tabs[0];
+    await mount();
+    await act(async () => jobs.run(tab, true));
+    await emit(streaming(liveRequests[0].requestId, [logEvent]));
+    await sleep(true);
+    await act(async () => jobs.cancel(tab.id));
+    await sleep(false);
+    expect(liveRequests).toHaveLength(1);
+    expect(jobs.runtimes[tab.id]).toMatchObject({
+      live: false,
+      state: "cancelled",
+      events: [logEvent],
+    });
+  });
+
+  it("loads missed events when an inactive tab is shown again", async () => {
+    const { first, second } = twoTabs();
+    await mount();
+    await act(async () => jobs.run(first, true));
+    await emit(streaming(liveRequests[0].requestId));
+    await later(HOUR);
+    const hidden = Date.now();
+    await replaceWorkspace(
+      workspaceReducer(workspace, { type: "tab/select", tabId: second.id }),
+    );
+    await later(HOUR);
+    await replaceWorkspace(
+      workspaceReducer(workspace, { type: "tab/select", tabId: first.id }),
+    );
+    expect(liveRequests[1].catchUp!.from).toBe(hidden - 120_000);
+  });
+
+  it("continues the streaming filter and keeps rows when the filter was edited", async () => {
+    const tab = workspace.tabs[0];
+    await mount();
+    await act(async () => jobs.run(tab, true));
+    await emit(streaming(liveRequests[0].requestId, [logEvent]));
+    await replaceWorkspace({
+      ...workspace,
+      tabs: workspace.tabs.map((item) =>
+        item.id === tab.id ? { ...item, filterPattern: "edited" } : item,
+      ),
+    });
+    await sleep(true);
+    await sleep(false);
+    expect(liveRequests[1].filterPattern).toBe(liveRequests[0].filterPattern);
+    expect(jobs.runtimes[tab.id].events).toEqual([logEvent]);
+  });
+
+  it("loads missed events on Retry after a failure and after a suspended computer resumes", async () => {
+    const tab = workspace.tabs[0];
+    await mount();
+    await act(async () => jobs.run(tab, true));
+    await emit(streaming(liveRequests[0].requestId, [logEvent]));
+    await later(HOUR);
+    const failed = Date.now();
+    await emit({
+      requestId: liveRequests[0].requestId,
+      state: "error",
+      error: "Connection lost",
+    });
+    await later(HOUR);
+    await act(async () => jobs.run(tab, true));
+    expect(liveRequests[1].catchUp!.from).toBe(failed - 120_000);
+    const id = liveRequests[1].requestId;
+    await emit(streaming(id));
+    await emit({
+      requestId: id,
+      state: "running",
+      catchUp: { state: "complete" },
+    });
+    await later(HOUR);
+    const suspended = Date.now();
+    vi.setSystemTime(suspended + 3 * HOUR);
+    await later(10_000);
+    expect(liveRequests).toHaveLength(3);
+    expect(liveRequests[2].catchUp!.from).toBe(suspended - 120_000);
+    expect(cancellations).toContain(id);
+  });
+
+  it("adds only missing events, keeping genuine repeats", async () => {
+    const tab = workspace.tabs[0];
+    await mount();
+    await act(async () => jobs.run(tab, true));
+    await emit(streaming(liveRequests[0].requestId, [logEvent]));
+    await sleep(true);
+    await sleep(false);
+    const history = (name: string, message = logEvent.message) => ({
+      ...logEvent,
+      id: name,
+      message,
+    });
+    const update = {
+      requestId: liveRequests[1].requestId,
+      state: "running" as const,
+      replace: false,
+      events: [history("h1"), history("h2", "missed"), history("h3")],
+      occurrences: [1, 1, 2],
+    };
+    const ids = () => jobs.runtimes[tab.id].events.map((item) => item.id);
+    await emit(update);
+    expect(ids()).toEqual(["fresh-event", "h2", "h3"]);
+    await emit({
+      ...update,
+      events: [history("live", "missed"), history("new", "new")],
+      occurrences: [1, 1],
+    });
+    expect(ids()).toEqual(["fresh-event", "h2", "h3", "new"]);
   });
 });

@@ -1,4 +1,4 @@
-import { useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { TextInput } from "@mantine/core";
 import {
   IconX,
@@ -76,6 +76,17 @@ export function ServerFilterInput({
     syntax === "aws" && focused && !dismissed
       ? filterCompletions(value, caret)
       : [];
+  const root = useRef<HTMLDivElement>(null);
+  const suggesting = suggestions.length > 0;
+  useEffect(() => {
+    if (!suggesting || typeof document === "undefined") return;
+    const press = (event: Event) => {
+      if (!(event.target instanceof Node && root.current?.contains(event.target)))
+        setDismissed(true);
+    };
+    document.addEventListener("pointerdown", press, true);
+    return () => document.removeEventListener("pointerdown", press, true);
+  }, [suggesting]);
   const choice = Math.min(selected, Math.max(0, suggestions.length - 1));
   const accept = (index: number) => {
     const item = suggestions[index];
@@ -92,6 +103,7 @@ export function ServerFilterInput({
   };
   return (
     <div
+      ref={root}
       className={`server-filter-control ${syntax === "aws" ? "server-filter-pattern" : ""}`}
     >
       <div className="server-filter-text">

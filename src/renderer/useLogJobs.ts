@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type {
   LogEvent,
+  LiveCatchUp,
   LiveFailure,
   LiveState,
   LogTab,
@@ -10,6 +11,7 @@ import type {
   Workspace,
 } from "../shared/contracts";
 import { sourceIdentity } from "../shared/source-identity";
+import { LIVE_OVERLAP_MS, withoutShownEvents } from "../shared/live-catch-up";
 import { compileAwsViewFilter } from "../shared/server-filter";
 import { compileGcpViewFilter } from "../shared/gcp-server-filter";
 import { queryPageLimit } from "../shared/log-query-limits";
@@ -27,6 +29,11 @@ export interface TabRuntime {
   liveState?: LiveState;
   liveReceived?: number;
   liveFailures?: LiveFailure[];
+  /** When this Live session first connected. */
+  liveSince?: number;
+  /** Start of the period whose events may be missing. */
+  missedSince?: number;
+  catchUp?: LiveCatchUp;
   cursor?: string;
   error?: string;
   stats?: QueryStats;
@@ -36,6 +43,20 @@ export interface TabRuntime {
   evicted: number;
   request?: QueryRequest;
   recentHistory?: { request: QueryRequest; cursor: string; evicted: number };
+}
+const BEAT_MS = 10_000;
+/** Hidden windows run timers once a minute; a longer pause is a suspend. */
+const SUSPEND_MS = 150_000;
+
+function missedFrom(
+  runtime: TabRuntime,
+  receiving: number,
+): number | undefined {
+  if (runtime.liveSince === undefined) return runtime.missedSince;
+  return Math.min(
+    runtime.missedSince ?? Infinity,
+    Math.max(runtime.liveSince, receiving - LIVE_OVERLAP_MS),
+  );
 }
 const empty = (): TabRuntime => ({
   events: [],
@@ -49,6 +70,7 @@ export function useLogJobs(
   ready: boolean,
   onCleanupError?: (message: string) => void,
   awsEnabled = false,
+  liveAsleep = false,
 ) {
   const previousAccess = useRef({ ready, awsEnabled });
   const workspaceRef = useRef(workspace);
@@ -83,6 +105,14 @@ export function useLogJobs(
       workspaceRef.current.panes.some((pane) => pane.tabId === tabId),
     [],
   );
+  const liveAsleepRef = useRef(liveAsleep);
+  liveAsleepRef.current = liveAsleep;
+  const canStream = useCallback(
+    (tabId: string) => isVisible(tabId) && !liveAsleepRef.current,
+    [isVisible],
+  );
+  /** Last time the app was certainly running, unlike a suspended computer. */
+  const lastBeat = useRef(Date.now());
   const observedTimeRanges = useRef(new Map<string, string>());
   const pendingTimeRefresh = useRef(
     new Map<string, ReturnType<typeof setTimeout>>(),
@@ -123,16 +153,18 @@ export function useLogJobs(
     mounted.current = true;
     const unsubscribe = window.explorer.onUpdate((update) => {
       const job = requests.current.get(update.requestId);
+      const now = Date.now();
+      const beat = lastBeat.current;
       if (
         !job ||
-        (job.live && !isVisible(job.tabId)) ||
+        (job.live && !canStream(job.tabId)) ||
         !ownsRequest(job.tabId, job.generation, update.requestId)
       )
         return;
       setRuntimes((previous) => {
         // React may evaluate this updater after another run has taken ownership.
         if (
-          (job.live && !isVisible(job.tabId)) ||
+          (job.live && !canStream(job.tabId)) ||
           !ownsRequest(job.tabId, job.generation, update.requestId)
         )
           return previous;
@@ -141,7 +173,13 @@ export function useLogJobs(
           update.replace || update.events?.length
             ? mergeEvents(
                 update.replace ? [] : prior.events,
-                update.events ?? [],
+                update.occurrences
+                  ? withoutShownEvents(
+                      prior.events,
+                      update.events ?? [],
+                      update.occurrences,
+                    )
+                  : (update.events ?? []),
                 workspaceRef.current.preferences.maxEvents,
                 undefined,
                 false,
@@ -155,6 +193,18 @@ export function useLogJobs(
         const terminal = ["error", "cancelled", "complete"].includes(
           update.state,
         );
+        const failures = update.liveFailures ?? prior.liveFailures;
+        const interrupted =
+          terminal ||
+          (failures?.length ?? 0) > (prior.liveFailures?.length ?? 0);
+        const missedSince =
+          !job.live || job.stopping
+            ? undefined
+            : interrupted
+              ? missedFrom(prior, beat)
+              : update.catchUp?.state === "complete" && !failures?.length
+                ? undefined
+                : prior.missedSince;
         return {
           ...previous,
           [job.tabId]: {
@@ -178,9 +228,15 @@ export function useLogJobs(
                     (update.replace ? 0 : prior.events.length),
                 )
               : undefined,
-            liveFailures:
+            liveFailures: job.live && !terminal ? failures : undefined,
+            liveSince: job.live
+              ? (prior.liveSince ??
+                (update.liveState === "streaming" ? now : undefined))
+              : undefined,
+            missedSince,
+            catchUp:
               job.live && !terminal
-                ? (update.liveFailures ?? prior.liveFailures)
+                ? (update.catchUp ?? prior.catchUp)
                 : undefined,
             cursor: update.cursor,
             error: update.error,
@@ -222,7 +278,7 @@ export function useLogJobs(
       pendingTimeRefresh.current.clear();
       for (const id of ids) void cancelQuietly(id);
     };
-  }, [cancelQuietly, ownsRequest, isVisible]);
+  }, [cancelQuietly, ownsRequest, canStream]);
 
   const cancel = useCallback(
     async (tabId: string, pause = false) => {
@@ -243,6 +299,7 @@ export function useLogJobs(
       // Cancellation updates belong to this operation, and may carry partial-result details.
       if (id && job)
         requests.current.set(id, { ...job, generation, stopping: !pause });
+      const beat = lastBeat.current;
       if (pause)
         setRuntimes((previous) =>
           ownsOperation(tabId, generation) && previous[tabId]
@@ -253,6 +310,8 @@ export function useLogJobs(
                   state: "idle",
                   live: true,
                   livePaused: true,
+                  missedSince: missedFrom(previous[tabId], beat),
+                  catchUp: undefined,
                 },
               }
             : previous,
@@ -310,6 +369,7 @@ export function useLogJobs(
                     : "cancelled",
             live: pause && !cancellationError,
             livePaused: pause || undefined,
+            ...(pause ? {} : { missedSince: undefined, catchUp: undefined }),
             liveState: pause
               ? prior.liveState
               : prior.liveState
@@ -333,7 +393,13 @@ export function useLogJobs(
   );
 
   const run = useCallback(
-    async (tab: LogTab, live = false, more = false, resume = false) => {
+    async (
+      tab: LogTab,
+      live = false,
+      more = false,
+      resume = false,
+      missed?: number,
+    ) => {
       const prior = runtimesRef.current[tab.id];
       // Pagination callbacks can outlive the historical result that scheduled them.
       // Never let one take ownership from a newer Run, Live start, or cancellation.
@@ -393,7 +459,7 @@ export function useLogJobs(
         );
         return;
       }
-      if (live && !isVisible(tab.id)) {
+      if (live && !canStream(tab.id)) {
         sleepingLive.current.add(tab.id);
         setRuntimes((previous) =>
           ownsOperation(tab.id, generation)
@@ -415,6 +481,16 @@ export function useLogJobs(
       }
       let request: QueryRequest | undefined;
       try {
+        // Waking continues what was streaming, not an edited filter.
+        const resumed =
+          resume &&
+          prior?.request &&
+          sourceIdentity(prior.request.connection.id, prior.request.sources, [
+            prior.request.connection,
+            ...(prior.request.connections ?? []),
+          ]) === source
+            ? prior.request
+            : undefined;
         const modes = new Set(
           tab.sources.map(
             (item) =>
@@ -426,14 +502,15 @@ export function useLogJobs(
         );
         const mixed =
           modes.has("gcp") && (modes.has("aws") || modes.has("offline"));
-        const gcpFilter = modes.has("gcp")
-          ? compileGcpViewFilter(
-              tab.filterPattern,
-              tab.filterMode,
-              tab.gcpLogType,
-              mixed,
-            )
-          : { pattern: "", local: undefined };
+        const gcpFilter =
+          modes.has("gcp") && !resumed
+            ? compileGcpViewFilter(
+                tab.filterPattern,
+                tab.filterMode,
+                tab.gcpLogType,
+                mixed,
+              )
+            : { pattern: "", local: undefined };
         const canContinue = Boolean(
           more &&
           !live &&
@@ -451,65 +528,90 @@ export function useLogJobs(
               requestId: crypto.randomUUID(),
               cursor: prior!.cursor,
             }
-          : {
-              requestId: crypto.randomUUID(),
-              connection: { ...connection },
-              connections: [
-                ...new Set(
-                  tab.sources
-                    .map((source) => source.connectionId)
-                    .filter((id): id is string => !!id && id !== connection.id),
-                ),
-              ].map((id) => {
-                const selected = state.connections.find(
-                  (item) => item.id === id,
-                );
-                if (!selected)
-                  throw new Error("A source connection no longer exists.");
-                return { ...selected };
-              }),
-              sources: tab.sources.map((item) => ({
-                ...item,
-                ...(item.logStreams
-                  ? { logStreams: [...item.logStreams] }
-                  : {}),
-              })),
-              ...resolveTimeRange(
-                tab.timePreset,
-                tab.customStart,
-                tab.customEnd,
-              ),
-              kind: "events",
-              filterPattern:
-                modes.has("aws") || modes.has("offline")
-                  ? compileAwsViewFilter(tab.filterPattern, tab.filterMode)
-                  : "",
-              gcpFilterPattern: gcpFilter.pattern,
-              ...(gcpFilter.local ? { gcpLocalFilter: gcpFilter.local } : {}),
-              query: "",
-              ...(tab.timePreset === "clear" && !live
-                ? { direction: "older" as const }
-                : {}),
-              limit:
-                tab.timePreset === "clear" && !live
-                  ? Math.min(
-                      1000,
-                      Math.max(
-                        1,
-                        Math.floor(
-                          workspaceRef.current.preferences.maxEvents / 4,
-                        ),
+          : resumed
+            ? {
+                ...resumed,
+                requestId: crypto.randomUUID(),
+                direction: undefined,
+                cursor: undefined,
+                catchUp: undefined,
+              }
+            : {
+                requestId: crypto.randomUUID(),
+                connection: { ...connection },
+                connections: [
+                  ...new Set(
+                    tab.sources
+                      .map((source) => source.connectionId)
+                      .filter(
+                        (id): id is string => !!id && id !== connection.id,
                       ),
-                    )
-                  : queryPageLimit(
-                      modes,
-                      workspaceRef.current.preferences.maxEvents,
-                    ),
-            };
+                  ),
+                ].map((id) => {
+                  const selected = state.connections.find(
+                    (item) => item.id === id,
+                  );
+                  if (!selected)
+                    throw new Error("A source connection no longer exists.");
+                  return { ...selected };
+                }),
+                sources: tab.sources.map((item) => ({
+                  ...item,
+                  ...(item.logStreams
+                    ? { logStreams: [...item.logStreams] }
+                    : {}),
+                })),
+                ...resolveTimeRange(
+                  tab.timePreset,
+                  tab.customStart,
+                  tab.customEnd,
+                ),
+                kind: "events",
+                filterPattern:
+                  modes.has("aws") || modes.has("offline")
+                    ? compileAwsViewFilter(tab.filterPattern, tab.filterMode)
+                    : "",
+                gcpFilterPattern: gcpFilter.pattern,
+                ...(gcpFilter.local ? { gcpLocalFilter: gcpFilter.local } : {}),
+                query: "",
+                ...(tab.timePreset === "clear" && !live
+                  ? { direction: "older" as const }
+                  : {}),
+                limit:
+                  tab.timePreset === "clear" && !live
+                    ? Math.min(
+                        1000,
+                        Math.max(
+                          1,
+                          Math.floor(
+                            workspaceRef.current.preferences.maxEvents / 4,
+                          ),
+                        ),
+                      )
+                    : queryPageLimit(
+                        modes,
+                        workspaceRef.current.preferences.maxEvents,
+                      ),
+              };
         const retainHistory =
           live &&
           prior?.request &&
-          requestMatchesTab(prior.request, tab, connection, state.connections);
+          (resumed ||
+            requestMatchesTab(
+              prior.request,
+              tab,
+              connection,
+              state.connections,
+            ));
+        // Kept events continue without a gap.
+        const missedSince = retainHistory
+          ? (missed ?? prior.missedSince)
+          : undefined;
+        if (missedSince !== undefined)
+          request.catchUp = {
+            from: Math.max(0, Math.floor(missedSince)),
+            limit: workspaceRef.current.preferences.maxEvents,
+          };
         const dispatched = request;
         current.current.set(tab.id, dispatched.requestId);
         latestRequest.current.set(tab.id, {
@@ -553,6 +655,13 @@ export function useLogJobs(
                       ? (prior?.liveReceived ?? 0)
                       : 0
                     : undefined,
+                  ...(missedSince !== undefined
+                    ? {
+                        liveSince: prior!.liveSince,
+                        missedSince,
+                        catchUp: { state: "loading" as const },
+                      }
+                    : {}),
                   error: undefined,
                   cursor: undefined,
                   request: dispatched,
@@ -604,7 +713,7 @@ export function useLogJobs(
         });
       }
     },
-    [cancelQuietly, ownsOperation, ownsRequest, isVisible],
+    [cancelQuietly, ownsOperation, ownsRequest, canStream],
   );
 
   reloadRecent.current = (tab) => run(tab);
@@ -797,12 +906,14 @@ export function useLogJobs(
     if (!ready) return;
     for (const tab of workspace.tabs) {
       if (isVisible(tab.id)) {
-        if (sleepingLive.current.has(tab.id)) void run(tab, true, false, true);
-        else if (staleHidden.current.delete(tab.id)) {
+        if (sleepingLive.current.has(tab.id)) {
+          if (!liveAsleep) void run(tab, true, false, true);
+        } else if (staleHidden.current.delete(tab.id)) {
           observedTimeRanges.current.set(tab.id, timeIdentity(tab));
           void run(tab);
         }
-      } else {
+      }
+      if (!canStream(tab.id)) {
         const id = current.current.get(tab.id);
         if (
           id &&
@@ -821,7 +932,33 @@ export function useLogJobs(
     run,
     cancel,
     isVisible,
+    canStream,
+    liveAsleep,
   ]);
+  useEffect(() => {
+    if (!ready) return;
+    lastBeat.current = Date.now();
+    const timer = setInterval(() => {
+      const beat = lastBeat.current;
+      lastBeat.current = Date.now();
+      if (lastBeat.current - beat < SUSPEND_MS) return;
+      // The computer slept: a stream may be dead, or resume without events.
+      for (const { tabId, live, stopping } of [...requests.current.values()]) {
+        const tab = workspaceRef.current.tabs.find((item) => item.id === tabId);
+        const runtime = runtimesRef.current[tabId];
+        if (
+          tab &&
+          runtime &&
+          live &&
+          !stopping &&
+          canStream(tabId) &&
+          !sleepingLive.current.has(tabId)
+        )
+          void run(tab, true, false, true, missedFrom(runtime, beat));
+      }
+    }, BEAT_MS);
+    return () => clearInterval(timer);
+  }, [ready, run, canStream]);
   useEffect(() => {
     const previous = previousAccess.current;
     previousAccess.current = { ready, awsEnabled };

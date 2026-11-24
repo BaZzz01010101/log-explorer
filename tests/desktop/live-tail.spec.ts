@@ -38,6 +38,10 @@ test.beforeEach(async ({}, testInfo) => {
     { path: "@timestamp", width: 210, pinned: true },
     { path: "@message", width: 700 },
   ];
+  if (testInfo.title.includes("without input")) {
+    state.preferences.liveSleepBackgroundMinutes = 0.1;
+    state.preferences.liveSleepIdleMinutes = 0.1;
+  }
   if (testInfo.title.includes("two connections")) {
     state.connections.push({
       ...state.connections[0],
@@ -140,6 +144,32 @@ const status = () => page.locator(".query-status");
 const rows = () => page.locator(".virtual-event");
 const received = async () =>
   Number(await status().getAttribute("data-live-received"));
+/** Milliseconds between the newest rows; a duplicate row gives 0. */
+const newestSteps = async (count: number) => {
+  const viewer = page.locator(".viewer-scroll");
+  await viewer.focus();
+  await page.keyboard.press("End");
+  // Rows render after the scroll.
+  await expect
+    .poll(() =>
+      viewer.evaluate((element) => {
+        const last = [...element.querySelectorAll(".virtual-event")].at(-1)!;
+        return Math.abs(
+          last.getBoundingClientRect().bottom -
+            element.getBoundingClientRect().top -
+            element.clientHeight,
+        );
+      }),
+    )
+    .toBeLessThan(80);
+  const times = (await rows().allTextContents())
+    .map((text) => /\d\d:(\d\d):(\d\d)\.(\d{3})/.exec(text)!)
+    .map(([, m, s, ms]) => Number(m) * 60000 + Number(s) * 1000 + Number(ms))
+    .slice(-count);
+  return times
+    .slice(1)
+    .map((time, index) => (time - times[index] + 3600000) % 3600000);
+};
 
 for (const mode of ["Table", "Hybrid", "JSON"])
   test(`${mode} Live starts receiving after an empty five-minute query without Run`, async () => {
@@ -378,7 +408,11 @@ test("inactive Live tabs cancel reception, resume history on activation and stay
   await expect(
     page.getByRole("button", { name: "Stop Live", exact: true }),
   ).toBeVisible();
-  await expect.poll(received).toBeGreaterThan(previousReceived);
+  await expect.poll(received).toBeGreaterThan(previousReceived + 2);
+  // Events sent while the tab was inactive are loaded, without duplicates.
+  const steps = await newestSteps(previousReceived + 2);
+  expect(Math.min(...steps)).toBeGreaterThan(0);
+  expect(Math.max(...steps)).toBeLessThan(2500);
   const newId = await page.evaluate(
     () =>
       (window as any).__liveVisibilityUpdates.findLast(
@@ -397,6 +431,40 @@ test("inactive Live tabs cancel reception, resume history on activation and stay
   await expect(
     page.getByRole("button", { name: "Stop Live", exact: true }),
   ).toHaveCount(0);
+});
+
+test("Live sleeps without input and loads the missed events on activity", async () => {
+  await page.getByRole("button", { name: "Live", exact: true }).click();
+  await expect.poll(received).toBeGreaterThan(1);
+  const asleep = status().getByText("Live asleep · resumes on activity");
+  await expect(asleep).toBeVisible({ timeout: 15000 });
+  await expect(
+    page.getByRole("button", { name: "Stop Live", exact: true }),
+  ).toBeVisible();
+  const before = await received();
+  await page.waitForTimeout(6000);
+  expect(await received()).toBe(before);
+  await capture("live-asleep.png");
+  await page.mouse.move(500, 400);
+  await expect(asleep).toBeHidden();
+  // The missed period arrives at once, not at the rate of the stream.
+  await expect
+    .poll(received, { timeout: 4000 })
+    .toBeGreaterThanOrEqual(before + 5);
+  await expect(
+    status().getByText("Live stream · loading missed events"),
+  ).toBeVisible();
+  await expect(async () => {
+    // Keeps Live awake until the connection period is loaded too.
+    await page.mouse.move(500 + (Date.now() % 100), 400);
+    await expect(status().getByText("Live stream · connected")).toBeVisible({
+      timeout: 500,
+    });
+  }).toPass({ timeout: 25000 });
+  const steps = await newestSteps(12);
+  expect(Math.min(...steps)).toBeGreaterThan(0);
+  expect(Math.max(...steps)).toBeLessThan(2500);
+  expect(errors).toEqual([]);
 });
 
 test("compact Live footer defaults to paused and wheel direction toggles Follow even without overflow", async () => {

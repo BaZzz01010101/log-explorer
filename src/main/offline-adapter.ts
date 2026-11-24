@@ -130,6 +130,33 @@ export function createOfflineAdapter(): LogAdapter {
   const anchor = Math.floor(Date.now() / 60000) * 60000;
   const fixtures = new Map<string, LogEvent[]>();
   let liveIndex = 540;
+  // What a real service would have stored since Live first started.
+  const stored = new Map<string, LogEvent[]>();
+  function store(group: string, timestamp: number): LogEvent {
+    const index = liveIndex++;
+    const event: LogEvent = {
+      id: `fixture:live:${group}:${index}`,
+      timestamp,
+      ingestionTime: timestamp,
+      logGroup: group,
+      logStream: `2026/10/13/[$LATEST]worker-${(index % 4) + 1}`,
+      message: fixtureMessage(group, index),
+    };
+    stored.set(group, [...(stored.get(group) ?? []).slice(-2000), event]);
+    return event;
+  }
+  /** Events stored while no Live stream received them. */
+  function missedEvents(group: string, now: number): LogEvent[] {
+    const last = stored.get(group)?.at(-1)?.timestamp;
+    if (last !== undefined)
+      for (let time = last + 900; time < now - 100; time += 900)
+        store(group, time);
+    // History has its own IDs, like CloudWatch.
+    return (stored.get(group) ?? []).map((event) => ({
+      ...event,
+      id: `${event.id}:history`,
+    }));
+  }
   function groupEvents(name: string): LogEvent[] {
     if (!GROUP_NAMES.includes(name))
       throw new Error("This log group does not exist in the offline fixtures");
@@ -151,7 +178,12 @@ export function createOfflineAdapter(): LogAdapter {
     const predicate = fixtureFilter(request.filterPattern);
     return request.sources
       .flatMap((source) =>
-        groupEvents(source.logGroup).filter(
+        [
+          ...groupEvents(source.logGroup),
+          ...(request.catchUp
+            ? missedEvents(source.logGroup, Date.now())
+            : []),
+        ].filter(
           (event) =>
             event.timestamp >= request.startTime &&
             event.timestamp <= request.endTime &&
@@ -238,17 +270,10 @@ export function createOfflineAdapter(): LogAdapter {
         await delay(900, signal);
         const now = Date.now();
         const events = request.sources.flatMap((source) => {
-          const index = liveIndex++;
-          const event: LogEvent = {
-            id: `fixture:live:${source.logGroup}:${index}`,
-            timestamp: now,
-            ingestionTime: now,
-            logGroup: source.logGroup,
-            logStream:
-              source.logStreams?.[index % source.logStreams.length] ??
-              `2026/10/13/[$LATEST]worker-${(index % 4) + 1}`,
-            message: fixtureMessage(source.logGroup, index),
-          };
+          const event = store(source.logGroup, now);
+          if (source.logStreams?.length)
+            event.logStream =
+              source.logStreams[liveIndex % source.logStreams.length];
           return predicate(event) ? [event] : [];
         });
         throwIfAborted(signal);

@@ -32,6 +32,11 @@ import {
   DEFAULT_RECENT_SEARCHES_LIMIT,
   MAX_RECENT_SEARCHES_LIMIT,
 } from "./query-history";
+import {
+  LIVE_SLEEP_BACKGROUND_MINUTES,
+  LIVE_SLEEP_IDLE_MINUTES,
+  MAX_LIVE_SLEEP_MINUTES,
+} from "./live-catch-up";
 
 export const OFFLINE_CONNECTION: Connection = {
   id: "offline",
@@ -80,6 +85,8 @@ const DEFAULT_PREFERENCES: Preferences = {
   settingsDetached: false,
   closedTabHistoryDays: 7,
   recentSearchesLimit: DEFAULT_RECENT_SEARCHES_LIMIT,
+  liveSleepBackgroundMinutes: LIVE_SLEEP_BACKGROUND_MINUTES,
+  liveSleepIdleMinutes: LIVE_SLEEP_IDLE_MINUTES,
   fontSize: 12,
   maxEvents: 10000,
   sourceDetailsHeight: 220,
@@ -505,6 +512,18 @@ export function parsePreferences(value: unknown): Preferences {
         1,
         MAX_RECENT_SEARCHES_LIMIT,
       ),
+    ),
+    liveSleepBackgroundMinutes: number(
+      raw.liveSleepBackgroundMinutes,
+      LIVE_SLEEP_BACKGROUND_MINUTES,
+      0,
+      MAX_LIVE_SLEEP_MINUTES,
+    ),
+    liveSleepIdleMinutes: number(
+      raw.liveSleepIdleMinutes,
+      LIVE_SLEEP_IDLE_MINUTES,
+      0,
+      MAX_LIVE_SLEEP_MINUTES,
     ),
     relativeTimeTemplates: normalizeRelativeTimeTemplates(
       raw.relativeTimeTemplates,

@@ -12,6 +12,7 @@ import {
   throwIfAborted,
   type LogAdapter,
 } from "./aws-adapter";
+import { createLiveCatchUp } from "./live-catch-up";
 import { runMergedLive } from "./live-merge";
 import { createMultiSourceEvents, scopedQueries } from "./multi-source-events";
 import { createOfflineAdapter } from "./offline-adapter";
@@ -283,6 +284,7 @@ export function createLogService(
     };
     job.done = (async () => {
       let release: (() => void) | undefined;
+      const stopCatchUp = new AbortController();
       try {
         release = await (live ? liveSlots : querySlots).acquire(
           job.controller.signal,
@@ -306,14 +308,57 @@ export function createLogService(
           });
           const query = queries[0];
           const adapter = adapterFor(query.connection);
+          const { catchUp } = input;
+          const historySignal = AbortSignal.any([
+            job.controller.signal,
+            stopCatchUp.signal,
+          ]);
+          const missed =
+            live && catchUp
+              ? createLiveCatchUp({
+                  requestId: input.requestId,
+                  ...catchUp,
+                  load: async (range, cursor) => {
+                    const slot = await querySlots.acquire(historySignal);
+                    try {
+                      for (const item of queries) gate(item.connection);
+                      return await multiSourceEvents.events(
+                        {
+                          ...input,
+                          ...range,
+                          direction: "older",
+                          limit: Math.min(1000, input.limit),
+                          cursor,
+                        },
+                        historySignal,
+                      );
+                    } finally {
+                      slot();
+                    }
+                  },
+                  errorMessage: (error) =>
+                    errorMessage(error, input.connection.mode),
+                  emit: update,
+                })
+              : undefined;
+          const publishLive = missed
+            ? (value: QueryUpdate) => update(missed.track(value))
+            : update;
+          const waiting = new Set(queries.map((item) => item.connection.id));
+          const connected = (id: string) => {
+            if (waiting.delete(id) && !waiting.size) missed?.connected();
+          };
+          void missed?.run(historySignal);
           if (!live)
             update(
               scoped(query, await adapter.events(query, job.controller.signal)),
             );
           else if (queries.length === 1)
-            await adapter.live(query, job.controller.signal, (value) =>
-              update(scoped(query, value)),
-            );
+            await adapter.live(query, job.controller.signal, (value) => {
+              if (value.liveState === "streaming")
+                connected(query.connection.id);
+              publishLive(scoped(query, value));
+            });
           else
             await runMergedLive(
               input.requestId,
@@ -321,14 +366,18 @@ export function createLogService(
                 connectionId: item.connection.id,
                 name: item.connection.name,
                 run: async (signal, publish) =>
-                  adapterFor(item.connection).live(item, signal, (value) =>
-                    publish(scoped(item, value)),
-                  ),
+                  adapterFor(item.connection)
+                    .live(item, signal, (value) => {
+                      if (value.liveState === "streaming")
+                        connected(item.connection.id);
+                      publish(scoped(item, value));
+                    })
+                    .finally(() => connected(item.connection.id)),
                 errorMessage: (error) =>
                   errorMessage(error, item.connection.mode),
               })),
               job.controller.signal,
-              update,
+              publishLive,
               (flush) => {
                 job.flush = flush;
               },
@@ -352,6 +401,7 @@ export function createLogService(
           });
         }
       } finally {
+        stopCatchUp.abort();
         release?.();
         if (jobs.get(input.requestId) === job) jobs.delete(input.requestId);
       }

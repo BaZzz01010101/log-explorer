@@ -8,6 +8,7 @@ import {
   Button,
   Group,
   MantineProvider,
+  Popover,
   Text,
   createTheme,
 } from "@mantine/core";
@@ -47,6 +48,12 @@ import {
   logTabLabel,
   workspaceEntries,
 } from "../shared/workspace-entries";
+import {
+  LIVE_SLEEP_BACKGROUND_MINUTES,
+  LIVE_SLEEP_IDLE_MINUTES,
+} from "../shared/live-catch-up";
+import { OUTSIDE_PRESS_EVENT } from "./outside-press";
+import { useInactivitySleep } from "./useInactivitySleep";
 import { useLogJobs } from "./useLogJobs";
 import { useKeyboardModality } from "./useKeyboardModality";
 import { PaneLayoutView } from "./components/PaneLayout";
@@ -113,7 +120,13 @@ const theme = createTheme({
       "#0d141e",
     ],
   },
-  components: { Button: Button.extend({ defaultProps: { fw: 500 } }) },
+  components: {
+    Button: Button.extend({ defaultProps: { fw: 500 } }),
+    // Selects use it too.
+    Popover: Popover.extend({
+      defaultProps: { clickOutsideEvents: [OUTSIDE_PRESS_EVENT] },
+    }),
+  },
 });
 
 export default function App() {
@@ -156,6 +169,11 @@ export default function App() {
       workspace.splitSizes,
     );
   workspaceRef.current = workspace;
+  const liveAsleep = useInactivitySleep(
+    workspace.preferences.liveSleepBackgroundMinutes ??
+      LIVE_SLEEP_BACKGROUND_MINUTES,
+    workspace.preferences.liveSleepIdleMinutes ?? LIVE_SLEEP_IDLE_MINUTES,
+  );
   const { runtimes, run, cancel } = useLogJobs(
     workspace,
     ready,
@@ -168,6 +186,7 @@ export default function App() {
       });
     },
     environment?.awsEnabled ?? false,
+    liveAsleep,
   );
   const runtimesRef = useRef(runtimes);
   runtimesRef.current = runtimes;

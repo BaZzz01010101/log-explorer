@@ -45,6 +45,11 @@ const api: ExplorerApi = {
     ipcRenderer.on("explorer:update", handler);
     return () => ipcRenderer.removeListener("explorer:update", handler);
   },
+  onWindowPress: (listener) => {
+    const handler = () => listener();
+    ipcRenderer.on("explorer:window-press", handler);
+    return () => ipcRenderer.removeListener("explorer:window-press", handler);
+  },
   onBeforeClose: (listener) => {
     const handler = async (
       _event: Electron.IpcRendererEvent,

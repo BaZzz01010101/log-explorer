@@ -112,6 +112,8 @@ export interface QueryRequest {
   limit: number;
   direction?: "older";
   cursor?: string;
+  /** Live only: load up to `limit` events missed since `from`. */
+  catchUp?: { from: number; limit: number };
 }
 export interface QueryStats {
   recordsMatched?: number;
@@ -125,6 +127,11 @@ export interface LiveFailure {
   connectionId: string;
   name: string;
   error: string;
+}
+/** Progress of loading the events a resumed Live view missed. */
+export interface LiveCatchUp {
+  state: "loading" | "complete" | "error";
+  error?: string;
 }
 export interface QueryUpdate {
   requestId: string;
@@ -141,6 +148,9 @@ export interface QueryUpdate {
   truncated?: boolean;
   liveState?: LiveState;
   liveFailures?: LiveFailure[];
+  /** Nth identical event, for events that Live and history may both deliver. */
+  occurrences?: number[];
+  catchUp?: LiveCatchUp;
 }
 export type ViewMode = "hybrid" | "table" | "json";
 export interface ColumnConfig {
@@ -268,6 +278,9 @@ export interface Preferences {
   pinnedTabsSeparateRow?: boolean;
   closedTabHistoryDays?: number;
   recentSearchesLimit?: number;
+  /** Minutes without input before Live sleeps; 0 keeps it on. */
+  liveSleepBackgroundMinutes?: number;
+  liveSleepIdleMinutes?: number;
   sourceDetailsHeight?: number;
   fontSize: number;
   maxEvents: number;
@@ -373,6 +386,8 @@ export interface ExplorerApi {
   live(request: QueryRequest): Promise<void>;
   cancel(requestId: string): Promise<void>;
   onUpdate(listener: (update: QueryUpdate) => void): () => void;
+  /** The user used the window's caption buttons or border. */
+  onWindowPress(listener: () => void): () => void;
   onBeforeClose(listener: () => Promise<void>): () => void;
   loadWorkspace(): Promise<WorkspaceLoad>;
   saveWorkspace(workspace: Workspace): Promise<void>;

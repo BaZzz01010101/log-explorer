@@ -77,3 +77,31 @@ describe("recent searches preference", () => {
     expect(workspaceSchema.safeParse(workspace).success).toBe(false);
   });
 });
+
+it("restores Live sleep times within their limits", () => {
+  for (const [value, background, idle] of [
+    [undefined, 5, 15],
+    [0, 0, 0],
+    [45, 45, 45],
+    [-1, 0, 0],
+    [9999, 1440, 1440],
+    ["soon", 5, 15],
+  ] as const) {
+    const { preferences } = restoreWorkspace({
+      ...createWorkspace(),
+      preferences: {
+        liveSleepBackgroundMinutes: value,
+        liveSleepIdleMinutes: value,
+      },
+    });
+    expect(preferences.liveSleepBackgroundMinutes).toBe(background);
+    expect(preferences.liveSleepIdleMinutes).toBe(idle);
+  }
+  const workspace = createWorkspace();
+  workspace.preferences.liveSleepIdleMinutes = 0;
+  expect(
+    workspaceSchema.parse(workspace).preferences.liveSleepIdleMinutes,
+  ).toBe(0);
+  workspace.preferences.liveSleepIdleMinutes = 1441;
+  expect(workspaceSchema.safeParse(workspace).success).toBe(false);
+});

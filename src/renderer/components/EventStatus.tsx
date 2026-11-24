@@ -27,13 +27,17 @@ export function EventStatus({
           ? "Search incomplete · scroll to continue"
         : runtime?.liveState === "stopped"
         ? "Live stopped"
+        : runtime?.live && runtime.livePaused
+          ? "Live asleep · resumes on activity"
         : runtime?.liveState === "connecting"
           ? "Connecting to Live Tail"
           : state === "cancelled"
             ? "Cancelled"
             : runtime?.live && (state === "queued" || state === "running")
               ? runtime.liveState === "streaming"
-                ? "Live stream · connected"
+                ? runtime.catchUp?.state === "loading"
+                  ? "Live stream · loading missed events"
+                  : "Live stream · connected"
                 : "Live stream"
               : runtime?.live && state === "complete"
                 ? "Live stream stopped"
@@ -57,7 +61,7 @@ export function EventStatus({
             className={runtime?.live ? "event-live-state" : undefined}
             data-tooltip={
               runtime?.live
-                ? "Live receives new events automatically. Inactive tabs pause Live; time range changes load history."
+                ? "Live receives new events automatically. Live sleeps in inactive tabs and without activity, then loads the missed events; time range changes load history."
                 : undefined
             }
           >

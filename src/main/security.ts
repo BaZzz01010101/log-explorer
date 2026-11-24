@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { MAX_LIVE_SLEEP_MINUTES } from "../shared/live-catch-up";
 import { highlightProfilesSchema } from "../shared/highlights";
 import { HIGHLIGHT_TEXT_COLORS } from "../shared/quick-highlight";
 import type { PaneLayout } from "../shared/contracts";
@@ -78,6 +79,12 @@ export const querySchema = z
     limit: z.number().int().min(1).max(10000),
     direction: z.literal("older").optional(),
     cursor: z.string().max(100000).optional(),
+    catchUp: z
+      .object({
+        from: z.number().int().nonnegative(),
+        limit: z.number().int().min(1).max(100000),
+      })
+      .optional(),
   })
   .refine((v) => v.endTime > v.startTime, "End time must be after start time");
 const viewSchema = z.object({
@@ -283,6 +290,16 @@ export const workspaceSchema = z
       settingsDetached: z.boolean().optional(),
       closedTabHistoryDays: z.number().int().min(1).max(365).optional(),
       recentSearchesLimit: z.number().int().min(1).max(100).optional(),
+      liveSleepBackgroundMinutes: z
+        .number()
+        .min(0)
+        .max(MAX_LIVE_SLEEP_MINUTES)
+        .optional(),
+      liveSleepIdleMinutes: z
+        .number()
+        .min(0)
+        .max(MAX_LIVE_SLEEP_MINUTES)
+        .optional(),
       relativeTimeTemplates: z
         .object({
           quick: z

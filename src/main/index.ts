@@ -582,6 +582,16 @@ function createWindow(): void {
         }
       });
   });
+  // Caption buttons and borders send the page no pointer events.
+  const windowPress = () => {
+    if (!currentWindow.isDestroyed())
+      currentWindow.webContents.send("explorer:window-press");
+  };
+  currentWindow.on("will-move", windowPress);
+  currentWindow.on("will-resize", windowPress);
+  currentWindow.on("maximize", windowPress);
+  currentWindow.on("unmaximize", windowPress);
+  currentWindow.on("minimize", windowPress);
   let stateTimer: ReturnType<typeof setTimeout> | undefined;
   const persistState = () => {
     clearTimeout(stateTimer);

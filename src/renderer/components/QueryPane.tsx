@@ -131,6 +131,7 @@ export function QueryPane({
   const liveFailures =
     runtime?.live && !runtime.livePaused ? (runtime.liveFailures ?? []) : [];
   const running = runtime?.state === "queued" || runtime?.state === "running";
+  const liveSleeping = Boolean(runtime?.live && runtime.livePaused);
   const stale =
     runtime?.request &&
     !requestMatchesTab(runtime.request, tab, connection, workspace.connections);
@@ -404,7 +405,7 @@ export function QueryPane({
             >
               Run
             </Button>
-            {running ? (
+            {running || liveSleeping ? (
               <Tooltip label="Cancel this request" disabled={runtime?.live}>
                 <Button
                   size="xs"
@@ -507,6 +508,18 @@ export function QueryPane({
             </Button>
           </Alert>
         ))}
+      {runtime?.catchUp?.state === "error" && (
+        <Alert color="yellow" p="xs" mx="xs" data-testid="live-catch-up">
+          Missed events could not be loaded: {runtime.catchUp.error}{" "}
+          <Button
+            size="compact-xs"
+            variant="subtle"
+            onClick={() => onRun(true)}
+          >
+            Retry
+          </Button>
+        </Alert>
+      )}
       {runtime?.sampled && (
         <Alert color="yellow" p="xs" mx="xs">
           Live Tail omitted events. This view does not contain every matching

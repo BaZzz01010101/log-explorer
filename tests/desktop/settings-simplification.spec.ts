@@ -547,6 +547,7 @@ for (const theme of behaviorThemes)
         "Appearance",
         "Tabs and history",
         "Log display",
+        "Live",
         "Data limits",
       ]);
       await expect(
@@ -755,9 +756,9 @@ for (const theme of behaviorThemes)
       await openSettings(presentation);
       const panel = await choose(presentation, "Preferences");
       const sections = panel.locator(".settings-preference-section");
-      await expect(sections).toHaveCount(4);
+      await expect(sections).toHaveCount(5);
       await expect(panel.locator(".settings-preference-option")).toHaveCount(
-        10,
+        12,
       );
       for (const width of presentation === "pane" ? [280, 560] : [560, 1000]) {
         await resizeSettings(presentation, width, width === 280 ? 650 : 950);
@@ -820,6 +821,17 @@ for (const theme of behaviorThemes)
       await expect
         .poll(async () => (await savedWorkspace()).preferences.fontSize)
         .toBe(14);
+      for (const [name, key] of [
+        ["Sleep in background after (minutes)", "liveSleepBackgroundMinutes"],
+        ["Sleep when idle after (minutes)", "liveSleepIdleMinutes"],
+      ] as const) {
+        const field = panel.getByRole("textbox", { name, exact: true });
+        await field.fill("0");
+        await field.press("Enter");
+        await expect
+          .poll(async () => (await savedWorkspace()).preferences[key])
+          .toBe(0);
+      }
       await capture(`${theme}-${presentation}-preferences.png`);
     });
   }

@@ -69,10 +69,12 @@ describe("preload and main IPC contract", () => {
     calls.length = 0;
     api.onUpdate!(() => {});
     api.onBeforeClose!(async () => {});
+    api.onWindowPress!(() => {});
     const listened = calls.filter((call) => call.kind === "on");
     expect(listened.map((call) => call.channel).sort()).toEqual([
       "explorer:prepare-close",
       "explorer:update",
+      "explorer:window-press",
     ]);
     for (const { channel } of listened)
       expect(mainSource, channel).toContain(`webContents.send("${channel}"`);

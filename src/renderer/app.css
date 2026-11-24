@@ -23,6 +23,21 @@ button {
 .mantine-Modal-overlay {
   -webkit-app-region: no-drag;
 }
+/* Window drag areas send the page no events, so a press there could not close
+   a dropdown. */
+html:has(
+    .mantine-Popover-dropdown:not([style*="display: none"]),
+    .mantine-Menu-dropdown,
+    .server-filter-suggestions
+  )
+  :is(
+    .activity-bar,
+    .sidebar-heading,
+    .window-drag-handle,
+    .tab-strip-drag-space
+  ) {
+  -webkit-app-region: no-drag;
+}
 button:focus-visible,
 [tabindex]:focus-visible,
 input:focus-visible {

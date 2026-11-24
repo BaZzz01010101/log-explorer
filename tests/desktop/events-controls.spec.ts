@@ -335,23 +335,25 @@ test("light highlight color applies to matches and is saved separately for each 
   });
   const swatch = (name: string) =>
     page.getByRole("button", { name, exact: true });
+  let initialMap = "";
   const colors = () =>
-    page.evaluate(() => {
+    page.evaluate((initialMap) => {
       const mark = document.querySelector(
         '.virtual-event mark[data-highlight-origins~="manual"]',
-      )!;
-      const icon = document.querySelector(
-        '[aria-label="Highlight color"] svg',
-      )!;
+      );
+      const icon = document.querySelector('[aria-label="Highlight color"] svg');
       const map = document.querySelector(
         '.overview-quick .event-overview-mark[data-kind="quick"]',
-      )!;
+      );
+      // Marks are briefly absent while colors are applied again.
+      const style = (element: Element | null) =>
+        element ? getComputedStyle(element) : undefined;
       return {
-        match: getComputedStyle(mark).backgroundImage,
-        icon: getComputedStyle(icon).stroke,
-        map: getComputedStyle(map).backgroundColor,
+        match: style(mark)?.backgroundImage ?? "",
+        icon: style(icon)?.stroke ?? "",
+        map: style(map)?.backgroundColor ?? initialMap,
       };
-    });
+    }, initialMap);
   const choose = async (name: string, file: string) => {
     await picker.click();
     const grid = page.locator('[aria-label="Highlight colors"]');
@@ -385,6 +387,7 @@ test("light highlight color applies to matches and is saved separately for each 
     page.locator('.overview-quick .event-overview-mark[data-kind="quick"]'),
   ).toHaveCount(1);
   const initial = await colors();
+  initialMap = initial.map;
   expect(initial.match).toContain("rgb(255, 230, 154)");
   await choose("Pink", "highlight-color-light.png");
   await expect

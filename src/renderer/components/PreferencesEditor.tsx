@@ -10,6 +10,11 @@ import {
   DEFAULT_RECENT_SEARCHES_LIMIT,
   MAX_RECENT_SEARCHES_LIMIT,
 } from "../../shared/query-history";
+import {
+  LIVE_SLEEP_BACKGROUND_MINUTES,
+  LIVE_SLEEP_IDLE_MINUTES,
+  MAX_LIVE_SLEEP_MINUTES,
+} from "../../shared/live-catch-up";
 import { SettingLabel } from "./SettingLabel";
 
 function PreferenceSection({
@@ -216,6 +221,34 @@ export function PreferencesEditor({
             checked={value.autoExpandFilterMatches !== false}
             onChange={(event) =>
               onChange({ autoExpandFilterMatches: event.currentTarget.checked })
+            }
+          />
+        </PreferenceOption>
+      </PreferenceSection>
+      <PreferenceSection title="Live" label="Live preferences">
+        <PreferenceOption>
+          <NumericPreference
+            label="Sleep in background after (minutes)"
+            help="Stops receiving after this time without input while another application is in front. Returning loads the missed events. 0 keeps Live on."
+            min={0}
+            max={MAX_LIVE_SLEEP_MINUTES}
+            value={
+              value.liveSleepBackgroundMinutes ?? LIVE_SLEEP_BACKGROUND_MINUTES
+            }
+            onCommit={(liveSleepBackgroundMinutes) =>
+              onChange({ liveSleepBackgroundMinutes })
+            }
+          />
+        </PreferenceOption>
+        <PreferenceOption>
+          <NumericPreference
+            label="Sleep when idle after (minutes)"
+            help="Stops receiving after this time without mouse or keyboard input while this application is in front. Any input loads the missed events. 0 keeps Live on."
+            min={0}
+            max={MAX_LIVE_SLEEP_MINUTES}
+            value={value.liveSleepIdleMinutes ?? LIVE_SLEEP_IDLE_MINUTES}
+            onCommit={(liveSleepIdleMinutes) =>
+              onChange({ liveSleepIdleMinutes })
             }
           />
         </PreferenceOption>

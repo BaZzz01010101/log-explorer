@@ -3,10 +3,16 @@ import { createRoot } from "react-dom/client";
 import "@mantine/core/styles.css";
 import "@mantine/notifications/styles.css";
 import App from "./App";
+import { installOutsidePress } from "./outside-press";
 import { installScopedEditHistory } from "./scoped-edit-history";
 
 const disposeEditHistory = installScopedEditHistory(document);
 import.meta.hot?.dispose(disposeEditHistory);
+const disposeOutsidePress = installOutsidePress(
+  document,
+  window.explorer?.onWindowPress,
+);
+import.meta.hot?.dispose(disposeOutsidePress);
 
 class ErrorBoundary extends React.Component<
   { children: React.ReactNode },
